@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Postman's Serif", "Playfair Display", serif;
+  --font-serif: "Postman's Serif", "Playfair Display", serif;
+  
+  --color-ob-cream: #F4F6F9;
+  --color-ob-cream-dark: #E2E8F0;
+  --color-ob-blue: #151f33;
+  --color-ob-blue-dark: #0d131f;
+  --color-ob-blue-light: #25334d;
+  --color-ob-accent: #151f33;
+  --color-ob-accent-hover: #0d131f;
+  --color-ob-text: #05053D;
+  --color-ob-text-light: #3A435E;
+  
+  --animate-pulse-slow: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  
+  @keyframes pulse-slow {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: .3;
+    }
+  }
+}
+
+@layer base {
+  *, ::before, ::after {
+    font-family: "Postman's Serif", "Playfair Display", serif !important;
+  }
+  html, body {
+    @apply bg-ob-cream text-ob-text antialiased scroll-smooth;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-wide text-ob-text;
+  }
+}
