@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { CheckCircle2 } from 'lucide-react';
@@ -15,7 +15,7 @@ export function BusinessRegistration() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     setErrorMsg('');

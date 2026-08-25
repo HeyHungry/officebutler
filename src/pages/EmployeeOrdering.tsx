@@ -1,10 +1,9 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, ChevronRight, MapPin, PackageOpen, Phone, ShoppingBag } from 'lucide-react';
-import { motion } from 'motion/react';
+import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 
-// Product images mapping
 const PRODUCT_IMAGES: Record<string, string> = {
   'Bitterballen Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_326b38dcee73a775f892e835c057c0bd82a331ff30cac86050212b55404a5e3d/responsive320',
   'Dutch Classic Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/3f0af910-b1b9-498c-b744-5d20c6c8b600/responsive320',
@@ -26,7 +25,7 @@ const PRODUCT_IMAGES: Record<string, string> = {
   'Vegan Bitterballen': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_382e6f9d8eabd5d872ed938ed4c12f25c6696f38b8ab2d2791d968c2783fd954/responsive640'
 };
 
-const PORTION_SIZES = [20, 40, 60, 80, 100];
+const PORTION_SIZES = [25, 50, 100, 150];
 
 type Address = {
   id: string;
@@ -35,7 +34,7 @@ type Address = {
   instructions?: string;
 };
 
-type PriceMap = Record<number, number>;
+type PriceMap = Record<string, number>;
 
 export function EmployeeOrdering() {
   const navigate = useNavigate();
@@ -47,15 +46,14 @@ export function EmployeeOrdering() {
   const [companyId, setCompanyId] = useState('');
   const [userId, setUserId] = useState('');
   const [companyName, setCompanyName] = useState('');
-
-  // Data
+  
   const [assortment, setAssortment] = useState<string[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [prices, setPrices] = useState<PriceMap>({});
+  const [maxSpendLimit, setMaxSpendLimit] = useState<number | null>(null);
 
-  // Form State
-  const [selectedProduct, setSelectedProduct] = useState('');
-  const [selectedPortion, setSelectedPortion] = useState<number | ''>('');
+  // New multi-select state: productName -> portionSize
+  const [selections, setSelections] = useState<Record<string, number>>({});
   const [selectedAddress, setSelectedAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
@@ -66,10 +64,12 @@ export function EmployeeOrdering() {
 
   const fetchData = async () => {
     if (!supabase) {
-      // Mock Data
       setAssortment(['Bitterballen Deal', 'Vega Deal', 'Snack Mix']);
       setAddresses([{ id: 'a1', label: 'Receptie', address_line: 'Straat 1' }]);
-      setPrices({ 20: 25.50, 40: 48.00, 60: 69.00, 80: 89.00, 100: 105.00 });
+      setPrices({ 
+        'Bitterballen Deal_25': 25.50, 'Bitterballen Deal_50': 48.00,
+        'Vega Deal_25': 26.50, 'Vega Deal_50': 49.00,
+      });
       setCompanyName("Mock Company BV");
       setIsLoading(false);
       return;
@@ -83,7 +83,6 @@ export function EmployeeOrdering() {
       }
       setUserId(session.user.id);
 
-      // Get profile
       const { data: profile } = await supabase.from('ob_user_profiles').select('*').eq('id', session.user.id).single();
       
       if (!profile || (profile.role !== 'employee' && profile.role !== 'office_manager' && profile.role !== 'admin')) {
@@ -94,23 +93,32 @@ export function EmployeeOrdering() {
       const compId = profile.company_id;
       setCompanyId(compId);
 
-      // Fetch company name
-      const { data: comp } = await supabase.from('ob_companies').select('name').eq('id', compId).single();
-      if (comp) setCompanyName(comp.name);
+      const { data: comp } = await supabase.from('ob_companies').select('name, employee_spend_limit').eq('id', compId).single();
+      if (comp) {
+        setCompanyName(comp.name);
+        setMaxSpendLimit(comp.employee_spend_limit);
+      }
 
-      // Fetch Assortment
       const { data: assortData } = await supabase.from('ob_company_assortment').select('product_name').eq('company_id', compId);
       if (assortData) setAssortment(assortData.map((a: any) => a.product_name));
 
-      // Fetch Addresses
       const { data: addrData } = await supabase.from('ob_company_addresses').select('*').eq('company_id', compId);
       if (addrData) setAddresses(addrData);
 
-      // Fetch Prices
-      const { data: priceData } = await supabase.from('ob_portion_prices').select('*');
+      const { data: priceData } = await supabase.from('ob_product_prices').select('*');
       if (priceData) {
         const pMap: PriceMap = {};
-        priceData.forEach((p: any) => { pMap[p.portion_size] = p.price; });
+        
+        // 1. Default prices (no company_id)
+        priceData.filter((p: any) => !p.company_id).forEach((p: any) => {
+          pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+        });
+
+        // 2. Company specific override
+        priceData.filter((p: any) => p.company_id === compId).forEach((p: any) => {
+          pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+        });
+        
         setPrices(pMap);
       }
 
@@ -129,36 +137,71 @@ export function EmployeeOrdering() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!selectedProduct || !selectedPortion || !selectedAddress || !phone) {
-      setError("Vul a.u.b. alle verplichte velden in.");
+    if (Object.keys(selections).length === 0 || !selectedAddress || !phone) {
+      setError("Selecteer a.u.b. minimaal één product en vul uw contactgegevens in.");
       return;
     }
 
     setIsSubmitting(true);
     setError('');
 
+    const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[`${prod}_${size}`] || 0), 0);
+    
+    if (maxSpendLimit !== null && totalOrderPrice > maxSpendLimit) {
+      setError(`Het maximaal toegestane bedrag per bestelling is €${maxSpendLimit.toFixed(2)}. Het totaalbedrag is nu €${totalOrderPrice.toFixed(2)}.`);
+      setIsSubmitting(false);
+      return;
+    }
+
     if (supabase) {
       try {
-        const orderPrice = prices[selectedPortion] || 0;
-        const { error: insertError } = await supabase.from('ob_orders').insert({
-          company_id: companyId,
-          user_id: userId,
-          product_name: selectedProduct,
-          portion_size: selectedPortion,
-          price: orderPrice,
-          address_id: selectedAddress,
-          phone: phone,
-          notes: notes
+        const orderPromises = Object.entries(selections).map(([prod, size]) => {
+          const price = prices[`${prod}_${size}`] || 0;
+          return supabase.from('ob_orders').insert({
+            company_id: companyId,
+            user_id: userId,
+            product_name: prod,
+            portion_size: size,
+            price: price,
+            total_price: price, // Added to satisfy DB NOT NULL constraint
+            address_id: selectedAddress,
+            phone: phone,
+            notes: notes
+          });
         });
+        
+        
+        const results = await Promise.all(orderPromises);
+        const errors = results.filter(r => r.error);
+        if (errors.length > 0) throw errors[0].error;
 
-        if (insertError) throw insertError;
+        // Try to send the invoice email
+        try {
+          await fetch('/api/send-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              companyId,
+              selections,
+              prices,
+              addressId: selectedAddress,
+              phone,
+              notes,
+              totalOrderPrice
+            })
+          });
+        } catch (emailErr) {
+          console.error("Kon email niet verzenden:", emailErr);
+          // We still show success to the user since the DB insert worked
+        }
+
         setOrderSuccess(true);
+
       } catch (e: any) {
         console.error(e);
         setError("Er ging iets mis bij het plaatsen van de bestelling.");
       }
     } else {
-      // Mock success
       setTimeout(() => setOrderSuccess(true), 1000);
     }
     
@@ -187,8 +230,7 @@ export function EmployeeOrdering() {
           <button 
             onClick={() => {
               setOrderSuccess(false);
-              setSelectedProduct('');
-              setSelectedPortion('');
+              setSelections({});
               setNotes('');
             }}
             className="w-full bg-ob-blue text-white py-3 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors"
@@ -223,65 +265,94 @@ export function EmployeeOrdering() {
 
         <form onSubmit={handleSubmit} className="space-y-8">
           
-          {/* Step 1: Product Selection */}
+          {/* Step 1: Producten & Porties */}
           <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-            <h2 className="text-xl font-bold text-ob-text mb-6 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm">1</span> 
-              Kies een Product
-            </h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-ob-text flex items-center gap-2">
+                <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm">1</span> 
+                Kies uw Snacks & Porties
+              </h2>
+              {maxSpendLimit !== null && (
+                <div className="text-sm font-medium bg-blue-50 text-ob-blue px-3 py-1 rounded-lg">
+                  Budget: €{maxSpendLimit.toFixed(2)}
+                </div>
+              )}
+            </div>
             
             {assortment.length === 0 ? (
               <p className="text-gray-500 italic">Uw kantoor heeft momenteel geen assortiment geselecteerd. Neem contact op met uw office manager.</p>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {assortment.map(product => (
-                  <div 
-                    key={product}
-                    onClick={() => setSelectedProduct(product)}
-                    className={`cursor-pointer rounded-xl border-2 transition-all p-3 flex flex-col items-center text-center gap-3 ${selectedProduct === product ? 'border-ob-blue bg-blue-50/20' : 'border-gray-100 hover:border-gray-300'}`}
-                  >
-                    <div className="w-20 h-20 rounded-full overflow-hidden bg-gray-50 flex items-center justify-center shrink-0">
-                      {PRODUCT_IMAGES[product] ? (
-                        <img src={PRODUCT_IMAGES[product]} alt={product} className="w-full h-full object-cover" />
-                      ) : (
-                        <PackageOpen className="text-gray-400" />
-                      )}
+              <div className="space-y-4">
+                {assortment.map(product => {
+                  const isSelected = !!selections[product];
+                  return (
+                    <div key={product} className={`border-2 rounded-xl p-4 transition-all ${isSelected ? 'border-ob-blue bg-blue-50/10' : 'border-gray-100'}`}>
+                      <div className="flex flex-col md:flex-row md:items-center gap-4">
+                        <div className="flex items-center gap-4 md:w-1/3">
+                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-50 shrink-0">
+                            {PRODUCT_IMAGES[product] ? (
+                              <img src={PRODUCT_IMAGES[product]} alt={product} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                <PackageOpen size={24} />
+                              </div>
+                            )}
+                          </div>
+                          <span className="font-semibold text-ob-text text-lg">{product}</span>
+                        </div>
+                        
+                        <div className="flex-1 flex flex-wrap gap-2">
+                          {PORTION_SIZES.map(size => {
+                            const price = prices[`${product}_${size}`];
+                            const isSizeSelected = selections[product] === size;
+                            
+                            // If no price is set for this product+size, we disable it
+                            const hasPrice = price !== undefined;
+                            
+                            return (
+                              <button
+                                key={size}
+                                type="button"
+                                disabled={!hasPrice}
+                                onClick={() => {
+                                  setSelections(prev => {
+                                    const next = { ...prev };
+                                    if (next[product] === size) delete next[product];
+                                    else next[product] = size;
+                                    return next;
+                                  });
+                                }}
+                                className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg border text-center transition-all ${!hasPrice ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : isSizeSelected ? 'border-ob-blue bg-ob-blue text-white shadow-sm' : 'border-gray-200 hover:border-ob-blue text-gray-700 bg-white'}`}
+                              >
+                                <div className="font-bold">{size}</div>
+                                <div className={`text-xs ${isSizeSelected ? 'text-blue-100' : 'text-gray-500'}`}>
+                                  {hasPrice ? `€${price.toFixed(2)}` : '-'}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                    <span className="font-semibold text-sm text-ob-text">{product}</span>
-                  </div>
-                ))}
+                  );
+                })}
+              </div>
+            )}
+            
+            {Object.keys(selections).length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-100 flex justify-between items-center">
+                <span className="font-bold text-gray-700">Totaalbedrag:</span>
+                <span className="text-2xl font-bold text-ob-blue">
+                  €{Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[`${prod}_${size}`] || 0), 0).toFixed(2)}
+                </span>
               </div>
             )}
           </section>
 
-          {/* Step 2: Portion Size */}
+          {/* Step 2: Delivery Details */}
           <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold text-ob-text mb-6 flex items-center gap-2">
               <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm">2</span> 
-              Portiegrootte
-            </h2>
-            
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {PORTION_SIZES.map(size => (
-                <div 
-                  key={size}
-                  onClick={() => setSelectedPortion(size)}
-                  className={`cursor-pointer rounded-xl border-2 transition-all p-4 text-center ${selectedPortion === size ? 'border-ob-blue bg-blue-50/20' : 'border-gray-100 hover:border-gray-300'}`}
-                >
-                  <div className="text-2xl font-bold text-ob-text mb-1">{size}</div>
-                  <div className="text-sm text-gray-500 mb-2">stuks</div>
-                  <div className="font-semibold text-ob-blue">
-                    {prices[size] ? `€${prices[size].toFixed(2)}` : '-'}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Step 3: Delivery Details */}
-          <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-            <h2 className="text-xl font-bold text-ob-text mb-6 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm">3</span> 
               Aflevergegevens
             </h2>
             
@@ -342,7 +413,7 @@ export function EmployeeOrdering() {
           <div className="pt-4">
             <button 
               type="submit" 
-              disabled={isSubmitting || !selectedProduct || !selectedPortion || !selectedAddress || !phone}
+              disabled={isSubmitting || Object.keys(selections).length === 0 || !selectedAddress || !phone}
               className="w-full bg-[#05053D] text-white py-4 rounded-xl font-bold text-lg hover:bg-ob-blue transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               {isSubmitting ? 'Bezig met plaatsen...' : <><ShoppingBag size={20} /> Bestelling Plaatsen</>}

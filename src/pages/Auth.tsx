@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Building, Mail, Phone, Lock, CheckCircle2 } from 'lucide-react';
+import { LogIn, UserPlus, Building, Mail, Phone, Lock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 type AuthMode = 'login' | 'register' | 'success';
@@ -16,6 +16,7 @@ export function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
@@ -44,6 +45,8 @@ export function Auth() {
           
           if (profile?.role === 'admin') {
             navigate('/');
+          } else if (profile?.role === 'employee') {
+            navigate('/order');
           } else {
             navigate('/dashboard');
           }
@@ -189,14 +192,17 @@ export function Auth() {
                   <label className="block text-sm font-semibold text-ob-text mb-1.5">Wachtwoord</label>
                   <div className="relative">
                     <input 
-                      type="password" 
+                      type={showPassword ? "text" : "password"} 
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 focus:outline-none focus:border-ob-blue focus:ring-1 focus:ring-ob-blue transition-colors"
+                      className="w-full pl-10 pr-10 py-3 border border-gray-200 focus:outline-none focus:border-ob-blue focus:ring-1 focus:ring-ob-blue transition-colors"
                       placeholder="••••••••"
                     />
                     <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none">
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </div>
 
@@ -278,17 +284,20 @@ export function Auth() {
                   <div>
                     <label className="block text-sm font-semibold text-ob-text mb-1.5">Wachtwoord</label>
                     <div className="relative">
-                      <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} minLength={6}
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 focus:outline-none focus:border-ob-blue" placeholder="Minimaal 6 tekens" />
+                      <input type={showPassword ? "text" : "password"} required value={password} onChange={(e) => setPassword(e.target.value)} minLength={6}
+                        className="w-full pl-10 pr-10 py-2.5 border border-gray-200 focus:outline-none focus:border-ob-blue" placeholder="Minimaal 6 tekens" />
                       <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none">
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
                     </div>
                   </div>
                   
                   <div>
                     <label className="block text-sm font-semibold text-ob-text mb-1.5">Wachtwoord Controle</label>
                     <div className="relative">
-                      <input type="password" required value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} minLength={6}
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 focus:outline-none focus:border-ob-blue" placeholder="Herhaal wachtwoord" />
+                      <input type={showPassword ? "text" : "password"} required value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} minLength={6}
+                        className="w-full pl-10 pr-10 py-2.5 border border-gray-200 focus:outline-none focus:border-ob-blue" placeholder="Herhaal wachtwoord" />
                       <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     </div>
                   </div>

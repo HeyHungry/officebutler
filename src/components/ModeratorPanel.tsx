@@ -2,6 +2,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice } from '../lib/supabase';
 import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 
 type ModeratorPanelProps = {
   isOpen: boolean;
@@ -10,6 +11,23 @@ type ModeratorPanelProps = {
   storeSettings?: StoreSettings;
   onSettingsUpdated: (settings: SharedSettings) => void;
   onStoreSettingsUpdated?: (settings: StoreSettings) => void;
+};
+
+
+const AVAILABLE_PRODUCTS = [
+  'Bitterballen Deal', 'Dutch Classic Deal', 'Deluxe Deal', 'Chicken Deal', 'Vega Deal',
+  'Snack Mix', 'Bitterballen', 'Vlammetjes', 'Frikandelletjes', 'Mini Kroketjes', 
+  'Chicken Wings', 'Kipnuggets', 'Karaage Kip', 'Butterfly Gamba\'s',
+  'Kaasstengels', 'Curry Samosas', 'Mini Loempia', 'Vegan Bitterballen'
+];
+const PORTIONS = [25, 50, 100, 150];
+
+type ObProductPrice = {
+  id?: string;
+  company_id: string | null;
+  product_name: string;
+  portion_size: number;
+  price: number;
 };
 
 const DAYS_OF_WEEK = [
@@ -25,6 +43,7 @@ const DAYS_OF_WEEK = [
 type Tab = 'store' | 'registrations' | 'prices' | 'customers';
 
 export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSettingsUpdated, onStoreSettingsUpdated }: ModeratorPanelProps) {
+  const navigate = useNavigate();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +59,11 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [activeTab, setActiveTab] = useState<Tab>('store');
   const [registrations, setRegistrations] = useState<ObCompany[]>([]);
   const [customers, setCustomers] = useState<ObCompany[]>([]);
-  const [prices, setPrices] = useState<ObPortionPrice[]>([]);
+  
+  const [productPrices, setProductPrices] = useState<ObProductPrice[]>([]);
+  const [selectedPriceProduct, setSelectedPriceProduct] = useState(AVAILABLE_PRODUCTS[0]);
+  const [selectedPriceCompany, setSelectedPriceCompany] = useState<string | null>(null);
+
   const [impersonating, setImpersonating] = useState<ObCompany | null>(null);
 
   useEffect(() => {
@@ -71,13 +94,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       // Mock data for preview
       setRegistrations([{ id: 'mock-1', name: 'Test BV', address: 'Amsterdam', phone: '061234', billing_email: 'test@test.nl', is_approved: false, created_at: new Date().toISOString() }]);
       setCustomers([{ id: 'mock-2', name: 'Approved BV', address: 'Rotterdam', phone: '069876', billing_email: 'info@app.nl', is_approved: true, created_at: new Date().toISOString() }]);
-      setPrices([
-        { id: 1, portion_size: 20, price: 29.99 },
-        { id: 2, portion_size: 40, price: 59.99 },
-        { id: 3, portion_size: 60, price: 89.99 },
-        { id: 4, portion_size: 80, price: 119.99 },
-        { id: 5, portion_size: 100, price: 149.99 }
-      ]);
+      setProductPrices([]);
       return;
     }
 
@@ -88,18 +105,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       const { data: custData } = await supabase.from('ob_companies').select('*').eq('is_approved', true).order('name', { ascending: true });
       if (custData) setCustomers(custData);
 
-      const { data: priceData } = await supabase.from('ob_portion_prices').select('*').order('portion_size', { ascending: true });
-      if (priceData && priceData.length > 0) setPrices(priceData);
-      else {
-        // Fallback array if DB is empty
-        setPrices([
-          { id: 1, portion_size: 20, price: 29.99 },
-          { id: 2, portion_size: 40, price: 59.99 },
-          { id: 3, portion_size: 60, price: 89.99 },
-          { id: 4, portion_size: 80, price: 119.99 },
-          { id: 5, portion_size: 100, price: 149.99 }
-        ]);
-      }
+      
+      const { data: priceData } = await supabase.from('ob_product_prices').select('*');
+      if (priceData) setProductPrices(priceData);
     } catch (e) {
       console.error(e);
     }
@@ -209,30 +217,58 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     }
   };
 
-  const handlePriceChange = (id: number, value: string) => {
-    const numValue = parseFloat(value);
-    setPrices(prices.map(p => p.id === id ? { ...p, price: isNaN(numValue) ? 0 : numValue } : p));
-  };
-
-  const handleSavePrices = async () => {
-    if (!supabase) {
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
-      return;
-    }
-    
+  const handleSaveProductPrices = async () => {
     setIsSaving(true);
     try {
-      for (const p of prices) {
-        await supabase.from('ob_portion_prices').upsert({ id: p.id, portion_size: p.portion_size, price: p.price });
+      if (supabase) {
+        for (const p of productPrices) {
+          if (p.price > 0) {
+            // First check if it exists
+            const { data: existing } = await supabase.from('ob_product_prices')
+              .select('id')
+              .eq('product_name', p.product_name)
+              .eq('portion_size', p.portion_size)
+              .is('company_id', p.company_id || null)
+              .maybeSingle();
+              
+            if (existing) {
+              await supabase.from('ob_product_prices').update({ price: p.price }).eq('id', existing.id);
+            } else {
+              await supabase.from('ob_product_prices').insert({
+                company_id: p.company_id,
+                product_name: p.product_name,
+                portion_size: p.portion_size,
+                price: p.price
+              });
+            }
+          }
+        }
+        
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
       }
-      setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e) {
       console.error(e);
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleProductPriceChange = (portion: number, value: string) => {
+    const numValue = parseFloat(value) || 0;
+    setProductPrices(prev => {
+      const exists = prev.find(p => p.product_name === selectedPriceProduct && p.company_id === selectedPriceCompany && p.portion_size === portion);
+      if (exists) {
+        return prev.map(p => p === exists ? { ...p, price: numValue } : p);
+      } else {
+        return [...prev, { company_id: selectedPriceCompany, product_name: selectedPriceProduct, portion_size: portion, price: numValue }];
+      }
+    });
+  };
+  
+  const getDisplayPrice = (portion: number) => {
+    const p = productPrices.find(p => p.product_name === selectedPriceProduct && p.company_id === selectedPriceCompany && p.portion_size === portion);
+    return p ? p.price : '';
   };
 
   return (
@@ -344,7 +380,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           <div className="pt-4">
                             <button 
                               onClick={() => {
-                                window.open(`/dashboard?companyId=${impersonating.id}`, '_blank');
+                                navigate(`/dashboard?companyId=${impersonating.id}`);
+                                onClose();
                               }}
                               className="inline-flex items-center gap-2 px-6 py-3 bg-ob-blue text-white rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors"
                             >
@@ -479,17 +516,45 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       </div>
                     ) : activeTab === 'prices' ? (
                       <div className="space-y-6 max-w-2xl">
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
                           <div>
-                            <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-1">Portie Prijzen</h3>
-                            <p className="text-sm text-gray-500">Stel hier de standaardprijzen in voor de verschillende portiegroottes.</p>
+                            <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-1">Prijzen & Deals Beheren</h3>
+                            <p className="text-sm text-gray-500">Stel de prijzen in per product per portie, en pas eventueel specifieke deals per kantoor toe.</p>
                           </div>
-                          <button onClick={handleSavePrices} disabled={isSaving} className="bg-[#111827] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1f2937] transition-colors disabled:opacity-50 shrink-0">
+                          <button onClick={handleSaveProductPrices} disabled={isSaving} className="bg-[#111827] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1f2937] transition-colors disabled:opacity-50 shrink-0">
                             {isSaving ? 'Bezig...' : 'Prijzen Opslaan'}
                           </button>
                         </div>
                         {saveSuccess && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-6 text-sm flex items-center gap-2"><span>Prijzen succesvol opgeslagen!</span></div>}
                         
+                        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                           <div className="flex-1">
+                             <label className="block text-sm font-semibold text-gray-700 mb-2">Product</label>
+                             <select 
+                               value={selectedPriceProduct}
+                               onChange={(e) => setSelectedPriceProduct(e.target.value)}
+                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
+                             >
+                               {AVAILABLE_PRODUCTS.map(prod => (
+                                 <option key={prod} value={prod}>{prod}</option>
+                               ))}
+                             </select>
+                           </div>
+                           <div className="flex-1">
+                             <label className="block text-sm font-semibold text-gray-700 mb-2">Bedrijfsdeal (Optioneel)</label>
+                             <select 
+                               value={selectedPriceCompany || ''}
+                               onChange={(e) => setSelectedPriceCompany(e.target.value === '' ? null : e.target.value)}
+                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
+                             >
+                               <option value="">Standaard (Geen deal)</option>
+                               {customers.map(c => (
+                                 <option key={c.id} value={c.id}>{c.name}</option>
+                               ))}
+                             </select>
+                           </div>
+                        </div>
+
                         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                           <table className="w-full text-left text-sm">
                             <thead className="bg-gray-50 border-b border-gray-200">
@@ -499,9 +564,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                              {prices.map(p => (
-                                <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
-                                  <td className="px-6 py-4 font-medium text-gray-900">{p.portion_size} stuks</td>
+                              {PORTIONS.map(portion => (
+                                <tr key={portion} className="hover:bg-gray-50/50 transition-colors">
+                                  <td className="px-6 py-4 font-medium text-gray-900">{portion} stuks</td>
                                   <td className="px-6 py-4 text-right">
                                     <div className="relative inline-flex items-center justify-end w-32 ml-auto">
                                       <span className="absolute left-3 text-gray-500">€</span>
@@ -509,8 +574,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                         type="number" 
                                         min="0"
                                         step="0.01"
-                                        value={p.price}
-                                        onChange={(e) => handlePriceChange(p.id, e.target.value)}
+                                        value={getDisplayPrice(portion)}
+                                        onChange={(e) => handleProductPriceChange(portion, e.target.value)}
                                         className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33] focus:ring-1 focus:ring-[#151f33] text-right"
                                       />
                                     </div>
@@ -520,6 +585,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             </tbody>
                           </table>
                         </div>
+                        <p className="text-xs text-gray-400 mt-2">Laat het veld leeg als de portie niet beschikbaar is.</p>
                       </div>
                     ) : null}
                   </div>
