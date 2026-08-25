@@ -15,7 +15,6 @@ type ModeratorPanelProps = {
 
 
 const AVAILABLE_PRODUCTS = [
-  'Bitterballen Deal', 'Dutch Classic Deal', 'Deluxe Deal', 'Chicken Deal', 'Vega Deal',
   'Snack Mix', 'Bitterballen', 'Vlammetjes', 'Frikandelletjes', 'Mini Kroketjes', 
   'Chicken Wings', 'Kipnuggets', 'Karaage Kip', 'Butterfly Gamba\'s',
   'Kaasstengels', 'Curry Samosas', 'Mini Loempia', 'Vegan Bitterballen'

@@ -14,11 +14,6 @@ type Address = {
 
 // Extracted from Menu.tsx
 const AVAILABLE_PRODUCTS = [
-  { name: 'Bitterballen Deal', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_326b38dcee73a775f892e835c057c0bd82a331ff30cac86050212b55404a5e3d/responsive320' },
-  { name: 'Dutch Classic Deal', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/3f0af910-b1b9-498c-b744-5d20c6c8b600/responsive320' },
-  { name: 'Deluxe Deal', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/efa8dd02-7551-4367-9b38-40ed4e3c6600/responsive320' },
-  { name: 'Chicken Deal', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_d536a8e36dbb3466292358eb7220e395cf43a00f539abdc333d35ef625a63982/responsive320' },
-  { name: 'Vega Deal', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_707cf27d8a142b4b2a4a95940d7cc906c9a7c3a7a86d3f6e8589924d38557734/responsive320' },
   { name: 'Snack Mix', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_0743d367c64afbf145e9c0fea03ba65553996e64ffef54a95252060ee7ac758c/responsive320' },
   { name: 'Bitterballen', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/233e7d3e-19d8-4504-adf9-2100d5c71800/responsive640' },
   { name: 'Vlammetjes', image: 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/c3a12a9a-1fd9-4041-11a7-c2ba71d3c100/responsive960' },
@@ -79,7 +74,7 @@ export function CompanyDashboard() {
       setBillingInfo(mockComp.billing_info || '');
       setAllowedDomain(mockComp.allowed_email_domain || '');
       setAddresses([{ id: 'a1', label: 'Hoofdkantoor', address_line: 'Straat 1, Ams', instructions: 'Bellen bij receptie' }]);
-      setSelectedProducts(['Bitterballen Deal', 'Bitterballen']);
+      setSelectedProducts(['Snack Mix', 'Bitterballen']);
       setIsLoading(false);
       return;
     }

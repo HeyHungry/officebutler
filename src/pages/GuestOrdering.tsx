@@ -5,31 +5,6 @@ import { Link, useLocation } from 'react-router-dom';
 
 const menuCategories = [
   {
-    "title": "Deals",
-    "items": [
-      {
-        "name": "Bitterballen Deal",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_326b38dcee73a775f892e835c057c0bd82a331ff30cac86050212b55404a5e3d/responsive320"
-      },
-      {
-        "name": "Dutch Classic Deal",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/3f0af910-b1b9-498c-b744-5d20c6c8b600/responsive320"
-      },
-      {
-        "name": "Deluxe Deal",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/efa8dd02-7551-4367-9b38-40ed4e3c6600/responsive320"
-      },
-      {
-        "name": "Chicken Deal",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_d536a8e36dbb3466292358eb7220e395cf43a00f539abdc333d35ef625a63982/responsive320"
-      },
-      {
-        "name": "Vega Deal",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_707cf27d8a142b4b2a4a95940d7cc906c9a7c3a7a86d3f6e8589924d38557734/responsive320"
-      }
-    ]
-  },
-  {
     "title": "Snacks",
     "items": [
       {
@@ -94,14 +69,8 @@ const menuCategories = [
 ];
 
 export function GuestOrdering() {
-  const [assortment, setAssortment] = useState<string[]>(['Bitterballen Deal', 'Vega Deal', 'Snack Mix']);
+  const [assortment, setAssortment] = useState<string[]>(['Snack Mix', 'Bitterballen']);
   const [prices, setPrices] = useState<Record<string, number>>({ 
-    'Bitterballen Deal_25': 25.50, 'Bitterballen Deal_50': 48.00,
-    'Dutch Classic Deal_25': 24.50, 'Dutch Classic Deal_50': 46.00,
-    'Deluxe Deal_25': 29.50, 'Deluxe Deal_50': 55.00,
-    'Chicken Deal_25': 27.50, 'Chicken Deal_50': 52.00,
-    'Vega Deal_25': 26.50, 'Vega Deal_50': 49.00,
-    
     'Snack Mix_25': 24.00, 'Snack Mix_50': 45.00,
     'Bitterballen_25': 22.00, 'Bitterballen_50': 40.00,
     'Vlammetjes_25': 25.00, 'Vlammetjes_50': 47.00,

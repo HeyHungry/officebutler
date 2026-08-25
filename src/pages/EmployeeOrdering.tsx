@@ -5,11 +5,6 @@ import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar
 import { motion } from 'framer-motion';
 
 const PRODUCT_IMAGES: Record<string, string> = {
-  'Bitterballen Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_326b38dcee73a775f892e835c057c0bd82a331ff30cac86050212b55404a5e3d/responsive320',
-  'Dutch Classic Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/3f0af910-b1b9-498c-b744-5d20c6c8b600/responsive320',
-  'Deluxe Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/efa8dd02-7551-4367-9b38-40ed4e3c6600/responsive320',
-  'Chicken Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_d536a8e36dbb3466292358eb7220e395cf43a00f539abdc333d35ef625a63982/responsive320',
-  'Vega Deal': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_707cf27d8a142b4b2a4a95940d7cc906c9a7c3a7a86d3f6e8589924d38557734/responsive320',
   'Snack Mix': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_0743d367c64afbf145e9c0fea03ba65553996e64ffef54a95252060ee7ac758c/responsive320',
   'Bitterballen': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/233e7d3e-19d8-4504-adf9-2100d5c71800/responsive640',
   'Vlammetjes': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/c3a12a9a-1fd9-4041-11a7-c2ba71d3c100/responsive960',
@@ -70,11 +65,11 @@ export function EmployeeOrdering() {
 
   const fetchData = async () => {
     if (!supabase) {
-      setAssortment(['Bitterballen Deal', 'Vega Deal', 'Snack Mix']);
+      setAssortment(['Snack Mix', 'Bitterballen']);
       setAddresses([{ id: 'a1', label: 'Receptie', address_line: 'Straat 1' }]);
       setPrices({ 
-        'Bitterballen Deal_25': 25.50, 'Bitterballen Deal_50': 48.00,
-        'Vega Deal_25': 26.50, 'Vega Deal_50': 49.00,
+        'Snack Mix_25': 24.00, 'Snack Mix_50': 45.00,
+        'Bitterballen_25': 22.00, 'Bitterballen_50': 40.00,
       });
       setCompanyName("Mock Company BV");
       setIsLoading(false);
