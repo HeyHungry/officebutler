@@ -4,7 +4,7 @@ import { useOrderModal } from '../contexts/OrderModalContext';
 import { useNavigate } from 'react-router-dom';
 
 export function OrderModal() {
-  const { step, closeModal, openStep2 } = useOrderModal();
+  const { step, deliveryPref, closeModal, openStep2 } = useOrderModal();
   const navigate = useNavigate();
 
   if (step === 'none') return null;
@@ -57,9 +57,7 @@ export function OrderModal() {
                 </button>
 
                 <button
-                  onClick={() => openStep2()}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
-                >
+                  onClick={() => openStep2('scheduled')} className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group">
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
                     <Clock size={24} />
                   </div>
@@ -70,7 +68,7 @@ export function OrderModal() {
                 </button>
 
                 <button
-                  onClick={() => openStep2()}
+                  onClick={() => openStep2('zsm')}
                   className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
                 >
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
@@ -89,7 +87,7 @@ export function OrderModal() {
                 <button
                   onClick={() => {
                     closeModal();
-                    navigate('/auth');
+                    navigate('/auth', { state: { deliveryMode: deliveryPref } });
                   }}
                   className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
                 >
@@ -105,7 +103,7 @@ export function OrderModal() {
                 <button
                   onClick={() => {
                     closeModal();
-                    navigate('/guest-order');
+                    navigate('/guest-order', { state: { deliveryMode: deliveryPref } });
                   }}
                   className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
                 >

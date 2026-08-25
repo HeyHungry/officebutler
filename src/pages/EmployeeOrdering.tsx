@@ -57,7 +57,9 @@ export function EmployeeOrdering() {
   const [selectedAddress, setSelectedAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
-  const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>('zsm');
+  const sessionPref = sessionStorage.getItem('deliveryPref');
+  const initialDeliveryMode = sessionPref === 'scheduled' ? 'scheduled' : 'zsm';
+  const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>(initialDeliveryMode);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
 

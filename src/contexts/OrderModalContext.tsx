@@ -4,8 +4,9 @@ type OrderModalStep = 'none' | 'step1' | 'step2';
 
 interface OrderModalContextType {
   step: OrderModalStep;
+  deliveryPref: 'zsm' | 'scheduled';
   openStep1: () => void;
-  openStep2: () => void;
+  openStep2: (pref?: 'zsm' | 'scheduled') => void;
   closeModal: () => void;
 }
 
@@ -13,9 +14,18 @@ const OrderModalContext = createContext<OrderModalContextType | undefined>(undef
 
 export function OrderModalProvider({ children }: { children: ReactNode }) {
   const [step, setStep] = useState<OrderModalStep>('none');
+  const [deliveryPref, setDeliveryPref] = useState<'zsm' | 'scheduled'>('zsm');
 
-  const openStep1 = () => setStep('step1');
-  const openStep2 = () => setStep('step2');
+  const openStep1 = () => {
+    setStep('step1');
+  };
+  const openStep2 = (pref?: 'zsm' | 'scheduled') => {
+    if (pref) {
+      setDeliveryPref(pref);
+      sessionStorage.setItem('deliveryPref', pref);
+    }
+    setStep('step2');
+  };
   const closeModal = () => setStep('none');
 
   return (

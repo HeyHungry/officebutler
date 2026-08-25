@@ -36,9 +36,9 @@ export function Hero() {
           
           <div className="font-serif flex flex-col items-center justify-center gap-6">
             <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto justify-center">
-              <button onClick={openStep2} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel vooraf</span><CalendarClock size={18} className="font-serif group-hover:scale-110 transition-transform" /></button>
+              <button onClick={() => openStep2('scheduled')} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel vooraf</span><CalendarClock size={18} className="font-serif group-hover:scale-110 transition-transform" /></button>
 
-              <button onClick={openStep2} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel direct</span><ArrowRight size={18} className="font-serif group-hover:translate-x-1 transition-transform" /></button>
+              <button onClick={() => openStep2('zsm')} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel direct</span><ArrowRight size={18} className="font-serif group-hover:translate-x-1 transition-transform" /></button>
             </div>
             
             <a 

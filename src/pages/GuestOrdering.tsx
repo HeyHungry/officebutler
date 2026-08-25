@@ -1,7 +1,7 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const menuCategories = [
   {
@@ -124,11 +124,15 @@ export function GuestOrdering() {
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [guestBillingInfo, setGuestBillingInfo] = useState('');
+  const location = useLocation();
+  const sessionPref = sessionStorage.getItem('deliveryPref');
+  const initialDeliveryMode = (location.state?.deliveryMode === 'scheduled' || sessionPref === 'scheduled') ? 'scheduled' : 'zsm';
+
   const [guestAddress, setGuestAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   
-  const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>('zsm');
+  const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>(initialDeliveryMode);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
 
@@ -145,7 +149,7 @@ export function GuestOrdering() {
           const newPrices: Record<string, number> = {};
           const productNames = new Set<string>();
           globalPrices.forEach(gp => {
-            newPrices[`${gp.product_name}_${gp.portion_size}`] = gp.default_price;
+            newPrices[`${gp.product_name}_${gp.portion_size}`] = gp.price || gp.default_price;
             productNames.add(gp.product_name);
           });
           // We merge the fetched prices with the hardcoded ones so we don't lose the hardcoded ones if the DB is empty
@@ -309,9 +313,11 @@ Extra Notities: ${notes}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {category.items.map((item) => {
                         const product = item.name;
-                        const price25 = prices[product + "_25"];
-                        const price50 = prices[product + "_50"];
                         const selectedSize = selections[product];
+                        const productSizes = Object.keys(prices)
+                          .filter(key => key.startsWith(product + "_"))
+                          .map(key => parseInt(key.split("_")[1], 10))
+                          .sort((a, b) => a - b);
                         
                         return (
                           <div key={product} className={"flex gap-4 border rounded-xl p-4 transition-all " + (selectedSize ? 'border-ob-blue bg-blue-50/30 shadow-sm' : 'border-gray-200 hover:border-ob-blue/30')}>
@@ -324,27 +330,21 @@ Extra Notities: ${notes}
                                 <h4 className="font-bold text-gray-900 leading-tight">{product}</h4>
                               </div>
                               
-                              <div className="flex flex-wrap gap-2 mt-auto">
-                                {price25 !== undefined && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePortionSelect(product, 25)}
-                                    className={"px-3 py-1.5 text-xs rounded-lg border transition-colors " + (selectedSize === 25 ? 'bg-ob-blue text-white border-ob-blue font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-ob-blue')}
-                                  >
-                                    25 st. (€{price25.toFixed(2)})
-                                  </button>
-                                )}
-                                {price50 !== undefined && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePortionSelect(product, 50)}
-                                    className={"px-3 py-1.5 text-xs rounded-lg border transition-colors " + (selectedSize === 50 ? 'bg-ob-blue text-white border-ob-blue font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-ob-blue')}
-                                  >
-                                    50 st. (€{price50.toFixed(2)})
-                                  </button>
-                                )}
-                                {price25 === undefined && price50 === undefined && (
-                                  <span className="text-xs text-gray-400 italic">Prijs wordt geladen...</span>
+                              <div className="grid grid-cols-2 gap-2 mt-auto w-full">
+                                {productSizes.length > 0 ? (
+                                  productSizes.map(size => (
+                                    <button
+                                      key={size}
+                                      type="button"
+                                      onClick={() => handlePortionSelect(product, size)}
+                                      className={"p-2 text-xs rounded-lg border transition-colors flex flex-col items-center justify-center gap-0.5 " + (selectedSize === size ? 'bg-ob-blue text-white border-ob-blue font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-ob-blue')}
+                                    >
+                                      <span className="font-semibold text-[13px]">{size} st.</span>
+                                      <span className={selectedSize === size ? "text-white/90" : "text-gray-500"}>€{prices[product + "_" + size].toFixed(2)}</span>
+                                    </button>
+                                  ))
+                                ) : (
+                                  <span className="text-xs text-gray-400 italic col-span-2">Prijs wordt geladen...</span>
                                 )}
                               </div>
 
