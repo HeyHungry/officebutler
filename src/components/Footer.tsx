@@ -78,12 +78,9 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
 
         </div>
 
-        {/* Bottom links */}
-        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/60 font-sans">
-          <a href="#" className="hover:text-white transition-colors">Zakelijk</a>
-          <a href="#" className="hover:text-white transition-colors">Rondvaart</a>
-          <a href="#" className="hover:text-white transition-colors">Verhuur</a>
-          <a href="#" className="hover:text-white transition-colors">Vacatures</a>
+        {/* Bottom info */}
+        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/40 font-sans mt-8">
+          <span>&copy; {new Date().getFullYear()} Office Butler</span>
         </div>
 
       </div>

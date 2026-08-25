@@ -39,18 +39,7 @@ export function ContactFAQ({ settings }: ContactFAQProps) {
                 </div>
                 <div>
                   <h4 className="font-serif text-lg mb-1 font-semibold">E-mail</h4>
-                  <p className="font-serif text-ob-text-light font-serif">info@borrelbutler.nl</p>
-                </div>
-              </div>
-              
-              <div className="font-serif flex items-start gap-4">
-                <div className="font-serif bg-white p-3 rounded-full text-ob-blue shadow-sm shrink-0">
-                  <MapPin size={24} />
-                </div>
-                <div>
-                  <h4 className="font-serif text-lg mb-1 font-semibold">Keuken (Mokum Local Kitchen)</h4>
-                  <p className="font-serif text-ob-text-light font-serif">Hoofdweg 123, Amsterdam</p>
-                  <p className="font-serif text-sm text-ob-text-light/70 italic mt-1">Alleen voor afhalen (op afspraak) of bezorging.</p>
+                  <p className="font-serif text-ob-text-light font-serif">info@office-butler.com</p>
                 </div>
               </div>
             </div>

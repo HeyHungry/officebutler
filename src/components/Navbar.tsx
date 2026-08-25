@@ -83,15 +83,15 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
       }`}
     >
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8 flex items-center justify-between">
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-6 shrink-0">
           <a href="#" className="font-serif flex items-center justify-center overflow-hidden h-12 md:h-16 w-auto">
             <img src="https://i.imgur.com/ymXR7tL.png" alt="Office Butler" className="font-serif h-24 md:h-32 w-auto max-w-none" referrerPolicy="no-referrer" />
           </a>
           
           {storeSettings && (
-            <div className="hidden sm:flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-2 shrink-0">
               <span className={`w-2.5 h-2.5 rounded-full animate-pulse-slow ${isOpen ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`}></span>
-              <span className="text-white/90 font-serif text-sm font-medium tracking-wide">
+              <span className="text-white/90 font-serif text-sm font-medium tracking-wide whitespace-nowrap">
                 {isOpen ? 'Nu open' : 'Momenteel gesloten'}
               </span>
             </div>
@@ -99,25 +99,25 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
         </div>
 
         {/* Desktop Nav */}
-        <nav className="font-serif hidden md:flex items-center gap-8 font-serif">
+        <nav className="font-serif hidden lg:flex items-center gap-4 xl:gap-6 font-serif">
           {navLinks.map((link) => (
             <a 
               key={link.name} 
               href={link.href}
-              className="font-serif text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest"
+              className="font-serif text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest whitespace-nowrap"
             >
               {link.name}
             </a>
           ))}
           <a 
             href="/auth"
-            className="font-serif text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold"
+            className="font-serif text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap"
           >
             Inloggen
           </a>
           <button 
             
-            onClick={openStep1} className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:bg-gray-100 transition-colors duration-300 tracking-wider text-sm shadow-md font-semibold"
+            onClick={openStep1} className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:bg-gray-100 transition-colors duration-300 tracking-wider text-sm shadow-md font-semibold whitespace-nowrap shrink-0"
           >
             BESTEL NU
           </button>
@@ -125,7 +125,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
 
         {/* Mobile Menu Toggle */}
         <button 
-          className="font-serif md:hidden text-white"
+          className="font-serif lg:hidden text-white"
           onClick={() => setIsMobileMenuOpen(true)}
         >
           <Menu size={28} />
