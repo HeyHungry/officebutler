@@ -9,6 +9,9 @@ import {
 } from "./lib/supabase";
 
 import { Navbar } from "./components/Navbar";
+import { OrderModalProvider } from "./contexts/OrderModalContext";
+import { OrderModal } from "./components/OrderModal";
+import { GuestOrdering } from "./pages/GuestOrdering";
 import { Footer } from "./components/Footer";
 import { ModeratorPanel } from "./components/ModeratorPanel";
 import { WhatsAppWidget } from "./components/WhatsAppWidget";
@@ -62,6 +65,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <OrderModalProvider>
       <div className="font-serif min-h-screen flex flex-col relative selection:bg-ob-accent/30">
         <Navbar storeSettings={storeSettings} />
 
@@ -70,6 +74,7 @@ export default function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<CompanyDashboard />} />
           <Route path="/order" element={<EmployeeOrdering />} />
+          <Route path="/guest-order" element={<GuestOrdering />} />
         </Routes>
 
         <Footer onOpenModPanel={() => setIsModPanelOpen(true)} />
@@ -85,6 +90,8 @@ export default function App() {
           onStoreSettingsUpdated={setStoreSettings}
         />
       </div>
+            <OrderModal />
+      </OrderModalProvider>
     </BrowserRouter>
   );
 }

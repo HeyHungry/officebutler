@@ -46,14 +46,21 @@ export function BusinessRegistration() {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
-      // Verzend e-mail functionaliteit via de client
-      // In een echte productie-omgeving zou Supabase via een Edge Function of Webhook 
-      // een e-mail sturen naar info@office-butler.com wanneer een nieuwe rij wordt toegevoegd.
-      const subject = encodeURIComponent(`Nieuwe aanvraag: ${formData.companyName}`);
-      const body = encodeURIComponent(`Bedrijfsnaam: ${formData.companyName}\nContactpersoon: ${formData.contactPerson}\nE-mailadres: ${formData.email}\nTelefoonnummer: ${formData.phone}\n\nWensen:\n${formData.wishes}`);
-      
-      // Open e-mail client direct
-      window.location.href = `mailto:info@office-butler.com?subject=${subject}&body=${body}`;
+      try {
+        await fetch('/api/notify-admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            companyName: formData.companyName,
+            contactPerson: formData.contactPerson,
+            email: formData.email,
+            phone: formData.phone,
+            wishes: formData.wishes
+          })
+        });
+      } catch (emailErr) {
+        console.error("Kon email niet verzenden via API:", emailErr);
+      }
 
       setIsSuccess(true);
       setFormData({ companyName: '', contactPerson: '', email: '', phone: '', wishes: '' });

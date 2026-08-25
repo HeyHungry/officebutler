@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 } from 'lucide-react';
+import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const PRODUCT_IMAGES: Record<string, string> = {
@@ -57,6 +57,10 @@ export function EmployeeOrdering() {
   const [selectedAddress, setSelectedAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
+  const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>('zsm');
+  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryTime, setDeliveryTime] = useState('');
+
 
   useEffect(() => {
     fetchData();
@@ -137,7 +141,7 @@ export function EmployeeOrdering() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (Object.keys(selections).length === 0 || !selectedAddress || !phone) {
+    if (Object.keys(selections).length === 0 || !selectedAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))) {
       setError("Selecteer a.u.b. minimaal één product en vul uw contactgegevens in.");
       return;
     }
@@ -157,17 +161,21 @@ export function EmployeeOrdering() {
       try {
         const orderPromises = Object.entries(selections).map(([prod, size]) => {
           const price = prices[`${prod}_${size}`] || 0;
+          
           return supabase.from('ob_orders').insert({
             company_id: companyId,
             user_id: userId,
             product_name: prod,
             portion_size: size,
             price: price,
-            total_price: price, // Added to satisfy DB NOT NULL constraint
+            total_price: price,
             address_id: selectedAddress,
             phone: phone,
-            notes: notes
+            notes: notes,
+            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
           });
+
         });
         
         
@@ -180,6 +188,7 @@ export function EmployeeOrdering() {
           await fetch('/api/send-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            
             body: JSON.stringify({
               companyId,
               selections,
@@ -187,8 +196,11 @@ export function EmployeeOrdering() {
               addressId: selectedAddress,
               phone,
               notes,
-              totalOrderPrice
+              totalOrderPrice,
+              deliveryDate: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+              deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
             })
+
           });
         } catch (emailErr) {
           console.error("Kon email niet verzenden:", emailErr);
@@ -381,6 +393,66 @@ export function EmployeeOrdering() {
                 )}
               </div>
 
+              
+              {/* Delivery Time Selection */}
+              <div className="border-b border-gray-100 pb-6 mb-6">
+                <label className="block text-sm font-semibold text-ob-text mb-3 flex items-center gap-2">
+                  <Clock size={16} className="text-gray-400" /> Bezorgmoment
+                </label>
+                
+                <div className="flex gap-4 mb-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="deliveryMode" 
+                      value="zsm" 
+                      checked={deliveryMode === 'zsm'} 
+                      onChange={() => setDeliveryMode('zsm')}
+                      className="text-ob-blue focus:ring-ob-blue"
+                    />
+                    <span className="text-sm font-medium">Zo snel mogelijk</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="deliveryMode" 
+                      value="scheduled" 
+                      checked={deliveryMode === 'scheduled'} 
+                      onChange={() => setDeliveryMode('scheduled')}
+                      className="text-ob-blue focus:ring-ob-blue"
+                    />
+                    <span className="text-sm font-medium">Kies datum & tijd</span>
+                  </label>
+                </div>
+
+                {deliveryMode === 'scheduled' && (
+                  <div className="grid grid-cols-2 gap-4 mt-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
+                        <Calendar size={14} /> Datum
+                      </label>
+                      <input 
+                        type="date" 
+                        min={new Date().toISOString().split('T')[0]}
+                        value={deliveryDate}
+                        onChange={(e) => setDeliveryDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
+                        <Clock size={14} /> Tijd
+                      </label>
+                      <input 
+                        type="time" 
+                        value={deliveryTime}
+                        onChange={(e) => setDeliveryTime(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
               <div>
                 <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
                   <Phone size={16} className="text-gray-400" /> Telefoonnummer contactpersoon
@@ -413,7 +485,7 @@ export function EmployeeOrdering() {
           <div className="pt-4">
             <button 
               type="submit" 
-              disabled={isSubmitting || Object.keys(selections).length === 0 || !selectedAddress || !phone}
+              disabled={isSubmitting || Object.keys(selections).length === 0 || !selectedAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
               className="w-full bg-[#05053D] text-white py-4 rounded-xl font-bold text-lg hover:bg-ob-blue transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               {isSubmitting ? 'Bezig met plaatsen...' : <><ShoppingBag size={20} /> Bestelling Plaatsen</>}

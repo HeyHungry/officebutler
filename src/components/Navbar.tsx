@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X } from 'lucide-react';
 import { StoreSettings } from '../lib/supabase';
+import { useOrderModal } from '../contexts/OrderModalContext';
 
 export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
+  const { openStep1 } = useOrderModal();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -113,12 +115,12 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
           >
             Inloggen
           </a>
-          <a 
-            href="/#menu"
-            className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:bg-gray-100 transition-colors duration-300 tracking-wider text-sm shadow-md font-semibold"
+          <button 
+            
+            onClick={openStep1} className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:bg-gray-100 transition-colors duration-300 tracking-wider text-sm shadow-md font-semibold"
           >
             BESTEL NU
-          </a>
+          </button>
         </nav>
 
         {/* Mobile Menu Toggle */}
@@ -174,13 +176,12 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
               >
                 Inloggen
               </a>
-              <a 
-                href="/#menu"
-                onClick={() => setIsMobileMenuOpen(false)}
+              <button 
+                onClick={() => { openStep1(); setIsMobileMenuOpen(false); }}
                 className="font-serif bg-ob-blue text-white px-8 py-4 text-lg mt-4 inline-block mx-auto hover:bg-ob-blue-dark transition-colors"
               >
                 BESTEL NU
-              </a>
+              </button>
             </div>
           </motion.div>
         )}

@@ -1,7 +1,9 @@
 import { motion } from 'motion/react';
 import { ArrowRight, Utensils, CalendarClock } from 'lucide-react';
+import { useOrderModal } from '../contexts/OrderModalContext';
 
 export function Hero() {
+  const { openStep2 } = useOrderModal();
   return (
     <section className="font-serif relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden flex flex-col items-center justify-center min-h-[80vh]">
       {/* Background Image & Overlay */}
@@ -34,21 +36,9 @@ export function Hero() {
           
           <div className="font-serif flex flex-col items-center justify-center gap-6">
             <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto justify-center">
-              <a 
-                href="#menu"
-                className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"
-              >
-                <span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel vooraf</span>
-                <CalendarClock size={18} className="font-serif group-hover:scale-110 transition-transform" />
-              </a>
+              <button onClick={openStep2} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel vooraf</span><CalendarClock size={18} className="font-serif group-hover:scale-110 transition-transform" /></button>
 
-              <a 
-                href="#menu"
-                className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"
-              >
-                <span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel direct</span>
-                <ArrowRight size={18} className="font-serif group-hover:translate-x-1 transition-transform" />
-              </a>
+              <button onClick={openStep2} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:bg-gray-100 transition-all duration-300 shadow-lg hover:shadow-xl w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">Bestel direct</span><ArrowRight size={18} className="font-serif group-hover:translate-x-1 transition-transform" /></button>
             </div>
             
             <a 
