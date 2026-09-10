@@ -36,6 +36,7 @@ export function EmployeeOrdering() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [emailFailed, setEmailFailed] = useState(false);
   const [error, setError] = useState('');
   
   const [companyId, setCompanyId] = useState('');
@@ -182,7 +183,7 @@ export function EmployeeOrdering() {
 
         // Try to send the invoice email
         try {
-          await fetch('/api/send-invoice', {
+          const res = await fetch('/api/send-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             
@@ -235,6 +236,7 @@ export function EmployeeOrdering() {
           <h2 className="text-3xl font-bold text-ob-text mb-4">Bestelling Geplaatst!</h2>
           <p className="text-gray-600 mb-8 leading-relaxed">
             Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.
+            {emailFailed && <span className="block mt-4 text-orange-600 text-sm">Opmerking: Wegens een technische vertraging bij onze e-mailprovider duren bevestigingsmails momenteel iets langer dan gebruikelijk.</span>}
           </p>
           <button 
             onClick={() => {

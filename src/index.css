@@ -39,3 +39,22 @@
     @apply font-semibold tracking-wide text-ob-text;
   }
 }
+
+/* Custom Scrollbar for Horizontal Tables */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f8fafc; 
+  border-radius: 8px;
+  margin: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1; 
+  border-radius: 8px;
+  border: 2px solid #f8fafc;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; 
+}

@@ -3,7 +3,7 @@ import { supabase, ObCompany } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { Building, MapPin, Users, Package, Save, CheckCircle2, Plus, Trash2, Mail, Lock, UserPlus, Eye, EyeOff, ShoppingBag } from 'lucide-react';
 
-type Tab = 'settings' | 'addresses' | 'employees' | 'assortment';
+type Tab = 'settings' | 'addresses' | 'employees' | 'assortment' | 'orders';
 
 type Address = {
   id: string;
@@ -57,6 +57,7 @@ export function CompanyDashboard() {
   const [newEmpPassword, setNewEmpPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
 
   // Assortment State
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
@@ -135,6 +136,10 @@ export function CompanyDashboard() {
         // Fetch employees
         const { data: empData } = await supabase.from('ob_user_profiles').select('*').eq('company_id', comp.id).eq('role', 'employee');
         if (empData) setEmployees(empData);
+        
+        // Fetch orders
+        const { data: orderData } = await supabase.from('ob_orders').select('*, ob_company_addresses(*)').eq('company_id', comp.id).order('created_at', { ascending: false });
+        if (orderData) setOrders(orderData);
     } catch (e) {
       console.error(e);
       setError('Fout bij het laden van gegevens.');
@@ -313,7 +318,10 @@ export function CompanyDashboard() {
                 <button onClick={() => setActiveTab('employees')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'employees' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
                   <Users size={18} /> Werknemers
                 </button>
-                <button onClick={() => setActiveTab('assortment')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'assortment' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
+                <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'orders' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
+                    <ShoppingBag size={18} /> Bestelgeschiedenis
+                  </button>
+                  <button onClick={() => setActiveTab('assortment')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'assortment' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
                   <Package size={18} /> Assortiment
                 </button>
                 <div className="md:mt-4 p-4 shrink-0 border-t border-gray-100">
@@ -525,6 +533,110 @@ export function CompanyDashboard() {
                 </div>
               </div>
             )}
+
+            
+            {/* Tab: Orders */}
+            {activeTab === 'orders' && (
+              <div className="space-y-6 max-w-5xl">
+                <div>
+                  <h2 className="text-xl font-bold text-ob-text mb-2">Bestelgeschiedenis</h2>
+                  <p className="text-gray-500 text-sm">Een overzicht van alle geplaatste bestellingen door u of uw werknemers.</p>
+                </div>
+                
+                {(() => {
+                  const groupedOrders = Object.values(orders.reduce((acc, order) => {
+                    const dateKey = new Date(order.created_at).toISOString().slice(0, 16);
+                    const key = `${order.company_id || 'gast'}_${dateKey}_${order.delivery_date}_${order.delivery_time}`;
+                    if (!acc[key]) {
+                      let address = '';
+                      if (order.ob_company_addresses) {
+                        address = order.ob_company_addresses.address_line;
+                        if (order.ob_company_addresses.label) {
+                          address = `${order.ob_company_addresses.label} - ${address}`;
+                        }
+                      }
+
+                      acc[key] = {
+                        id: key,
+                        created_at: order.created_at,
+                        delivery_date: order.delivery_date,
+                        delivery_time: order.delivery_time,
+                        phone: order.phone || '',
+                        address: address,
+                        total_order_price: 0,
+                        items: []
+                      };
+                    }
+                    acc[key].items.push(order);
+                    acc[key].total_order_price += Number(order.total_price || 0);
+                    return acc;
+                  }, {} as Record<string, any>)).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+                  if (groupedOrders.length === 0) {
+                    return (
+                      <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                        <ShoppingBag className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+                        <h3 className="text-lg font-medium text-gray-900">Geen bestellingen gevonden</h3>
+                        <p className="text-gray-500 text-sm">Er zijn nog geen bestellingen geplaatst door dit bedrijf.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="w-full max-w-full overflow-auto custom-scrollbar bg-white border border-gray-200 rounded-xl max-h-[65vh]">
+                      <table className="w-full text-left border-collapse min-w-[900px]">
+                        <thead>
+                          <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                            <th className="p-4 font-semibold whitespace-nowrap">Datum (Besteld)</th>
+                            <th className="p-4 font-semibold min-w-[150px]">Contact & Adres</th>
+                            <th className="p-4 font-semibold min-w-[200px]">Bestelling (Producten)</th>
+                            <th className="p-4 font-semibold text-right">Totaalprijs</th>
+                            <th className="p-4 font-semibold whitespace-nowrap">Gewenste Levering</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {groupedOrders.map((group: any) => (
+                            <tr key={group.id} className="hover:bg-gray-50/50 align-top">
+                              <td className="p-4 text-sm text-gray-800 whitespace-nowrap">
+                                {new Date(group.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="p-4 text-sm text-gray-700">
+                                {group.phone && <div className="text-gray-900 font-medium">{group.phone}</div>}
+                                {group.address ? (
+                                  <div className="text-gray-500 text-xs mt-1 max-w-[200px]">{group.address}</div>
+                                ) : (
+                                  <span className="text-gray-400 italic text-xs">Geen adres</span>
+                                )}
+                              </td>
+                              <td className="p-4">
+                                <div className="space-y-2">
+                                  {group.items.map((item: any, i: number) => (
+                                    <div key={item.id || i} className="text-sm">
+                                      <span className="font-semibold text-gray-800">{item.product_name}</span>{' '}
+                                      <span className="text-gray-500">({item.portion_size} stuks)</span>
+                                      <div className="text-xs text-gray-400">€{Number(item.price || 0).toFixed(2)} per stuk</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="p-4 text-sm text-gray-900 font-bold text-right align-bottom">
+                                €{group.total_order_price.toFixed(2)}
+                              </td>
+                              <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
+                                {group.delivery_date ? new Date(group.delivery_date).toLocaleDateString('nl-NL') : 'Onbekend'}
+                                <br/>
+                                {group.delivery_time ? <span className="font-medium">{group.delivery_time}</span> : ''}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
 
             {/* Tab: Assortment */}
             {activeTab === 'assortment' && (

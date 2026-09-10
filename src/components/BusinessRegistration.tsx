@@ -13,6 +13,7 @@ export function BusinessRegistration() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [emailFailed, setEmailFailed] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e: FormEvent) => {
@@ -47,7 +48,7 @@ export function BusinessRegistration() {
       }
 
       try {
-        await fetch('/api/notify-admin', {
+        const res = await fetch('/api/notify-admin', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -58,8 +59,12 @@ export function BusinessRegistration() {
             wishes: formData.wishes
           })
         });
+        if (!res.ok) {
+          setEmailFailed(true);
+        }
       } catch (emailErr) {
         console.error("Kon email niet verzenden via API:", emailErr);
+        setEmailFailed(true);
       }
 
       setIsSuccess(true);

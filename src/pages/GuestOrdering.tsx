@@ -107,6 +107,7 @@ export function GuestOrdering() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
+  const [emailFailed, setEmailFailed] = useState(false);
   const [error, setError] = useState('');
 
   // Fetch prices if available
@@ -188,7 +189,7 @@ Extra Notities: ${notes}
         if (errors.length > 0) throw errors[0].error;
 
         try {
-          await fetch('/api/send-guest-invoice', {
+          const res = await fetch('/api/send-guest-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -205,8 +206,12 @@ Extra Notities: ${notes}
               deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
             })
           });
+          if (!res.ok) {
+            setEmailFailed(true);
+          }
         } catch (emailErr) {
           console.error("Kon email niet verzenden:", emailErr);
+          setEmailFailed(true);
         }
 
         setOrderSuccess(true);
@@ -230,7 +235,7 @@ Extra Notities: ${notes}
           </div>
           <h2 className="text-3xl font-bold text-ob-blue mb-4">Bestelling Ontvangen!</h2>
           <p className="text-gray-600 mb-8 leading-relaxed">
-            Bedankt voor uw bestelling, {guestName}. We hebben uw aanvraag goed ontvangen en de factuur is verstuurd.
+            Bedankt voor uw bestelling, {guestName}. We hebben uw aanvraag goed ontvangen.{emailFailed ? " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later)." : " De factuur is verstuurd naar uw e-mail."}
           </p>
           <Link 
             to="/"
