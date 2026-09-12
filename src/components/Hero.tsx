@@ -9,7 +9,7 @@ export function Hero({ content }: { content?: any }) {
     <section className="font-serif relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden flex flex-col items-center justify-center min-h-[80vh]">
       {/* Background Image & Overlay */}
       <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat"
+        className="absolute inset-0 z-0 bg-cover bg-[center_20%] bg-no-repeat"
         style={{ backgroundImage: 'url("https://i.imgur.com/OvgsSyu.png")' }}
       >
         <div className="absolute inset-0 bg-gradient-to-b from-ob-blue via-ob-blue/80 to-ob-blue/40"></div>
