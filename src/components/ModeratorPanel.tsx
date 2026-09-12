@@ -1,8 +1,9 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ArrowLeft, ShoppingBag } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ArrowLeft, ShoppingBag, Type } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
+import { MenuManager } from './MenuManager';
 
 type ModeratorPanelProps = {
   isOpen: boolean;
@@ -59,12 +60,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [registrations, setRegistrations] = useState<ObCompany[]>([]);
   const [customers, setCustomers] = useState<ObCompany[]>([]);
   
+  const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [productPrices, setProductPrices] = useState<ObProductPrice[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [selectedPriceProduct, setSelectedPriceProduct] = useState(AVAILABLE_PRODUCTS[0]);
   const [selectedPriceCompany, setSelectedPriceCompany] = useState<string | null>(null);
 
   const [impersonating, setImpersonating] = useState<ObCompany | null>(null);
+  const [resendingInvoice, setResendingInvoice] = useState<string | null>(null);
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -89,6 +92,46 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     }
   }, [isOpen, isAuthenticated]);
 
+  const handleResendInvoice = async (group: any) => {
+    try {
+      setResendingInvoice(group.id);
+      
+      const payload = {
+        customerName: group.company_name,
+        items: group.items.map((i: any) => ({
+          name: i.product_name,
+          size: i.portion_size,
+          price: Number(i.price)
+        })),
+        totalPrice: group.total_order_price,
+        deliveryDate: group.delivery_date ? new Date(group.delivery_date).toLocaleDateString('nl-NL') : 'Onbekend',
+        deliveryTime: group.delivery_time || '',
+        address: group.address || '',
+        phone: group.phone || '',
+        notes: group.items[0]?.notes || ''
+      };
+
+      const res = await fetch('/api/resend-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      const resData = await res.json();
+      if (!res.ok || !resData.success) {
+        throw new Error(resData.error || resData.message || 'Fout bij herverzenden');
+      }
+      
+      alert('Factuur is succesvol opnieuw verzonden!');
+    } catch (err: any) {
+      console.error(err);
+      alert('Fout bij herverzenden: ' + err.message);
+    } finally {
+      setResendingInvoice(null);
+    }
+  };
+
+
   const fetchDashboardData = async () => {
     if (!supabase) {
       // Mock data for preview
@@ -107,6 +150,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
       
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
+      let prodData = null; try { const { data } = await supabase.from('ob_products').select('*'); prodData = data; } catch(e) { console.warn('no table'); }
+      if (prodData) { setDbProducts(prodData); if (prodData.length > 0 && selectedPriceProduct === AVAILABLE_PRODUCTS[0]) setSelectedPriceProduct(prodData[0].name); }
       if (priceData) setProductPrices(priceData);
       
       const { data: orderData } = await supabase.from('ob_orders').select('*, ob_companies(name), ob_company_addresses(*)').order('created_at', { ascending: false });
@@ -160,7 +205,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           .from('store_settings')
           .update({
             override_status: localStoreSettings.override_status,
-            schedule: localStoreSettings.schedule
+            schedule: localStoreSettings.schedule,
+            page_content: localStoreSettings.page_content
           })
           .eq('id', 1);
 
@@ -338,6 +384,12 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         <Store size={18} /> Winkel Status
                       </button>
                       <button 
+                        onClick={() => { setActiveTab('content'); setImpersonating(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'content' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <Type size={18} /> Website Teksten
+                      </button>
+                      <button 
                         onClick={() => { setActiveTab('registrations'); setImpersonating(null); }}
                         className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'registrations' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
@@ -364,6 +416,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'prices' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
                         <DollarSign size={18} /> Portie Prijzen
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('menu'); setImpersonating(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'menu' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
+                        <span>Menu & Producten</span>
                       </button>
                     </nav>
                   </div>
@@ -398,6 +457,263 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           </div>
                         </div>
                       </div>
+                                                            ) : activeTab === 'content' && localStoreSettings ? (
+                      <div className="space-y-8 animate-in fade-in duration-300">
+                        <section>
+                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-6">Website Teksten Beheren</h3>
+                          <p className="text-sm text-gray-500 mb-6">Bewerk hier alle teksten, titels, ondertitels en knoppen van de homepagina.</p>
+                          
+                          {/* HERO */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 1: Hoofdscherm (Hero)</h4>
+                            <div className="grid grid-cols-1 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Pre-titel (kleine tekst bovenaan)</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.hero_pre_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_pre_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Hoofdtitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.hero_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
+                                <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.hero_subtitle || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_subtitle: e.target.value}} as any)} />
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knop 1</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.hero_btn_scheduled || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_scheduled: e.target.value}} as any)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knop 2</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.hero_btn_direct || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_direct: e.target.value}} as any)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knop 3</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.hero_btn_offer || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_offer: e.target.value}} as any)} />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* HOW IT WORKS */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 2: Hoe Werkt Office Butler</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.how_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.how_subtitle || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_subtitle: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 1: Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm mb-2"
+                                  value={localStoreSettings.page_content?.how_step1_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_step1_title: e.target.value}} as any)} />
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 1: Beschrijving</label>
+                                <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.how_step1_desc || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_step1_desc: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 2: Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm mb-2"
+                                  value={localStoreSettings.page_content?.how_step2_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_step2_title: e.target.value}} as any)} />
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 2: Beschrijving</label>
+                                <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.how_step2_desc || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_step2_desc: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 3: Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm mb-2"
+                                  value={localStoreSettings.page_content?.how_step3_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_step3_title: e.target.value}} as any)} />
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 3: Beschrijving</label>
+                                <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.how_step3_desc || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_step3_desc: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ASSORTMENTS */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 3: Assortimenten (Pakketten)</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assortments_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assortments_subtitle || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
+                              <div className="space-y-3">
+                                <h5 className="font-semibold text-sm">Pakket 1 (Links)</h5>
+                                <input type="text" placeholder="Titel Pakket 1" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_snacks_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_title: e.target.value}} as any)} />
+                                <input type="text" placeholder="Bullet 1" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_snacks_item1 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item1: e.target.value}} as any)} />
+                                <input type="text" placeholder="Bullet 2" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_snacks_item2 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item2: e.target.value}} as any)} />
+                                <input type="text" placeholder="Bullet 3" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_snacks_item3 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item3: e.target.value}} as any)} />
+                                <input type="text" placeholder="Knop Tekst" className="w-full px-3 py-2 border rounded-md text-sm font-medium"
+                                  value={localStoreSettings.page_content?.assort_snacks_btn || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_btn: e.target.value}} as any)} />
+                              </div>
+                              <div className="space-y-3">
+                                <h5 className="font-semibold text-sm">Pakket 2 (Rechts)</h5>
+                                <input type="text" placeholder="Titel Pakket 2" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_complete_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_title: e.target.value}} as any)} />
+                                <input type="text" placeholder="Bullet 1" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_complete_item1 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item1: e.target.value}} as any)} />
+                                <input type="text" placeholder="Bullet 2" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_complete_item2 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item2: e.target.value}} as any)} />
+                                <input type="text" placeholder="Bullet 3" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assort_complete_item3 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item3: e.target.value}} as any)} />
+                                <input type="text" placeholder="Knop Tekst" className="w-full px-3 py-2 border rounded-md text-sm font-medium"
+                                  value={localStoreSettings.page_content?.assort_complete_btn || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_btn: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* MENU */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 4: Menu Overzicht</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.menu_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop (Volledig menu)</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.menu_btn || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_btn: e.target.value}} as any)} />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.menu_subtitle || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_subtitle: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* BUSINESS */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 5: Voor Bedrijven</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.business_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.business_btn || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_btn: e.target.value}} as any)} />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.business_subtitle || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_subtitle: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Bullet 1</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.business_point1 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point1: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Bullet 2</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.business_point2 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point2: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Bullet 3</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.business_point3 || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point3: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* CONTACT */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 6: Contact & FAQ</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel Contact Sectie</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.contact_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, contact_title: e.target.value}} as any)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel FAQ Sectie</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.faq_title || ''}
+                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_title: e.target.value}} as any)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-8 flex justify-end">
+                            <button onClick={handleSaveStoreSettings} disabled={isSaving} className="bg-[#111827] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#1f2937] transition-colors disabled:opacity-50">
+                              {isSaving ? 'Opslaan...' : 'Teksten Opslaan'}
+                            </button>
+                          </div>
+                        </section>
+                      </div>
+
+
                     ) : activeTab === 'store' && localStoreSettings ? (
                       <div className="space-y-10 max-w-2xl">
                         {/* Status Section */}
@@ -597,6 +913,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                     <th className="p-4 font-semibold min-w-[200px]">Bestelling (Producten)</th>
                                     <th className="p-4 font-semibold text-right">Totaalprijs</th>
                                     <th className="p-4 font-semibold whitespace-nowrap">Gewenste Levering</th>
+                                    <th className="p-4 font-semibold text-right">Acties</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
@@ -636,6 +953,21 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                         <br/>
                                         {group.delivery_time ? <span className="font-medium">{group.delivery_time}</span> : ''}
                                       </td>
+                                      <td className="p-4 align-middle text-right">
+                                        <button 
+                                          onClick={() => handleResendInvoice(group)}
+                                          disabled={resendingInvoice === group.id}
+                                          className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+                                          title="Stuur factuur/bevestiging opnieuw naar ons toe"
+                                        >
+                                          {resendingInvoice === group.id ? (
+                                            <span className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin inline-block"></span>
+                                          ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.87-11.45L2 6"/></svg>
+                                          )}
+                                          Opnieuw sturen
+                                        </button>
+                                      </td>
                                     </tr>
                                   );
                                   })}
@@ -667,7 +999,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                onChange={(e) => setSelectedPriceProduct(e.target.value)}
                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
                              >
-                               {AVAILABLE_PRODUCTS.map(prod => (
+                               {dbProducts.length > 0 ? dbProducts.map(prod => (
+                                 <option key={prod.name} value={prod.name}>{prod.name}</option>
+                               )) : AVAILABLE_PRODUCTS.map(prod => (
                                  <option key={prod} value={prod}>{prod}</option>
                                ))}
                              </select>
@@ -695,9 +1029,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <th className="px-6 py-4 font-semibold text-gray-700 text-right">Prijs (€)</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {PORTIONS.map(portion => (
-                                <tr key={portion} className="hover:bg-gray-50/50 transition-colors">
+                            {(() => {
+                                const selectedProdObj = dbProducts.find(p => p.name === selectedPriceProduct);
+                                const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
+                                return (
+                                  <tbody className="divide-y divide-gray-100">
+                                    {portionsToUse.map((portion: number) => (
+                                      <tr key={portion} className="hover:bg-gray-50/50 transition-colors">
                                   <td className="px-6 py-4 font-medium text-gray-900">{portion} stuks</td>
                                   <td className="px-6 py-4 text-right">
                                     <div className="relative inline-flex items-center justify-end w-32 ml-auto">
@@ -715,10 +1053,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 </tr>
                               ))}
                             </tbody>
+                                );
+                              })()}
                           </table>
                         </div>
                         <p className="text-xs text-gray-400 mt-2">Laat het veld leeg als de portie niet beschikbaar is.</p>
                       </div>
+                    ) : activeTab === 'menu' ? (
+                      <MenuManager />
                     ) : null}
                   </div>
                 </div>

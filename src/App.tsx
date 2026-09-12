@@ -70,7 +70,7 @@ export default function App() {
         <Navbar storeSettings={storeSettings} />
 
         <Routes>
-          <Route path="/" element={<Home settings={settings} />} />
+          <Route path="/" element={<Home settings={settings} storeSettings={storeSettings} />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/dashboard" element={<CompanyDashboard />} />
           <Route path="/order" element={<EmployeeOrdering />} />

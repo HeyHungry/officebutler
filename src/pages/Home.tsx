@@ -4,17 +4,17 @@ import { Assortments } from '../components/Assortments';
 import { Menu } from '../components/Menu';
 import { BusinessRegistration } from '../components/BusinessRegistration';
 import { ContactFAQ } from '../components/ContactFAQ';
-import { SharedSettings } from '../lib/supabase';
+import { SharedSettings, StoreSettings } from '../lib/supabase';
 
-export function Home({ settings }: { settings: SharedSettings }) {
+export function Home({ settings, storeSettings }: { settings: SharedSettings, storeSettings: StoreSettings }) {
   return (
     <main className="font-serif flex-grow">
-      <Hero />
-      <HowItWorks />
-      <Menu />
-      <BusinessRegistration />
-      <Assortments />
-      <ContactFAQ settings={settings} />
+      <Hero content={storeSettings?.page_content} />
+      <HowItWorks content={storeSettings?.page_content} />
+      <Menu content={storeSettings?.page_content} />
+      <BusinessRegistration content={storeSettings?.page_content} />
+      <Assortments content={storeSettings?.page_content} />
+      <ContactFAQ settings={settings} content={storeSettings?.page_content} />
     </main>
   );
 }

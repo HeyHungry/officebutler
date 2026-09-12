@@ -57,6 +57,7 @@ export function CompanyDashboard() {
   const [newEmpPassword, setNewEmpPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
 
   // Assortment State
@@ -128,6 +129,15 @@ export function CompanyDashboard() {
         // Fetch addresses
         const { data: addrData } = await supabase.from('ob_company_addresses').select('*').eq('company_id', comp.id);
         if (addrData) setAddresses(addrData);
+
+        
+        // Fetch products
+        try {
+          const { data: prods } = await supabase.from('ob_products').select('*');
+          if (prods) setDbProducts(prods);
+        } catch (e) {
+          console.warn('No products table');
+        }
 
         // Fetch assortment
         const { data: assortData } = await supabase.from('ob_company_assortment').select('product_name').eq('company_id', comp.id);
@@ -652,10 +662,10 @@ export function CompanyDashboard() {
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-                  {AVAILABLE_PRODUCTS.map(product => (
+                  {(dbProducts.length > 0 ? dbProducts : AVAILABLE_PRODUCTS).map(product => (
                     <label key={product.name} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${selectedProducts.includes(product.name) ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
                       <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                        <img src={product.image} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={product.image_url || product.image} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       </div>
                       <div className="flex-1">
                         <span className="font-medium text-gray-800 block">{product.name}</span>

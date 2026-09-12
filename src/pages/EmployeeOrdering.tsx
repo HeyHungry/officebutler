@@ -44,12 +44,13 @@ export function EmployeeOrdering() {
   const [companyName, setCompanyName] = useState('');
   
   const [assortment, setAssortment] = useState<string[]>([]);
+  const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [prices, setPrices] = useState<PriceMap>({});
   const [maxSpendLimit, setMaxSpendLimit] = useState<number | null>(null);
 
   // New multi-select state: productName -> portionSize
-  const [selections, setSelections] = useState<Record<string, number>>({});
+  const [selections, setSelections] = useState<Record<string, Record<number, number>>>({});
   const [selectedAddress, setSelectedAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
@@ -107,6 +108,8 @@ export function EmployeeOrdering() {
       const { data: addrData } = await supabase.from('ob_company_addresses').select('*').eq('company_id', compId);
       if (addrData) setAddresses(addrData);
 
+      let prods = null; try { const { data } = await supabase.from('ob_products').select('*'); prods = data; } catch (e) { console.warn('No products table'); }
+      if (prods) setDbProducts(prods);
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
       if (priceData) {
         const pMap: PriceMap = {};
@@ -147,7 +150,13 @@ export function EmployeeOrdering() {
     setIsSubmitting(true);
     setError('');
 
-    const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[`${prod}_${size}`] || 0), 0);
+    const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
+      let prodSum = 0;
+      for (const [s, qty] of Object.entries(sizes as any)) {
+        prodSum += (prices[`${prod}_${s}`] || 0) * (qty as number);
+      }
+      return sum + prodSum;
+    }, 0);
     
     if (maxSpendLimit !== null && totalOrderPrice > maxSpendLimit) {
       setError(`Het maximaal toegestane bedrag per bestelling is €${maxSpendLimit.toFixed(2)}. Het totaalbedrag is nu €${totalOrderPrice.toFixed(2)}.`);
@@ -157,25 +166,27 @@ export function EmployeeOrdering() {
 
     if (supabase) {
       try {
-        const orderPromises = Object.entries(selections).map(([prod, size]) => {
-          const price = prices[`${prod}_${size}`] || 0;
-          
-          return supabase.from('ob_orders').insert({
-            company_id: companyId,
-            user_id: userId,
-            product_name: prod,
-            portion_size: size,
-            price: price,
-            total_price: price,
-            address_id: selectedAddress,
-            phone: phone,
-            notes: notes,
-            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+        const orderPromises: any[] = [];
+        Object.entries(selections).forEach(([prod, sizes]) => {
+          Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
+            const size = Number(sizeStr);
+            const price = prices[`${prod}_${size}`] || 0;
+            for (let i = 0; i < (qty as number); i++) {
+              orderPromises.push(supabase.from('ob_orders').insert({
+                company_id: companyId,
+                product_name: prod,
+                portion_size: size,
+                price: price,
+                total_price: price,
+                delivery_address_id: addressId,
+                phone: phone,
+                notes: notes,
+                delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+                delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+              }));
+            }
           });
-
         });
-        
         
         const results = await Promise.all(orderPromises);
         const errors = results.filter(r => r.error);
@@ -294,28 +305,51 @@ export function EmployeeOrdering() {
               <p className="text-gray-500 italic">Uw kantoor heeft momenteel geen assortiment geselecteerd. Neem contact op met uw office manager.</p>
             ) : (
               <div className="space-y-4">
-                {assortment.map(product => {
-                  const isSelected = !!selections[product];
+                {(() => {
+                  const itemsToRender = dbProducts.length > 0 
+                    ? dbProducts.filter(p => assortment.includes(p.name) && p.status !== 'Inactief' && p.status !== 'Verborgen')
+                    : assortment.map(name => ({ name, status: 'Actief' }));
+                    
+                  return itemsToRender.map((item: any) => {
+                    const product = item.name;
+                    const isSelected = !!selections[product];
+                    let productSizes = PORTION_SIZES;
+                    if (item.portions && item.portions.length > 0) {
+                      productSizes = item.portions;
+                    }
+                    
                   return (
-                    <div key={product} className={`border-2 rounded-xl p-4 transition-all ${isSelected ? 'border-ob-blue bg-blue-50/10' : 'border-gray-100'}`}>
-                      <div className="flex flex-col md:flex-row md:items-center gap-4">
-                        <div className="flex items-center gap-4 md:w-1/3">
-                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-50 shrink-0">
-                            {PRODUCT_IMAGES[product] ? (
-                              <img src={PRODUCT_IMAGES[product]} alt={product} className="w-full h-full object-cover" />
+                    <div key={product} className={`border-2 rounded-xl p-4 transition-all ${isSelected ? 'border-ob-blue bg-blue-50/10' : 'border-gray-100'} ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'opacity-70' : ''}`}>
+                      <div className="flex flex-col md:flex-row md:items-start gap-4">
+                        <div className="flex items-start gap-4 md:w-1/3">
+                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-50 shrink-0 relative">
+                            {item.image_url || PRODUCT_IMAGES[product] ? (
+                              <img src={item.image_url || PRODUCT_IMAGES[product]} alt={product} className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-gray-300">
                                 <PackageOpen size={24} />
                               </div>
                             )}
                           </div>
-                          <span className="font-semibold text-ob-text text-lg">{product}</span>
+                          <div className="flex flex-col flex-wrap">
+                            <div className="flex items-center gap-2">
+      <span className="font-semibold text-ob-text text-lg">{product}</span>
+      {isSelected && (
+        <button type="button" onClick={() => setSelections(prev => { const c = {...prev}; delete c[product]; return c; })} className="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 uppercase font-bold">Wissen</button>
+      )}
+    </div>
+                            {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+      {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
+    </span>
+                            )}
+                          </div>
                         </div>
                         
                         <div className="flex-1 flex flex-wrap gap-2">
-                          {PORTION_SIZES.map(size => {
+                          {productSizes.map((size: number) => {
                             const price = prices[`${product}_${size}`];
-                            const isSizeSelected = selections[product] === size;
+                            const isSizeSelected = (selections[product]?.[size] || 0) > 0;
                             
                             // If no price is set for this product+size, we disable it
                             const hasPrice = price !== undefined;
@@ -324,18 +358,23 @@ export function EmployeeOrdering() {
                               <button
                                 key={size}
                                 type="button"
-                                disabled={!hasPrice}
+                                disabled={!hasPrice || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())}
                                 onClick={() => {
                                   setSelections(prev => {
-                                    const next = { ...prev };
-                                    if (next[product] === size) delete next[product];
-                                    else next[product] = size;
-                                    return next;
+                                    const prodSelections = prev[product] || {};
+                                    const currentQty = prodSelections[size] || 0;
+                                    return {
+                                      ...prev,
+                                      [product]: {
+                                        ...prodSelections,
+                                        [size]: currentQty + 1
+                                      }
+                                    };
                                   });
                                 }}
-                                className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg border text-center transition-all ${!hasPrice ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : isSizeSelected ? 'border-ob-blue bg-ob-blue text-white shadow-sm' : 'border-gray-200 hover:border-ob-blue text-gray-700 bg-white'}`}
+                                className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg border text-center transition-all ${(!hasPrice || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())) ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : isSizeSelected ? 'border-ob-blue bg-ob-blue text-white shadow-sm' : 'border-gray-200 hover:border-ob-blue hover:-translate-y-1 hover:shadow-md text-gray-700 bg-white transition-all'}`}
                               >
-                                <div className="font-bold">{size}</div>
+                                <div className="font-bold">{isSizeSelected ? `${selections[product][size]}x ${size}` : size}</div>
                                 <div className={`text-xs ${isSizeSelected ? 'text-blue-100' : 'text-gray-500'}`}>
                                   {hasPrice ? `€${price.toFixed(2)}` : '-'}
                                 </div>
@@ -346,7 +385,8 @@ export function EmployeeOrdering() {
                       </div>
                     </div>
                   );
-                })}
+                });
+                })()}
               </div>
             )}
             

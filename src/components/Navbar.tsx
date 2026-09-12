@@ -117,7 +117,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
           </a>
           <button 
             
-            onClick={openStep1} className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:bg-gray-100 transition-colors duration-300 tracking-wider text-sm shadow-md font-semibold whitespace-nowrap shrink-0"
+            onClick={openStep1} className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:shadow-[0_0_20px_rgba(5,5,61,0.4)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm shadow-md font-semibold whitespace-nowrap shrink-0"
           >
             BESTEL NU
           </button>

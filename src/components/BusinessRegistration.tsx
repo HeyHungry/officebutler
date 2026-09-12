@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { CheckCircle2 } from 'lucide-react';
 
-export function BusinessRegistration() {
+export function BusinessRegistration({ content }: { content?: any }) {
   const [formData, setFormData] = useState({
     companyName: '',
     contactPerson: '',
@@ -88,10 +88,10 @@ export function BusinessRegistration() {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-6">Voor Bedrijven</h2>
+            <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-6">{content?.business_title || "Voor Bedrijven"}</h2>
             <div className="font-serif w-16 h-[1px] bg-ob-accent mb-8"></div>
             
-            <h3 className="font-serif text-2xl mb-4 text-ob-blue italic">Een vaste partner voor uw kantoor.</h3>
+            <h3 className="font-serif text-2xl mb-4 text-ob-blue italic">{content?.business_subtitle || "Een vaste partner voor uw kantoor."}</h3>
             
             <p className="font-serif text-ob-text-light mb-6 leading-relaxed">
               Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers.
@@ -100,15 +100,15 @@ export function BusinessRegistration() {
             <ul className="font-serif space-y-4 mb-10">
               <li className="font-serif flex items-center gap-3">
                 <span className="font-serif w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="font-serif text-ob-text">Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)</span>
+                <span className="font-serif text-ob-text">{content?.business_point1 || "Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)"}</span>
               </li>
               <li className="font-serif flex items-center gap-3">
                 <span className="font-serif w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="font-serif text-ob-text">Gepersonaliseerd assortiment naar wens</span>
+                <span className="font-serif text-ob-text">{content?.business_point2 || "Gepersonaliseerd assortiment naar wens"}</span>
               </li>
               <li className="font-serif flex items-center gap-3">
                 <span className="font-serif w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="font-serif text-ob-text">Optie tot betalen op factuur</span>
+                <span className="font-serif text-ob-text">{content?.business_point3 || "Optie tot betalen op factuur"}</span>
               </li>
             </ul>
           </motion.div>
@@ -193,7 +193,7 @@ export function BusinessRegistration() {
                     disabled={isSubmitting}
                     className="font-serif w-full bg-ob-text text-white py-4 hover:bg-ob-blue transition-colors uppercase tracking-widest text-sm mt-4 font-serif disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
                   >
-                    {isSubmitting ? 'Versturen...' : 'Aanvraag Versturen'}
+                    {isSubmitting ? 'Versturen...' : (content?.business_btn || 'Kantoor Inschrijven')}
                   </button>
                 </form>
               </>

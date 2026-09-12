@@ -3,71 +3,6 @@ import { supabase } from '../lib/supabase';
 import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
-const menuCategories = [
-  {
-    "title": "Snacks",
-    "items": [
-      {
-        "name": "Snack Mix",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_0743d367c64afbf145e9c0fea03ba65553996e64ffef54a95252060ee7ac758c/responsive320"
-      },
-      {
-        "name": "Bitterballen",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/233e7d3e-19d8-4504-adf9-2100d5c71800/responsive640"
-      },
-      {
-        "name": "Vlammetjes",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/c3a12a9a-1fd9-4041-11a7-c2ba71d3c100/responsive960"
-      },
-      {
-        "name": "Frikandelletjes",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/089a0deb-f72e-46b4-cd48-de98d1f82a00/responsive640"
-      },
-      {
-        "name": "Mini Kroketjes",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/53ee579e-f63d-4c57-8f54-dae1e90a1c00/responsive640"
-      },
-      {
-        "name": "Chicken Wings",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/ee601f8d-efac-4ef4-2cee-c4c59c117200/responsive640"
-      },
-      {
-        "name": "Kipnuggets",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/b58dad40-1353-4159-e305-2669d75f6b00/responsive640"
-      },
-      {
-        "name": "Karaage Kip",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_5991de8e937102a4dd1ef314fb255423bf85586b62f82c8285e054e14615ce52/responsive640"
-      },
-      {
-        "name": "Butterfly Gamba's",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/8688dded-96d4-414f-e816-8553f5ec8000/responsive640"
-      }
-    ]
-  },
-  {
-    "title": "Vega",
-    "items": [
-      {
-        "name": "Kaasstengels",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_8d2216804329784b49540823b54b47525bfcf318725033896b6fb9646d6cc0d1/responsive640"
-      },
-      {
-        "name": "Curry Samosas",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/ae28ddae-8a3f-4049-3527-09fa31308f00/responsive640"
-      },
-      {
-        "name": "Mini Loempia",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/9eab1d3b-96cc-449a-e6af-7a4ee6e66d00/responsive640"
-      },
-      {
-        "name": "Vegan Bitterballen",
-        "image": "https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_382e6f9d8eabd5d872ed938ed4c12f25c6696f38b8ab2d2791d968c2783fd954/responsive640"
-      }
-    ]
-  }
-];
-
 export function GuestOrdering() {
   const [assortment, setAssortment] = useState<string[]>(['Snack Mix', 'Bitterballen']);
   const [prices, setPrices] = useState<Record<string, number>>({ 
@@ -87,7 +22,9 @@ export function GuestOrdering() {
     'Vegan Bitterballen_25': 26.00, 'Vegan Bitterballen_50': 48.00,
   });
 
-  const [selections, setSelections] = useState<Record<string, number>>({});
+  const [selections, setSelections] = useState<Record<string, Record<number, number>>>({});
+  const [dbProducts, setDbProducts] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   
   // Guest Details
   const [guestName, setGuestName] = useState('');
@@ -115,6 +52,27 @@ export function GuestOrdering() {
     async function fetchAssortment() {
       if (supabase) {
         const { data: globalPrices } = await supabase.from('ob_product_prices').select('*');
+        let prods = null; try { const { data } = await supabase.from('ob_products').select('*'); prods = data; } catch (e) { console.warn('No products table'); }
+        if (prods) setDbProducts(prods);
+        if (prods) {
+          const grouped = prods.reduce((acc, item) => {
+            if (item.status === 'Verborgen' || item.status === 'Inactief') return acc;
+            if (!acc[item.category]) acc[item.category] = [];
+            acc[item.category].push(item);
+            return acc;
+          }, {});
+          const cats = Object.keys(grouped).map(key => ({
+            title: key,
+            items: grouped[key]
+          }));
+          cats.sort((a, b) => {
+            if (a.title === 'Snacks') return -1;
+            if (b.title === 'Snacks') return 1;
+            return a.title.localeCompare(b.title);
+          });
+          setCategories(cats);
+        }
+
         if (globalPrices) {
           const newPrices: Record<string, number> = {};
           const productNames = new Set<string>();
@@ -133,10 +91,17 @@ export function GuestOrdering() {
   }, []);
 
   const handlePortionSelect = (product: string, size: number) => {
-    setSelections(prev => ({
-      ...prev,
-      [product]: size
-    }));
+    setSelections(prev => {
+      const currentObj = prev[product] || {};
+      const currentQty = currentObj[size] || 0;
+      return {
+        ...prev,
+        [product]: {
+          ...currentObj,
+          [size]: currentQty + 1
+        }
+      };
+    });
   };
 
   const handleRemove = (product: string) => {
@@ -157,7 +122,13 @@ export function GuestOrdering() {
     setIsSubmitting(true);
     setError('');
 
-    const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[`${prod}_${size}`] || 0), 0);
+    const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
+      let prodSum = 0;
+      for (const [s, qty] of Object.entries(sizes as any)) {
+        prodSum += (prices[`${prod}_${s}`] || 0) * (qty as number);
+      }
+      return sum + prodSum;
+    }, 0);
 
     const fullNotes = `
 [GAST BESTELLING]
@@ -170,17 +141,23 @@ Extra Notities: ${notes}
 
     if (supabase) {
       try {
-        const orderPromises = Object.entries(selections).map(([prod, size]) => {
-          const price = prices[`${prod}_${size}`] || 0;
-          return supabase.from('ob_orders').insert({
-            product_name: prod,
-            portion_size: size,
-            price: price,
-            total_price: price,
-            phone: phone,
-            notes: fullNotes,
-            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+        const orderPromises: any[] = [];
+        Object.entries(selections).forEach(([prod, sizes]) => {
+          Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
+            const size = Number(sizeStr);
+            const price = prices[`${prod}_${size}`] || 0;
+            for (let i = 0; i < (qty as number); i++) {
+              orderPromises.push(supabase.from('ob_orders').insert({
+                product_name: prod,
+                portion_size: size,
+                price: price,
+                total_price: price,
+                phone: phone,
+                notes: fullNotes,
+                delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+                delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+              }));
+            }
           });
         });
         
@@ -248,7 +225,13 @@ Extra Notities: ${notes}
     );
   }
 
-  const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[`${prod}_${size}`] || 0), 0);
+  const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
+      let prodSum = 0;
+      for (const [s, qty] of Object.entries(sizes as any)) {
+        prodSum += (prices[`${prod}_${s}`] || 0) * (qty as number);
+      }
+      return sum + prodSum;
+    }, 0);
 
   return (
     <div className="font-serif min-h-screen bg-gray-50 pb-20 pt-10">
@@ -281,27 +264,33 @@ Extra Notities: ${notes}
             
             <div className="p-6">
               <div className="flex flex-col gap-12">
-                {menuCategories.map((category) => (
+                {categories.map((category) => (
                   <div key={category.title}>
                     <h3 className="text-2xl font-serif font-bold text-ob-blue mb-6 border-b pb-2">{category.title}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {category.items.map((item) => {
                         const product = item.name;
-                        const selectedSize = selections[product];
-                        const productSizes = Object.keys(prices)
+                        const prodSelections = selections[product] || {};
+                        let productSizes = Object.keys(prices)
                           .filter(key => key.startsWith(product + "_"))
                           .map(key => parseInt(key.split("_")[1], 10))
                           .sort((a, b) => a - b);
+                        if (item.portions && item.portions.length > 0) {
+                          productSizes = item.portions;
+                        }
                         
                         return (
-                          <div key={product} className={"flex gap-4 border rounded-xl p-4 transition-all " + (selectedSize ? 'border-ob-blue bg-blue-50/30 shadow-sm' : 'border-gray-200 hover:border-ob-blue/30')}>
+                          <div key={product} className={"flex gap-4 border rounded-xl p-4 transition-all " + (Object.keys(prodSelections).length > 0 ? 'border-ob-blue bg-blue-50/30 shadow-sm' : 'border-gray-200 hover:border-ob-blue/30')}>
                             <div className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                              <img src={item.image} alt={product} className="w-full h-full object-cover" />
+                              <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover" />
                             </div>
                             
                             <div className="flex-1 flex flex-col justify-between">
                               <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-bold text-gray-900 leading-tight">{product}</h4>
+                                <h4 className="font-bold text-gray-900 leading-tight flex flex-wrap items-center gap-2">{product}
+{item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+<span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}</span>
+)}</h4>
                               </div>
                               
                               <div className="grid grid-cols-2 gap-2 mt-auto w-full">
@@ -310,11 +299,11 @@ Extra Notities: ${notes}
                                     <button
                                       key={size}
                                       type="button"
-                                      onClick={() => handlePortionSelect(product, size)}
-                                      className={"p-2 text-xs rounded-lg border transition-colors flex flex-col items-center justify-center gap-0.5 " + (selectedSize === size ? 'bg-ob-blue text-white border-ob-blue font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-ob-blue')}
+                                      disabled={prices[product + '_' + size] === undefined || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())} onClick={() => handlePortionSelect(product, size)}
+                                      className={`p-2 text-xs rounded-lg border transition-colors flex flex-col items-center justify-center gap-0.5 ${(prices[product + '_' + size] === undefined || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())) ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-100' : (prodSelections[size] || 0) > 0 ? 'bg-ob-blue text-white border-ob-blue font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-ob-blue hover:-translate-y-1 hover:shadow-md transition-all'}`}
                                     >
                                       <span className="font-semibold text-[13px]">{size} st.</span>
-                                      <span className={selectedSize === size ? "text-white/90" : "text-gray-500"}>€{prices[product + "_" + size].toFixed(2)}</span>
+                                      <span className={(prodSelections[size] || 0) > 0 ? 'text-white/90' : 'text-gray-500'}>{prices[product + '_' + size] !== undefined ? `€${prices[product + '_' + size].toFixed(2)}` : '-'}</span>
                                     </button>
                                   ))
                                 ) : (
@@ -322,9 +311,13 @@ Extra Notities: ${notes}
                                 )}
                               </div>
 
-                              {selectedSize && (
+                              {Object.keys(prodSelections).length > 0 && (
                                 <div className="mt-3 flex items-center justify-between pt-3 border-t border-gray-100">
-                                  <span className="text-xs font-semibold text-ob-blue">Geselecteerd: {selectedSize} st.</span>
+                                  <div className="flex flex-col gap-1">
+                                    {Object.entries(prodSelections).map(([s, qty]) => (
+                                      <span key={s} className="text-xs font-semibold text-ob-blue">{qty as number}x {s} st.</span>
+                                    ))}
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => handleRemove(product)}

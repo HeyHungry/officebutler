@@ -1,13 +1,16 @@
+import { StoreSettings } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { Utensils, Wine, Check } from 'lucide-react';
+import { useOrderModal } from '../contexts/OrderModalContext';
 
-export function Assortments() {
+export function Assortments({ content }: { content?: any }) {
+  const { openStep1 } = useOrderModal();
   return (
     <section id="assortments" className="font-serif py-24 bg-ob-cream-dark/30">
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8">
         <div className="font-serif text-center mb-16">
-          <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-4">Onze Assortimenten</h2>
-          <p className="font-serif text-ob-text-light max-w-2xl mx-auto">Kies het pakket dat het beste bij uw kantoorborrel past.</p>
+          <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-4">{content?.assortments_title || "Onze Assortimenten"}</h2>
+          <p className="font-serif text-ob-text-light max-w-2xl mx-auto">{content?.assortments_subtitle || 'Kies het pakket dat het beste bij uw kantoorborrel past.'}</p>
           <div className="font-serif w-16 h-[1px] bg-ob-accent mx-auto mt-6"></div>
         </div>
 
@@ -23,21 +26,21 @@ export function Assortments() {
             <div className="font-serif text-ob-blue mb-4">
               <Utensils size={40} strokeWidth={1.5} />
             </div>
-            <h3 className="font-serif text-3xl mb-2">Basis Assortiment</h3>
+            <h3 className="font-serif text-3xl mb-2">{content?.assort_snacks_title || "Office Snacks"}</h3>
             <p className="font-serif text-ob-text-light mb-8 italic">Puur genieten van warme en koude snacks.</p>
             
             <ul className="font-serif space-y-4 mb-10 flex-grow">
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text">Premium bittergarnituur (ambachtelijk)</span>
+                <span className="font-serif text-ob-text">{content?.assort_snacks_item1 || "Premium bittergarnituur (ambachtelijk)"}</span>
               </li>
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text">Luxe koude hapjes en borrelplanken</span>
+                <span className="font-serif text-ob-text">{content?.assort_snacks_item2 || "Luxe koude hapjes en borrelplanken"}</span>
               </li>
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text">Geleverd in warmhoudboxen</span>
+                <span className="font-serif text-ob-text">{content?.assort_snacks_item3 || "Geleverd in warmhoudboxen"}</span>
               </li>
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
@@ -45,8 +48,8 @@ export function Assortments() {
               </li>
             </ul>
             
-            <button className="font-serif w-full border border-ob-blue text-ob-blue hover:bg-ob-blue hover:text-white transition-colors py-4 uppercase tracking-widest text-sm">
-              Bestel Snacks
+            <button onClick={openStep1} className="font-serif w-full border-2 border-ob-blue text-ob-blue hover:bg-ob-blue hover:text-white hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 uppercase tracking-widest text-sm font-bold">
+              {content?.assort_snacks_btn || "Bestel Snacks"}
             </button>
           </motion.div>
 
@@ -64,21 +67,21 @@ export function Assortments() {
             <div className="font-serif text-ob-accent mb-4">
               <Wine size={40} strokeWidth={1.5} />
             </div>
-            <h3 className="font-serif text-3xl mb-2 text-white">Compleet Assortiment</h3>
+            <h3 className="font-serif text-3xl mb-2 text-white">{content?.assort_complete_title || "Office Compleet"}</h3>
             <p className="font-serif text-white/70 mb-8 italic">De volledige vrijmibo ervaring.</p>
             
             <ul className="font-serif space-y-4 mb-10 flex-grow">
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90">Alles uit het Basis Assortiment</span>
+                <span className="font-serif text-white/90">{content?.assort_complete_item1 || "Alles uit het Basis Assortiment"}</span>
               </li>
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90">Gekoelde bieren (o.a. speciaalbier), wijnen en fris</span>
+                <span className="font-serif text-white/90">{content?.assort_complete_item2 || "Gekoelde bieren (o.a. speciaalbier), wijnen en fris"}</span>
               </li>
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90">Optioneel: Inclusief glaswerk</span>
+                <span className="font-serif text-white/90">{content?.assort_complete_item3 || "Optioneel: Inclusief glaswerk"}</span>
               </li>
               <li className="font-serif flex items-start gap-3">
                 <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
@@ -86,8 +89,8 @@ export function Assortments() {
               </li>
             </ul>
             
-            <button className="font-serif w-full bg-ob-accent text-white hover:bg-ob-accent-hover transition-colors py-4 uppercase tracking-widest text-sm">
-              Bestel Compleet
+            <button onClick={openStep1} className="font-serif w-full bg-ob-accent text-white hover:bg-ob-accent-hover hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 uppercase tracking-widest text-sm font-bold">
+              {content?.assort_complete_btn || "Bestel Compleet"}
             </button>
           </motion.div>
         </div>

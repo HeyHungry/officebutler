@@ -6,7 +6,7 @@ interface ContactFAQProps {
   settings: SharedSettings;
 }
 
-export function ContactFAQ({ settings }: ContactFAQProps) {
+export function ContactFAQ({ settings, content }: ContactFAQProps & { content?: any }) {
   return (
     <section id="contact" className="font-serif py-24 bg-ob-cream">
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8">
@@ -18,7 +18,7 @@ export function ContactFAQ({ settings }: ContactFAQProps) {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <h2 className="font-serif text-3xl md:text-4xl text-ob-text mb-6">Contact & Informatie</h2>
+            <h2 className="font-serif text-3xl md:text-4xl text-ob-text mb-6">{content?.contact_title || "Contact & Informatie"}</h2>
             <div className="font-serif w-16 h-[1px] bg-ob-accent mb-10"></div>
             
             <div className="font-serif space-y-8">
@@ -56,7 +56,7 @@ export function ContactFAQ({ settings }: ContactFAQProps) {
             viewport={{ once: true }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            <h2 className="font-serif text-3xl md:text-4xl text-ob-text mb-6">Veelgestelde Vragen</h2>
+            <h2 className="font-serif text-3xl md:text-4xl text-ob-text mb-6">{content?.faq_title || "Veelgestelde Vragen"}</h2>
             <div className="font-serif w-16 h-[1px] bg-ob-accent mb-10"></div>
             
             <div className="font-serif space-y-6">

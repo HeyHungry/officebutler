@@ -1,22 +1,23 @@
+import { StoreSettings } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { Building2, ChefHat, Truck } from 'lucide-react';
 
-export function HowItWorks() {
+export function HowItWorks({ content }: { content?: any }) {
   const steps = [
-    {
+        {
       icon: <Building2 size={32} />,
-      title: "1. Bestel of Meld Aan",
-      description: "Bestel direct voor de vrijmibo, of meld uw bedrijf aan voor een vaste, gepersonaliseerde bestellink voor het personeel."
+      title: content?.how_step1_title || "1. Bestel of Meld Aan",
+      description: content?.how_step1_desc || "Bestel direct voor de vrijmibo, of meld uw bedrijf aan voor een vaste, gepersonaliseerde bestellink voor het personeel."
     },
     {
       icon: <ChefHat size={32} />,
-      title: "2. Wij Bereiden Voor",
-      description: "Onze chefs in de Mokum Local Kitchen bereiden de warme snacks en verzamelen de gekoelde dranken op het afgesproken moment."
+      title: content?.how_step2_title || "2. Wij Bereiden Voor",
+      description: content?.how_step2_desc || "Onze chefs in de Mokum Local Kitchen bereiden de warme snacks en verzamelen de gekoelde dranken op het afgesproken moment."
     },
     {
       icon: <Truck size={32} />,
-      title: "3. Bezorging op Kantoor",
-      description: "Wij leveren alles vers, warm en gekoeld af bij u op kantoor in Amsterdam, precies op tijd voor de borrel of het evenement."
+      title: content?.how_step3_title || "3. Bezorging op Kantoor",
+      description: content?.how_step3_desc || "Wij leveren alles vers, warm en gekoeld af bij u op kantoor in Amsterdam, precies op tijd voor de borrel of het evenement."
     }
   ];
 
@@ -24,7 +25,7 @@ export function HowItWorks() {
     <section id="how-it-works" className="font-serif py-24 bg-white relative">
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8">
         <div className="font-serif text-center mb-16">
-          <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-4">Hoe Werkt Office Butler?</h2>
+          <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-4">{content?.how_title || "Hoe Werkt Office Butler?"}</h2>
           <div className="font-serif w-16 h-[1px] bg-ob-accent mx-auto"></div>
         </div>
 
