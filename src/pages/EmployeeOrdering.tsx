@@ -47,9 +47,13 @@ export function EmployeeOrdering() {
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [prices, setPrices] = useState<PriceMap>({});
+  
   const [maxSpendLimit, setMaxSpendLimit] = useState<number | null>(null);
 
-  // New multi-select state: productName -> portionSize
+  const [deliveryMethods, setDeliveryMethods] = useState<any[]>([]);
+  const [selectedDeliveryMethod, setSelectedDeliveryMethod] = useState<any>(null);
+
+  // New multi-select state
   const [selections, setSelections] = useState<Record<string, Record<number, number>>>({});
   const [selectedAddress, setSelectedAddress] = useState('');
   const [phone, setPhone] = useState('');
@@ -93,7 +97,12 @@ export function EmployeeOrdering() {
         return;
       }
 
-      const compId = profile.company_id;
+            const compId = profile.company_id;
+      if (!compId || compId === 'null') {
+         setError('Geen bedrijf gekoppeld aan dit account.');
+         setIsLoading(false);
+         return;
+      }
       setCompanyId(compId);
 
       const { data: comp } = await supabase.from('ob_companies').select('name, employee_spend_limit').eq('id', compId).single();
@@ -108,7 +117,7 @@ export function EmployeeOrdering() {
       const { data: addrData } = await supabase.from('ob_company_addresses').select('*').eq('company_id', compId);
       if (addrData) setAddresses(addrData);
 
-      let prods = null; try { const { data } = await supabase.from('ob_products').select('*'); prods = data; } catch (e) { console.warn('No products table'); }
+      let prods = null; try { const { data } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }); prods = data; } catch (e) { console.warn('No products table'); }
       if (prods) setDbProducts(prods);
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
       if (priceData) {
@@ -124,8 +133,32 @@ export function EmployeeOrdering() {
           pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
         });
         
-        setPrices(pMap);
+                setPrices(pMap);
       }
+
+            // Fetch allowed delivery methods
+      const { data: cdmData, error: cdmError } = await supabase.from('ob_company_delivery_methods').select('delivery_method_id').eq('company_id', compId);
+      if (cdmError) console.error('Error fetching company delivery methods:', cdmError);
+      
+      if (cdmData && cdmData.length > 0) {
+        const allowedIds = cdmData.map(a => a.delivery_method_id);
+        const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').in('id', allowedIds).eq('is_active', true).order('sort_order', { ascending: true });
+        if (dmError) console.error('Error fetching delivery methods:', dmError);
+        if (dmData && dmData.length > 0) {
+          setDeliveryMethods(dmData);
+          setSelectedDeliveryMethod(dmData[0]);
+        }
+      } else {
+        // Fallback to defaults if none selected for company
+        const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').eq('is_active', true).order('sort_order', { ascending: true });
+        if (dmError) console.error('Error fetching fallback delivery methods:', dmError);
+        if (dmData && dmData.length > 0) {
+          setDeliveryMethods(dmData);
+          setSelectedDeliveryMethod(dmData[0]);
+        }
+      }
+
+
 
     } catch (e: any) {
       console.error(e);
@@ -171,6 +204,7 @@ export function EmployeeOrdering() {
           Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
             const size = Number(sizeStr);
             const price = prices[`${prod}_${size}`] || 0;
+            
             for (let i = 0; i < (qty as number); i++) {
               orderPromises.push(supabase.from('ob_orders').insert({
                 company_id: companyId,
@@ -187,6 +221,22 @@ export function EmployeeOrdering() {
             }
           });
         });
+
+        if (selectedDeliveryMethod && selectedDeliveryMethod.price > 0) {
+          orderPromises.push(supabase.from('ob_orders').insert({
+            company_id: companyId,
+            product_name: 'Bezorging: ' + selectedDeliveryMethod.name,
+            portion_size: 1,
+            price: selectedDeliveryMethod.price,
+            total_price: selectedDeliveryMethod.price,
+            delivery_address_id: addressId,
+            phone: phone,
+            notes: notes,
+            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+          }));
+        }
+
         
         const results = await Promise.all(orderPromises);
         const errors = results.filter(r => r.error);
@@ -285,9 +335,48 @@ export function EmployeeOrdering() {
           </div>
         )}
 
+        
         <form onSubmit={handleSubmit} className="space-y-8">
           
+          {deliveryMethods.length > 0 && (
+            <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-ob-text flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm"><Truck size={16} /></span> 
+                  Kies je bezorgmethode
+                </h2>
+                <p className="text-gray-500 mt-2 ml-10">Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {deliveryMethods.map(method => (
+                  <label key={method.id} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
+                    <div className="w-full h-32 rounded-lg overflow-hidden bg-gray-100 mb-4 shrink-0">
+                      <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
+                    </div>
+                    <div className="flex items-start gap-3">
+                      <input 
+                        type="radio" 
+                        name="delivery_method_emp"
+                        checked={selectedDeliveryMethod?.id === method.id}
+                        onChange={() => setSelectedDeliveryMethod(method)}
+                        className="w-5 h-5 mt-0.5 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0" 
+                      />
+                      <div>
+                        <span className="font-semibold text-gray-900 block text-lg">{method.name}</span>
+                        <span className="text-xs text-gray-500 block mb-2">{method.description}</span>
+                        <span className="font-bold text-[#05053D] block">
+                          {method.price === 0 ? 'Gratis' : `+ €${Number(method.price).toFixed(2)}`}
+                        </span>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </section>
+          )}
+
           {/* Step 1: Producten & Porties */}
+
           <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-ob-text flex items-center gap-2">

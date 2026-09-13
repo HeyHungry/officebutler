@@ -1,9 +1,10 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ArrowLeft, ShoppingBag, Type } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ArrowLeft, ShoppingBag, Type, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
+import { DeliveryOptionsManager } from './DeliveryOptionsManager';
 
 type ModeratorPanelProps = {
   isOpen: boolean;
@@ -150,7 +151,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
       
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
-      let prodData = null; try { const { data } = await supabase.from('ob_products').select('*'); prodData = data; } catch(e) { console.warn('no table'); }
+      let prodData = null; try { const { data } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }); prodData = data; } catch(e) { console.warn('no table'); }
       if (prodData) { setDbProducts(prodData); if (prodData.length > 0 && selectedPriceProduct === AVAILABLE_PRODUCTS[0]) setSelectedPriceProduct(prodData[0].name); }
       if (priceData) setProductPrices(priceData);
       
@@ -423,6 +424,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
                         <span>Menu & Producten</span>
+                      </button>
+                      <button
+                        onClick={() => { setActiveTab('delivery'); setImpersonating(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'delivery' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <Truck size={18} />
+                        <span>Bezorgopties</span>
                       </button>
                     </nav>
                   </div>
@@ -1059,8 +1067,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         </div>
                         <p className="text-xs text-gray-400 mt-2">Laat het veld leeg als de portie niet beschikbaar is.</p>
                       </div>
-                    ) : activeTab === 'menu' ? (
+                                        ) : activeTab === 'menu' ? (
                       <MenuManager />
+                    ) : activeTab === 'delivery' ? (
+                      <DeliveryOptionsManager />
                     ) : null}
                   </div>
                 </div>

@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical } from 'lucide-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
 
 export type ObProduct = {
   id: string;
@@ -9,7 +13,66 @@ export type ObProduct = {
   image_url: string;
   status: string;
   portions: number[];
+  sort_order?: number;
 };
+
+function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: any) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: p.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+    position: 'relative' as 'relative',
+  };
+
+  if (editingId === p.id) {
+    return (
+      <tr ref={setNodeRef} style={style} className="bg-blue-50/50">
+        {renderEditRow()}
+      </tr>
+    );
+  }
+
+  return (
+    <tr ref={setNodeRef} style={style} className={`hover:bg-gray-50 transition-colors ${isDragging ? 'bg-gray-100 shadow-md' : ''}`}>
+      <td className="px-2 py-2 space-x-2 w-24">
+        <button {...attributes} {...listeners} className="text-gray-400 hover:text-gray-600 p-1 cursor-grab active:cursor-grabbing"><GripVertical size={16} /></button>
+        <button onClick={() => handleEdit(p)} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 size={16} /></button>
+        <button onClick={() => handleDelete(p.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 size={16} /></button>
+      </td>
+      <td className="px-2 py-2">
+        <div className="flex items-center gap-3">
+          {p.image_url ? (
+            <div className="w-10 h-10 rounded-md overflow-hidden bg-gray-100 shrink-0 border border-gray-200">
+              <img src={p.image_url} alt={p.name} className="w-full h-full object-cover" />
+            </div>
+          ) : (
+            <div className="w-10 h-10 rounded-md bg-gray-100 shrink-0 border border-gray-200 flex items-center justify-center text-gray-400">
+              <ImageIcon size={16} />
+            </div>
+          )}
+          <span className="font-semibold text-gray-800">{p.name}</span>
+        </div>
+      </td>
+      
+      
+      <td className="px-2 py-2"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-medium">{p.category}</span></td>
+      <td className="px-2 py-2"><div className="flex flex-wrap gap-1">{p.portions && p.portions.map((port: number) => (<span key={port} className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-xs font-medium">{port} st.</span>))}</div></td>
+      <td className="px-2 py-2">
+        <span className={`px-2 py-1 rounded-md text-xs font-medium ${['uitverkocht', 'verborgen', 'sold_out', 'inactive', 'inactief'].includes((p.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+          {p.status === 'inactive' ? 'Verborgen' : 
+           p.status === 'sold_out' ? 'Uitverkocht' : 
+           p.status === 'coming_soon' ? 'Binnenkort' : 
+           p.status === 'new' ? 'Nieuw' : 
+           p.status === 'popular' ? 'Populair' : 
+           p.status === 'active' ? 'Actief' : (p.status || 'Actief')}
+        </span>
+      </td>
+    </tr>
+
+  );
+}
+
 
 export function MenuManager() {
   const [products, setProducts] = useState<ObProduct[]>([]);
@@ -29,11 +92,40 @@ export function MenuManager() {
     fetchProducts();
   }, []);
 
+  
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = async (event: any) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      setProducts((items) => {
+        const oldIndex = items.findIndex((i) => i.id === active.id);
+        const newIndex = items.findIndex((i) => i.id === over.id);
+        const newItems = arrayMove(items, oldIndex, newIndex);
+        
+        // Optimistically update sort_order in UI
+        const updatedItems = newItems.map((item, index) => ({ ...item, sort_order: index }));
+        
+        // Save to DB in background
+        if (supabase) {
+          Promise.all(updatedItems.map(item => 
+            supabase.from('ob_products').update({ sort_order: item.sort_order }).eq('id', item.id)
+          )).catch(err => console.error("Error updating sort order:", err));
+        }
+        
+        return updatedItems;
+      });
+    }
+  };
+
   const fetchProducts = async () => {
     setIsLoading(true);
     if (!supabase) return;
     try {
-      const { data, error } = await supabase.from('ob_products').select('*').order('created_at', { ascending: true });
+      const { data, error } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
       if (data) setProducts(data);
     } catch (err) {
       console.error(err);
@@ -78,7 +170,8 @@ export function MenuManager() {
           category: categoryToSave,
           image_url: editForm.image_url || '',
           status: statusToSave,
-          portions: portionsToSave
+          portions: portionsToSave,
+          sort_order: products.length
         }).select();
         if (error) { alert('Error: ' + error.message); }
         if (data) setProducts([...products, data[0]]);
@@ -231,84 +324,35 @@ export function MenuManager() {
         </button>
       </div>
 
-      <div className="w-full max-w-full overflow-auto custom-scrollbar bg-white border border-gray-200 rounded-xl max-h-[calc(100vh-320px)]">
-        <table className="w-full text-left text-sm min-w-[1000px]">
-          <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-            <tr>
-              <th className="px-2 py-2 font-semibold text-gray-700 w-24">Acties</th>
-              <th className="px-2 py-2 font-semibold text-gray-700 w-1/3">Product</th>
-              <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Categorie</th>
-              <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Status</th>
-              <th className="px-2 py-2 font-semibold text-gray-700 ">Porties (stuks)</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {editingId === 'new' && (
-              <tr className="bg-blue-50/50">
-                {renderEditRow()}
-              </tr>
-            )}
-            
-            {products.map(p => (
-              editingId === p.id ? (
-                <tr key={p.id} className="bg-blue-50/50">
-                  {renderEditRow()}
+            <div className="w-full max-w-full overflow-auto custom-scrollbar bg-white border border-gray-200 rounded-xl max-h-[calc(100vh-320px)]">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={products.map(p => p.id)} strategy={verticalListSortingStrategy}>
+            <table className="w-full text-left text-sm min-w-[1000px]">
+              <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                
+                <tr>
+                  <th className="px-2 py-2 font-semibold text-gray-700 w-24">Acties</th>
+                  <th className="px-2 py-2 font-semibold text-gray-700 w-1/3">Product</th>
+                  <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Categorie</th>
+                  <th className="px-2 py-2 font-semibold text-gray-700 ">Porties (stuks)</th>
+                  <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Status</th>
                 </tr>
-              ) : (
-                <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-2 py-2 space-x-2 w-24">
-                    <button onClick={() => handleEdit(p)} className="text-gray-400 hover:text-blue-600 p-1"><Edit2 size={16} /></button>
-                    <button onClick={() => handleDelete(p.id)} className="text-gray-400 hover:text-red-600 p-1"><Trash2 size={16} /></button>
-                  </td>
-                  <td className="px-2 py-2">
-                    <div className="flex items-center gap-3">
-                      {p.image_url ? (
-                        <img src={p.image_url} alt={p.name} className="w-8 h-8 object-cover rounded-md border border-gray-200 shrink-0" />
-                      ) : (
-                        <div className="w-8 h-8 bg-gray-100 rounded-md flex items-center justify-center text-gray-400 shrink-0"><ImageIcon size={16} /></div>
-                      )}
-                      <span className="font-medium text-gray-900">{p.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 text-gray-600">{p.category}</td>
-                  <td className="px-2 py-2">
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium 
-                      ${p.status === 'active' ? 'bg-green-100 text-green-700' : ''}
-                      ${p.status === 'inactive' ? 'bg-gray-100 text-gray-700' : ''}
-                      ${p.status === 'sold_out' ? 'bg-red-100 text-red-700' : ''}
-                      ${p.status === 'coming_soon' ? 'bg-yellow-100 text-yellow-800' : ''}
-                      ${p.status === 'new' ? 'bg-blue-100 text-blue-700' : ''}
-                      ${p.status === 'popular' ? 'bg-purple-100 text-purple-700' : ''}
-                      ${!['active', 'inactive', 'sold_out', 'coming_soon', 'new', 'popular'].includes(p.status) ? 'bg-gray-100 text-gray-800' : ''}
-                    `}>
-                      {p.status === 'inactive' ? 'Verborgen' : 
-                       p.status === 'sold_out' ? 'Uitverkocht' : 
-                       p.status === 'coming_soon' ? 'Binnenkort' : 
-                       p.status === 'new' ? 'Nieuw' : 
-                       p.status === 'popular' ? 'Meest Gekozen' : 
-                       p.status === 'active' ? 'Actief' : p.status}
-                    </span>
-                  </td>
-                  <td className="px-2 py-2 text-gray-500 text-sm">
-                    <div className="flex gap-1">
-                      {p.portions && p.portions.length > 0 ? p.portions.map((port, idx) => (
-                        <span key={idx} className="inline-block bg-gray-100 px-2 py-0.5 rounded text-xs border border-gray-200">{port}</span>
-                      )) : '-'}
-                    </div>
-                  </td>
-                </tr>
-              )
-            ))}
-            
-            {products.length === 0 && !isLoading && editingId !== 'new' && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                  Geen producten gevonden. Voeg er een toe om te beginnen.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {editingId === 'new' && (
+                  <tr className="bg-blue-50/50">
+                    {renderEditRow()}
+                  </tr>
+                )}
+                
+                {products.map(p => (
+                  <SortableRow key={p.id} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} />
+                ))}
+              </tbody>
+            </table>
+          </SortableContext>
+        </DndContext>
       </div>
     </div>
   );

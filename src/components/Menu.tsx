@@ -35,8 +35,7 @@ export function Menu({ content }: { content?: any }) {
           .from('ob_products')
           .select('*')
           .neq('status', 'verborgen') // Ensure we don't show hidden items
-          .order('category', { ascending: true })
-          .order('name', { ascending: true });
+          .order('sort_order', { ascending: true, nullsFirst: false }).order('category', { ascending: true }).order('name', { ascending: true });
 
         if (error) throw error;
 
@@ -52,17 +51,15 @@ export function Menu({ content }: { content?: any }) {
           return acc;
         }, {});
 
+        
         const categoriesArray = Object.keys(grouped).map(key => ({
           title: key,
-          items: grouped[key]
+          items: grouped[key],
+          minSortOrder: Math.min(...grouped[key].map((i: any) => i.sort_order || 0))
         }));
         
-        // Sort categories if needed, for example 'Snacks' first
-        categoriesArray.sort((a, b) => {
-          if (a.title === 'Snacks') return -1;
-          if (b.title === 'Snacks') return 1;
-          return a.title.localeCompare(b.title);
-        });
+        categoriesArray.sort((a, b) => a.minSortOrder - b.minSortOrder);
+
 
         setCategories(categoriesArray);
       } catch (err) {
