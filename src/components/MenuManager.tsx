@@ -454,7 +454,7 @@ export function MenuManager() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 w-full max-w-7xl">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-1">Menu & Producten Beheren</h3>

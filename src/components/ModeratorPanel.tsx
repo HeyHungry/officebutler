@@ -820,7 +820,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         </section>
                       </div>
                     ) : activeTab === 'registrations' ? (
-                      <div className="space-y-6 max-w-4xl">
+                      <div className="space-y-6 w-full max-w-7xl">
                         <div>
                           <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">{!isSidebarCollapsed && <span>Aanmeldingen</span>}</h3>
                           <p className="text-sm text-gray-500 mb-6">Overzicht van kantoren die zich hebben ingeschreven en nog wachten op goedkeuring.</p>
@@ -853,7 +853,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         )}
                       </div>
                     ) : activeTab === 'customers' ? (
-                      <div className="space-y-6 max-w-4xl">
+                      <div className="space-y-6 w-full max-w-7xl">
                         <div>
                           <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">{!isSidebarCollapsed && <span>Klanten (Kantoren)</span>}</h3>
                           <p className="text-sm text-gray-500 mb-6">Overzicht van alle goedgekeurde kantoren. Klik op 'Beheren' om hun instellingen aan te passen.</p>
@@ -1025,7 +1025,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       </div>
 
                     ) : activeTab === 'prices' ? (
-                      <div className="space-y-6 max-w-2xl">
+                      <div className="space-y-6 w-full max-w-6xl">
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-6">
                           <div>
                             <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-1">Prijzen & Deals Beheren</h3>
