@@ -41,7 +41,7 @@ export function Hero({ content }: { content?: any }) {
             </div>
             
             <a 
-              href="#assortments"
+              href="#menu"
               className="font-serif group border border-white/50 text-white px-8 py-4 flex items-center gap-3 hover:bg-white hover:text-ob-blue hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:-translate-y-1 transition-all duration-300 w-full sm:w-auto justify-center"
             >
               <span className="font-serif tracking-widest uppercase text-sm font-semibold">{content?.hero_btn_offer || "Bekijk aanbod"}</span>

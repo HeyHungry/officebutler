@@ -32,6 +32,9 @@ type Address = {
 type PriceMap = Record<string, number>;
 
 export function EmployeeOrdering() {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,7 +57,8 @@ export function EmployeeOrdering() {
   const [selectedDeliveryMethod, setSelectedDeliveryMethod] = useState<any>(null);
 
   // New multi-select state
-  const [selections, setSelections] = useState<Record<string, Record<number, number>>>({});
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  const [selections, setSelections] = useState<Record<string, Record<string, number>>>({});
   const [selectedAddress, setSelectedAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
@@ -68,6 +72,13 @@ export function EmployeeOrdering() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const getVariantSurcharge = (productName: string, variant: string, size: string | number) => {
+    if (!variant) return 0;
+    const prod = dbProducts.find(p => p.name === productName);
+    if (!prod || !prod.variant_surcharges) return 0;
+    return prod.variant_surcharges[`${variant}_${size}`] || prod.variant_surcharges[variant] || 0;
+  };
 
   const fetchData = async () => {
     if (!supabase) {
@@ -186,7 +197,12 @@ export function EmployeeOrdering() {
     const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
       for (const [s, qty] of Object.entries(sizes as any)) {
-        prodSum += (prices[`${prod}_${s}`] || 0) * (qty as number);
+        const parts = String(s).split('_');
+        const sizeNum = parts[0];
+        const variant = parts[1] || '';
+        const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+        const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+        prodSum += (basePrice + surcharge) * (qty as number);
       }
       return sum + prodSum;
     }, 0);
@@ -200,16 +216,34 @@ export function EmployeeOrdering() {
     if (supabase) {
       try {
         const orderPromises: any[] = [];
+        const orderLines: any[] = [];
         Object.entries(selections).forEach(([prod, sizes]) => {
           Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
-            const size = Number(sizeStr);
-            const price = prices[`${prod}_${size}`] || 0;
+            const parts = String(sizeStr).split('_');
+            const sizeNum = Number(parts[0]);
+            const variant = parts[1] || '';
+            const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+            const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+            const price = basePrice + surcharge;
+            let finalProdName = variant ? `${prod} (${variant})` : prod;
+            const dbProduct = dbProducts.find(p => p.name === prod);
+            if (dbProduct && dbProduct.sauces && dbProduct.sauces.length > 0) {
+              finalProdName += ` [+ ${dbProduct.sauces.join(', ')}]`;
+            }
+
+            orderLines.push({
+              product_name: finalProdName,
+              portion_size: sizeNum,
+              price: price,
+              qty: qty as number,
+              lineTotal: price * (qty as number)
+            });
             
             for (let i = 0; i < (qty as number); i++) {
               orderPromises.push(supabase.from('ob_orders').insert({
                 company_id: companyId,
-                product_name: prod,
-                portion_size: size,
+                product_name: finalProdName,
+                portion_size: sizeNum,
                 price: price,
                 total_price: price,
                 delivery_address_id: addressId,
@@ -252,12 +286,15 @@ export function EmployeeOrdering() {
               companyId,
               selections,
               prices,
+              orderLines,
               addressId: selectedAddress,
               phone,
               notes,
               totalOrderPrice,
               deliveryDate: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-              deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+              deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
+              deliveryMethod: selectedDeliveryMethod?.name || 'Standaard Bezorging',
+              deliveryMethodPrice: selectedDeliveryMethod?.price || 0
             })
 
           });
@@ -396,7 +433,7 @@ export function EmployeeOrdering() {
               <div className="space-y-4">
                 {(() => {
                   const itemsToRender = dbProducts.length > 0 
-                    ? dbProducts.filter(p => assortment.includes(p.name) && p.status !== 'Inactief' && p.status !== 'Verborgen')
+                    ? dbProducts.filter(p => assortment.includes(p.name) && !['inactive', 'inactief', 'verborgen'].includes((p.status || '').toLowerCase()))
                     : assortment.map(name => ({ name, status: 'Actief' }));
                     
                   return itemsToRender.map((item: any) => {
@@ -461,8 +498,41 @@ export function EmployeeOrdering() {
                                     };
                                   });
                                 }}
-                                className={`flex-1 min-w-[80px] py-2 px-3 rounded-lg border text-center transition-all ${(!hasPrice || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())) ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : isSizeSelected ? 'border-ob-blue bg-ob-blue text-white shadow-sm' : 'border-gray-200 hover:border-ob-blue hover:-translate-y-1 hover:shadow-md text-gray-700 bg-white transition-all'}`}
+                                className={`relative flex-1 min-w-[80px] py-2 px-3 rounded-lg border text-center transition-all ${(!hasPrice || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())) ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : isSizeSelected ? 'border-ob-blue bg-ob-blue text-white shadow-sm' : 'border-gray-200 hover:border-ob-blue hover:-translate-y-1 hover:shadow-md text-gray-700 bg-white transition-all'}`}
                               >
+                                {isSizeSelected && (
+                                  <div 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.preventDefault();
+                                      setSelections(prev => {
+                                        const prodSelections = prev[product] || {};
+                                        const currentQty = prodSelections[size] || 0;
+                                        if (currentQty <= 1) {
+                                          const newObj = { ...prodSelections };
+                                          delete newObj[size];
+                                          if (Object.keys(newObj).length === 0) {
+                                            const newSelections = { ...prev };
+                                            delete newSelections[product];
+                                            return newSelections;
+                                          }
+                                          return { ...prev, [product]: newObj };
+                                        }
+                                        return {
+                                          ...prev,
+                                          [product]: {
+                                            ...prodSelections,
+                                            [size]: currentQty - 1
+                                          }
+                                        };
+                                      });
+                                    }}
+                                    className="absolute top-5 -right-2 bg-gray-400 text-white text-[12px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white hover:bg-red-500 transition-colors z-10 cursor-pointer" role="button"
+                                    title="Verwijder één"
+                                  >
+                                    -
+                                  </div>
+                                )}
                                 <div className="font-bold">{isSizeSelected ? `${selections[product][size]}x ${size}` : size}</div>
                                 <div className={`text-xs ${isSizeSelected ? 'text-blue-100' : 'text-gray-500'}`}>
                                   {hasPrice ? `€${price.toFixed(2)}` : '-'}

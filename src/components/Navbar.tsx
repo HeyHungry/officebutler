@@ -70,7 +70,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
 
   const navLinks = [
     { name: 'Hoe het werkt', href: '/#how-it-works' },
-    { name: 'Assortiment', href: '/#assortments' },
+    { name: 'Assortiment', href: '/#menu' },
     { name: 'Menu', href: '/#menu' },
     { name: 'Voor Bedrijven', href: '/#business' },
     { name: 'Contact', href: '/#contact' },

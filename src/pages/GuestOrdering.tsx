@@ -4,6 +4,10 @@ import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, Ma
 import { Link, useLocation } from 'react-router-dom';
 
 export function GuestOrdering() {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   const [assortment, setAssortment] = useState<string[]>(['Snack Mix', 'Bitterballen']);
   const [prices, setPrices] = useState<Record<string, number>>({ 
     'Snack Mix_25': 24.00, 'Snack Mix_50': 45.00,
@@ -22,7 +26,8 @@ export function GuestOrdering() {
     'Vegan Bitterballen_25': 26.00, 'Vegan Bitterballen_50': 48.00,
   });
 
-  const [selections, setSelections] = useState<Record<string, Record<number, number>>>({});
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  const [selections, setSelections] = useState<Record<string, Record<string, number>>>({});
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [deliveryMethods, setDeliveryMethods] = useState<any[]>([]);
@@ -58,7 +63,8 @@ export function GuestOrdering() {
         if (prods) setDbProducts(prods);
         if (prods) {
           const grouped = prods.reduce((acc, item) => {
-            if (item.status === 'Verborgen' || item.status === 'Inactief') return acc;
+            const st = (item.status || '').toLowerCase();
+            if (['inactive', 'inactief', 'verborgen'].includes(st)) return acc;
             if (!acc[item.category]) acc[item.category] = [];
             acc[item.category].push(item);
             return acc;
@@ -99,15 +105,54 @@ export function GuestOrdering() {
     fetchAssortment();
   }, []);
 
-  const handlePortionSelect = (product: string, size: number) => {
+  const getVariantSurcharge = (productName: string, variant: string, size: string | number) => {
+    if (!variant) return 0;
+    const prod = dbProducts.find(p => p.name === productName);
+    if (!prod || !prod.variant_surcharges) return 0;
+    return prod.variant_surcharges[`${variant}_${size}`] || prod.variant_surcharges[variant] || 0;
+  };
+
+  
+  const handlePortionSelect = (product: string, size: number, variant: string = '') => {
     setSelections(prev => {
       const currentObj = prev[product] || {};
-      const currentQty = currentObj[size] || 0;
+      const key = variant ? `${size}_${variant}` : `${size}`;
+      const currentQty = currentObj[key] || 0;
       return {
         ...prev,
         [product]: {
           ...currentObj,
-          [size]: currentQty + 1
+          [key]: currentQty + 1
+        }
+      };
+    });
+  };
+
+  const handlePortionDeselect = (product: string, size: number, variant: string = '', e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setSelections(prev => {
+      const currentObj = prev[product] || {};
+      const key = variant ? `${size}_${variant}` : `${size}`;
+      const currentQty = currentObj[key] || 0;
+      
+      if (currentQty <= 1) {
+        const newObj = { ...currentObj };
+        delete newObj[key];
+        if (Object.keys(newObj).length === 0) {
+          const newSelections = { ...prev };
+          delete newSelections[product];
+          return newSelections;
+        }
+        return { ...prev, [product]: newObj };
+      }
+      return {
+        ...prev,
+        [product]: {
+          ...currentObj,
+          [key]: currentQty - 1
         }
       };
     });
@@ -134,7 +179,12 @@ export function GuestOrdering() {
     const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
       for (const [s, qty] of Object.entries(sizes as any)) {
-        prodSum += (prices[`${prod}_${s}`] || 0) * (qty as number);
+        const parts = s.split('_');
+        const sizeNum = parts[0];
+        const variant = parts[1] || '';
+        const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+        const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+        prodSum += (basePrice + surcharge) * (qty as number);
       }
       return sum + prodSum;
     }, 0);
@@ -151,15 +201,33 @@ Extra Notities: ${notes}
     if (supabase) {
       try {
         const orderPromises: any[] = [];
+        const orderLines: any[] = [];
         Object.entries(selections).forEach(([prod, sizes]) => {
           Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
-            const size = Number(sizeStr);
-            const price = prices[`${prod}_${size}`] || 0;
+            const parts = String(sizeStr).split('_');
+            const sizeNum = Number(parts[0]);
+            const variant = parts[1] || '';
+            const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+            const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+            const price = basePrice + surcharge;
+            let finalProdName = variant ? `${prod} (${variant})` : prod;
+            const dbProduct = dbProducts.find(p => p.name === prod);
+            if (dbProduct && dbProduct.sauces && dbProduct.sauces.length > 0) {
+              finalProdName += ` [+ ${dbProduct.sauces.join(', ')}]`;
+            }
+            
+            orderLines.push({
+              product_name: finalProdName,
+              portion_size: sizeNum,
+              price: price,
+              qty: qty as number,
+              lineTotal: price * (qty as number)
+            });
             
             for (let i = 0; i < (qty as number); i++) {
               orderPromises.push(supabase.from('ob_orders').insert({
-                product_name: prod,
-                portion_size: size,
+                product_name: finalProdName,
+                portion_size: sizeNum,
                 price: price,
                 total_price: price,
                 phone: phone,
@@ -200,11 +268,14 @@ Extra Notities: ${notes}
               guestAddress,
               selections,
               prices,
+              orderLines,
               phone,
               notes,
               totalOrderPrice,
               deliveryDate: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-              deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+              deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
+              deliveryMethod: selectedDeliveryMethod?.name || 'Standaard Bezorging',
+              deliveryMethodPrice: selectedDeliveryMethod?.price || 0
             })
           });
           if (!res.ok) {
@@ -252,7 +323,12 @@ Extra Notities: ${notes}
   const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
       for (const [s, qty] of Object.entries(sizes as any)) {
-        prodSum += (prices[`${prod}_${s}`] || 0) * (qty as number);
+        const parts = s.split('_');
+        const sizeNum = parts[0];
+        const variant = parts[1] || '';
+        const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+        const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+        prodSum += (basePrice + surcharge) * (qty as number);
       }
       return sum + prodSum;
     }, 0);
@@ -335,60 +411,114 @@ Extra Notities: ${notes}
                       {category.items.map((item) => {
                         const product = item.name;
                         const prodSelections = selections[product] || {};
-                        let productSizes = Object.keys(prices)
-                          .filter(key => key.startsWith(product + "_"))
-                          .map(key => parseInt(key.split("_")[1], 10))
-                          .sort((a, b) => a - b);
-                        if (item.portions && item.portions.length > 0) {
-                          productSizes = item.portions;
-                        }
-                        
+                        const productSizes = item.portions || [];
                         return (
-                          <div key={product} className={"flex gap-4 border rounded-xl p-4 transition-all " + (Object.keys(prodSelections).length > 0 ? 'border-ob-blue bg-blue-50/30 shadow-sm' : 'border-gray-200 hover:border-ob-blue/30')}>
-                            <div className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                              <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover" />
-                            </div>
-                            
-                            <div className="flex-1 flex flex-col justify-between">
-                              <div className="flex justify-between items-start mb-2">
-                                <h4 className="font-bold text-gray-900 leading-tight flex flex-wrap items-center gap-2">{product}
-{item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
-<span className={`px-2 py-1 rounded-full text-xs font-medium shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}</span>
-)}</h4>
+                          <div key={product} className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${Object.keys(prodSelections).length > 0 ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' : 'border-gray-200 bg-white hover:border-ob-blue/40 hover:shadow-sm'}`}>
+                            {/* Top info section */}
+                            <div className="p-4 flex gap-4">
+                              <div className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100">
+                                <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover" />
                               </div>
                               
-                              <div className="grid grid-cols-2 gap-2 mt-auto w-full">
+                              <div className="flex-1 min-w-0 flex flex-col">
+                                <h4 className="font-bold text-[15px] text-[#05053D] leading-tight mb-1.5">{product}</h4>
+                                
+                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                  {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                      {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
+                                    </span>
+                                  )}
+                                </div>
+
+                                {item.sauces && item.sauces.length > 0 && (
+                                  <div className="mt-auto inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit">
+                                    <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
+                                    <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{item.sauces.join(', ')}</span></span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Action section pushed to bottom */}
+                            <div className="p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col gap-3">
+                              {item.variants && item.variants.length > 0 && (
+                                <select 
+                                  className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors"
+                                  value={selectedVariants[product] || item.variants[0]}
+                                  onChange={(e) => setSelectedVariants({...selectedVariants, [product]: e.target.value})}
+                                >
+                                  {item.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                                </select>
+                              )}
+                              
+                              <div className="grid grid-cols-2 gap-2 w-full">
                                 {productSizes.length > 0 ? (
-                                  productSizes.map(size => (
+                                  productSizes.map(size => {
+                                    const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[product] || item.variants[0]) : '';
+                                    const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
+                                    const countForCurrentSelection = prodSelections[selKey] || 0;
+                                    const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
+                                    
+                                    const basePrice = prices[product + '_' + size];
+                                    const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(product, currentVariant, size) : undefined;
+                                    
+                                    const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase());
+                                    const isDisabled = basePrice === undefined || isSoldOut;
+                                    
+                                    return (
                                     <button
                                       key={size}
                                       type="button"
-                                      disabled={prices[product + '_' + size] === undefined || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())} onClick={() => handlePortionSelect(product, size)}
-                                      className={`p-2 text-xs rounded-lg border transition-colors flex flex-col items-center justify-center gap-0.5 ${(prices[product + '_' + size] === undefined || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())) ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-100' : (prodSelections[size] || 0) > 0 ? 'bg-ob-blue text-white border-ob-blue font-semibold' : 'bg-white text-gray-600 border-gray-200 hover:border-ob-blue hover:-translate-y-1 hover:shadow-md transition-all'}`}
+                                      disabled={isDisabled} 
+                                      onClick={() => {
+                                        handlePortionSelect(product, size, currentVariant);
+                                      }}
+                                      className={`relative py-2 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
                                     >
-                                      <span className="font-semibold text-[13px]">{size} st.</span>
-                                      <span className={(prodSelections[size] || 0) > 0 ? 'text-white/90' : 'text-gray-500'}>{prices[product + '_' + size] !== undefined ? `€${prices[product + '_' + size].toFixed(2)}` : '-'}</span>
+                                      <span className="font-bold text-[13px]">{size} st.</span>
+                                      <span className={`text-[11px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
+                                      
+                                      {countForCurrentSelection > 0 && (
+                                        <div 
+                                          role="button"
+                                          onClick={(e) => handlePortionDeselect(product, size, currentVariant, e)}
+                                          className="absolute top-5 -right-2 bg-gray-400 text-white text-[12px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white hover:bg-red-500 transition-colors z-10 cursor-pointer"
+                                          title="Verwijder één"
+                                        >
+                                          -
+                                        </div>
+                                      )}
+                                      {countForCurrentSelection > 0 && (
+                                        <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                          {countForCurrentSelection}
+                                        </span>
+                                      )}
+                                      
+                                      {countForCurrentSelection === 0 && totalCountForSize > 0 && (
+                                        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-ob-blue/40" title="Al gekozen in een andere variant"></span>
+                                      )}
                                     </button>
-                                  ))
+                                  )})
                                 ) : (
                                   <span className="text-xs text-gray-400 italic col-span-2">Prijs wordt geladen...</span>
                                 )}
                               </div>
 
                               {Object.keys(prodSelections).length > 0 && (
-                                <div className="mt-3 flex items-center justify-between pt-3 border-t border-gray-100">
+                                <div className="mt-2 pt-3 border-t border-gray-200">
                                   <div className="flex flex-col gap-1">
-                                    {Object.entries(prodSelections).map(([s, qty]) => (
-                                      <span key={s} className="text-xs font-semibold text-ob-blue">{qty as number}x {s} st.</span>
-                                    ))}
+                                    {Object.entries(prodSelections).map(([s, qty]) => {
+                                      const parts = s.split('_');
+                                      const sizeNum = parts[0];
+                                      const variant = parts[1] || '';
+                                      return (
+                                        <div key={s} className="flex justify-between items-center">
+                                          <span className="text-[11px] font-semibold text-[#151f33]">{qty as number}x {sizeNum} st. {variant && <span className="text-gray-500 font-normal">({variant})</span>}</span>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemove(product)}
-                                    className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 bg-red-50 rounded-md"
-                                  >
-                                    Wissen
-                                  </button>
                                 </div>
                               )}
                             </div>

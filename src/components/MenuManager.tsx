@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical, ChevronUp, ChevronDown } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -14,6 +14,14 @@ export type ObProduct = {
   status: string;
   portions: number[];
   sort_order?: number;
+  sauces?: string[];
+  variants?: string[];
+  variant_surcharges?: Record<string, number>;
+};
+
+export type EditFormState = Partial<ObProduct> & {
+  sauces_str?: string;
+  variants_str?: string;
 };
 
 function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: any) {
@@ -51,7 +59,11 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: 
               <ImageIcon size={16} />
             </div>
           )}
-          <span className="font-semibold text-gray-800">{p.name}</span>
+          <div className="flex flex-col">
+            <span className="font-semibold text-gray-800">{p.name}</span>
+            {p.variants && p.variants.length > 0 && <span className="text-[10px] text-gray-500">Varianten: {p.variants.join(', ')}</span>}
+            {p.sauces && p.sauces.length > 0 && <span className="text-[10px] text-gray-500">Sauzen: {p.sauces.join(', ')}</span>}
+          </div>
         </div>
       </td>
       
@@ -80,7 +92,7 @@ export function MenuManager() {
   const [isSaving, setIsSaving] = useState(false);
   
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<ObProduct>>({});
+  const [editForm, setEditForm] = useState<EditFormState>({});
 
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState('');
@@ -100,8 +112,15 @@ export function MenuManager() {
 
   const handleDragEnd = async (event: any) => {
     const { active, over } = event;
+    if (!over) return;
     if (active.id !== over.id) {
       setProducts((items) => {
+        const activeItem = items.find(i => i.id === active.id);
+        const overItem = items.find(i => i.id === over.id);
+        
+        if (!activeItem || !overItem) return items;
+        if (activeItem.category !== overItem.category) return items; // Prevent cross-category drag for now
+        
         const oldIndex = items.findIndex((i) => i.id === active.id);
         const newIndex = items.findIndex((i) => i.id === over.id);
         const newItems = arrayMove(items, oldIndex, newIndex);
@@ -134,8 +153,56 @@ export function MenuManager() {
     }
   };
 
+  const grouped = products.reduce((acc, item) => {
+    const cat = item.category || 'Overig';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  const categoryList = Object.keys(grouped).map(key => ({
+    title: key,
+    minSortOrder: Math.min(...grouped[key].map(i => i.sort_order || 0)),
+    items: grouped[key].sort((a,b) => (a.sort_order || 0) - (b.sort_order || 0))
+  }));
+  categoryList.sort((a,b) => a.minSortOrder - b.minSortOrder);
+  
+  // Ensure the currently edited new category is rendered so the edit row doesn't vanish
+  if (editingId === 'new' && editForm.category && !categoryList.find(c => c.title === editForm.category)) {
+    categoryList.push({
+      title: editForm.category,
+      minSortOrder: 9999,
+      items: []
+    });
+  }
+
+  const moveCategory = (index: number, direction: -1 | 1) => {
+    if (index + direction < 0 || index + direction >= categoryList.length) return;
+    const newCatList = [...categoryList];
+    const temp = newCatList[index];
+    newCatList[index] = newCatList[index + direction];
+    newCatList[index + direction] = temp;
+
+    let currentSortOrder = 0;
+    const updatedProducts: any[] = [];
+    for (const cat of newCatList) {
+      for (const prod of cat.items) {
+        updatedProducts.push({ ...prod, sort_order: currentSortOrder++ });
+      }
+    }
+    setProducts(updatedProducts);
+    if (supabase) {
+      Promise.all(updatedProducts.map(item => 
+        supabase.from('ob_products').update({ sort_order: item.sort_order }).eq('id', item.id)
+      )).catch(err => console.error("Error updating sort order:", err));
+    }
+  };
+
   const categories = Array.from(new Set([...products.map(p => p.category), editForm.category])).filter(Boolean) as string[];
   if (categories.length === 0) categories.push('Snacks', 'Vega');
+  
+  const allVariants = Array.from(new Set(products.flatMap(p => p.variants || []))).sort();
+  const allSauces = Array.from(new Set(products.flatMap(p => p.sauces || []))).sort();
   
   const defaultStatuses = ['active', 'inactive', 'sold_out', 'coming_soon', 'new', 'popular'];
   const statuses = Array.from(new Set([...defaultStatuses, ...products.map(p => p.status), editForm.status])).filter(Boolean) as string[];
@@ -163,6 +230,9 @@ export function MenuManager() {
     const categoryToSave = isCreatingCategory && newCategory ? newCategory : editForm.category;
     const statusToSave = isCreatingStatus && newStatus ? newStatus : (editForm.status || 'active');
 
+    const variantsToSave = editForm.variants || [];
+    const saucesToSave = editForm.sauces || [];
+
     try {
       if (editingId === 'new') {
         const { data, error } = await supabase.from('ob_products').insert({
@@ -171,20 +241,31 @@ export function MenuManager() {
           image_url: editForm.image_url || '',
           status: statusToSave,
           portions: portionsToSave,
+          variants: variantsToSave,
+          sauces: saucesToSave,
           sort_order: products.length
         }).select();
         if (error) { alert('Error: ' + error.message); }
         if (data) setProducts([...products, data[0]]);
       } else {
+        const oldProduct = products.find(p => p.id === editingId);
+        const oldName = oldProduct?.name;
+
         const { data, error } = await supabase.from('ob_products').update({
           name: editForm.name,
           category: categoryToSave,
           image_url: editForm.image_url,
           status: statusToSave,
-          portions: portionsToSave
+          portions: portionsToSave,
+          variants: variantsToSave,
+          sauces: saucesToSave
         }).eq('id', editingId).select();
         if (error) { alert('Error: ' + error.message); }
         if (data) {
+          if (oldName && oldName !== editForm.name) {
+             await supabase.from('ob_product_prices').update({ product_name: editForm.name }).eq('product_name', oldName);
+             await supabase.from('ob_company_assortment').update({ product_name: editForm.name }).eq('product_name', oldName);
+          }
           setProducts(products.map(p => p.id === editingId ? data[0] : p));
         }
       }
@@ -200,13 +281,19 @@ export function MenuManager() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+    const handleDelete = async (id: string) => {
     if (!supabase || !window.confirm('Weet je zeker dat je dit product wilt verwijderen?')) return;
+    
+    const oldProduct = products.find(p => p.id === id);
     try {
+      if (oldProduct) {
+        await supabase.from('ob_product_prices').delete().eq('product_name', oldProduct.name);
+        await supabase.from('ob_company_assortment').delete().eq('product_name', oldProduct.name);
+      }
       await supabase.from('ob_products').delete().eq('id', id);
       setProducts(products.filter(p => p.id !== id));
-    } catch (err) {
-      console.error(err);
+    } catch (e: any) {
+      alert('Error: ' + e.message);
     }
   };
 
@@ -224,9 +311,69 @@ export function MenuManager() {
           <button onClick={handleSave} disabled={isSaving} className="text-green-600 hover:text-green-800 p-1"><Check size={18} /></button>
           <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600 p-1"><X size={18} /></button>
         </td>
-        <td className="px-2 py-2 align-top">
-          <input type="text" placeholder="Naam" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.name || ''} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-          <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded mt-2 text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
+        <td className="px-2 py-2 align-top space-y-3">
+          <div className="space-y-1.5">
+            <input type="text" placeholder="Naam" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.name || ''} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+            <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
+          </div>
+          
+          <div className="space-y-1">
+             <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Varianten</div>
+             <div className="flex flex-wrap gap-1.5 items-center">
+               {(editForm.variants || []).map(v => (
+                 <span key={v} className="bg-blue-50 text-ob-blue border border-blue-200 px-2 py-0.5 rounded-md text-xs flex items-center gap-1">
+                   {v}
+                   <button onClick={() => setEditForm({...editForm, variants: (editForm.variants || []).filter(x => x !== v)})} className="hover:text-red-500"><X size={12} /></button>
+                 </span>
+               ))}
+               <select 
+                 className="px-2 py-0.5 rounded-md text-xs border border-gray-200 w-auto focus:outline-none focus:border-ob-blue bg-white"
+                 onChange={(e) => {
+                   const val = e.target.value;
+                   if (val && !(editForm.variants || []).includes(val)) {
+                     setEditForm({...editForm, variants: [...(editForm.variants || []), val]});
+                   }
+                   e.target.value = "";
+                 }}
+                 defaultValue=""
+               >
+                 <option value="" disabled>+ Kies Variant...</option>
+                 {allVariants.filter(v => !(editForm.variants || []).includes(v)).map(v => (
+                   <option key={v} value={v}>{v}</option>
+                 ))}
+               </select>
+               <input type="text" placeholder="Of typ nieuw..." className="px-2 py-0.5 rounded-md text-xs border border-gray-200 w-24 focus:outline-none focus:border-ob-blue" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); const val = e.currentTarget.value.trim(); if(val && !(editForm.variants || []).includes(val)) { setEditForm({...editForm, variants: [...(editForm.variants || []), val]}); } e.currentTarget.value = ''; } }} />
+             </div>
+          </div>
+          
+          <div className="space-y-1">
+             <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Sauzen</div>
+             <div className="flex flex-wrap gap-1.5 items-center">
+               {(editForm.sauces || []).map(s => (
+                 <span key={s} className="bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded-md text-xs flex items-center gap-1">
+                   {s}
+                   <button onClick={() => setEditForm({...editForm, sauces: (editForm.sauces || []).filter(x => x !== s)})} className="hover:text-red-500"><X size={12} /></button>
+                 </span>
+               ))}
+               <select 
+                 className="px-2 py-0.5 rounded-md text-xs border border-gray-200 w-auto focus:outline-none focus:border-orange-400 bg-white"
+                 onChange={(e) => {
+                   const val = e.target.value;
+                   if (val && !(editForm.sauces || []).includes(val)) {
+                     setEditForm({...editForm, sauces: [...(editForm.sauces || []), val]});
+                   }
+                   e.target.value = "";
+                 }}
+                 defaultValue=""
+               >
+                 <option value="" disabled>+ Kies Saus...</option>
+                 {allSauces.filter(s => !(editForm.sauces || []).includes(s)).map(s => (
+                   <option key={s} value={s}>{s}</option>
+                 ))}
+               </select>
+               <input type="text" placeholder="Of typ nieuw..." className="px-2 py-0.5 rounded-md text-xs border border-gray-200 w-24 focus:outline-none focus:border-orange-400" onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); const val = e.currentTarget.value.trim(); if(val && !(editForm.sauces || []).includes(val)) { setEditForm({...editForm, sauces: [...(editForm.sauces || []), val]}); } e.currentTarget.value = ''; } }} />
+             </div>
+          </div>
         </td>
         <td className="px-2 py-2 align-top">
           {isCreatingCategory ? (
@@ -253,6 +400,21 @@ export function MenuManager() {
               {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
+        </td>
+        <td className="px-2 py-2 align-top">
+          <div className="flex gap-1">
+            {[0, 1, 2, 3].map(index => (
+              <input 
+                key={index}
+                type="number" 
+                min="0"
+                placeholder="-"
+                className="w-12 px-1 py-1.5 text-center border rounded text-sm focus:border-[#151f33] focus:outline-none" 
+                value={editForm.portions?.[index] || ''} 
+                onChange={e => handlePortionChangeIndex(index, e.target.value)}
+              />
+            ))}
+          </div>
         </td>
         <td className="px-2 py-2 align-top">
           {isCreatingStatus ? (
@@ -287,21 +449,6 @@ export function MenuManager() {
             </select>
           )}
         </td>
-        <td className="px-2 py-2 align-top">
-          <div className="flex gap-1">
-            {[0, 1, 2, 3].map(index => (
-              <input 
-                key={index}
-                type="number" 
-                min="0"
-                placeholder="-"
-                className="w-12 px-1 py-1.5 text-center border rounded text-sm focus:border-[#151f33] focus:outline-none" 
-                value={editForm.portions?.[index] || ''} 
-                onChange={e => handlePortionChangeIndex(index, e.target.value)}
-              />
-            ))}
-          </div>
-        </td>
       </>
     );
   };
@@ -316,42 +463,80 @@ export function MenuManager() {
         <button 
           onClick={() => {
             setEditingId('new');
-            setEditForm({ status: 'active', portions: [], category: categories[0] || 'Snacks' });
+            setEditForm({ status: 'active', portions: [], category: 'Nieuwe Categorie' });
+            setIsCreatingCategory(true);
+            setNewCategory('');
           }}
-          className="flex items-center gap-2 bg-[#05053D] text-white px-2 py-2 rounded-lg text-sm font-medium hover:bg-[#0a0a5c] transition-colors"
+          className="flex items-center gap-2 bg-[#05053D] text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-[#0a0a5c] transition-colors"
         >
-          <Plus size={16} /> Nieuw Product
+          <Plus size={16} /> Nieuwe Categorie
         </button>
       </div>
 
-            <div className="w-full max-w-full overflow-auto custom-scrollbar bg-white border border-gray-200 rounded-xl max-h-[calc(100vh-320px)]">
+            <div className="w-full max-w-full overflow-auto custom-scrollbar max-h-[calc(100vh-320px)] space-y-6 p-1 pb-10">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={products.map(p => p.id)} strategy={verticalListSortingStrategy}>
-            <table className="w-full text-left text-sm min-w-[1000px]">
-              <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-                
-                <tr>
-                  <th className="px-2 py-2 font-semibold text-gray-700 w-24">Acties</th>
-                  <th className="px-2 py-2 font-semibold text-gray-700 w-1/3">Product</th>
-                  <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Categorie</th>
-                  <th className="px-2 py-2 font-semibold text-gray-700 ">Porties (stuks)</th>
-                  <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Status</th>
-                </tr>
+          
+          
 
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {editingId === 'new' && (
-                  <tr className="bg-blue-50/50">
-                    {renderEditRow()}
-                  </tr>
-                )}
-                
-                {products.map(p => (
-                  <SortableRow key={p.id} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} />
-                ))}
-              </tbody>
-            </table>
-          </SortableContext>
+          {categoryList.map((cat, catIndex) => (
+            <div key={cat.title} className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              <div className="bg-[#f8f9fa] px-4 py-3 flex items-center justify-between border-b border-gray-200">
+                <div className="flex items-center gap-3">
+                  <h4 className="font-bold text-[#05053D] text-lg">{cat.title}</h4>
+                  <button 
+                    onClick={() => {
+                      setEditingId('new');
+                      setEditForm({ status: 'active', portions: [], category: cat.title });
+                    }}
+                    className="flex items-center gap-1 text-sm bg-white border border-gray-200 px-2 py-1 rounded-md text-gray-600 hover:text-ob-blue hover:border-ob-blue transition-colors"
+                  >
+                    <Plus size={14} /> Nieuw Product
+                  </button>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button 
+                    onClick={() => moveCategory(catIndex, -1)}
+                    disabled={catIndex === 0}
+                    className="p-1 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 disabled:opacity-30 transition-colors"
+                  ><ChevronUp size={20} /></button>
+                  <button 
+                    onClick={() => moveCategory(catIndex, 1)}
+                    disabled={catIndex === categoryList.length - 1}
+                    className="p-1 rounded text-gray-500 hover:bg-gray-200 hover:text-gray-800 disabled:opacity-30 transition-colors"
+                  ><ChevronDown size={20} /></button>
+                </div>
+              </div>
+              <SortableContext items={cat.items.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
+                <table className="w-full text-left text-sm min-w-[1000px]">
+                  {catIndex === 0 && (
+                    <thead className="bg-gray-50 border-b border-gray-200 text-xs">
+                      <tr>
+                        <th className="px-2 py-2 font-semibold text-gray-700 w-24">Acties</th>
+                        <th className="px-2 py-2 font-semibold text-gray-700 w-1/3">Product</th>
+                        <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Categorie</th>
+                        <th className="px-2 py-2 font-semibold text-gray-700 ">Porties (stuks)</th>
+                        <th className="px-2 py-2 font-semibold text-gray-700 w-1/6">Status</th>
+                      </tr>
+                    </thead>
+                  )}
+                  <tbody className="divide-y divide-gray-100">
+                    {editingId === 'new' && editForm.category === cat.title && (
+                      <tr className="bg-blue-50/50">
+                        {renderEditRow()}
+                      </tr>
+                    )}
+                    {cat.items.map((p: any) => (
+                      <SortableRow key={p.id} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} />
+                    ))}
+                    {cat.items.length === 0 && (
+                      <tr><td colSpan={5} className="p-4 text-center text-gray-500 italic">Geen producten in deze categorie.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </SortableContext>
+            </div>
+          ))}
+
         </DndContext>
       </div>
     </div>

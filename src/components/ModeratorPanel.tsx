@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ArrowLeft, ShoppingBag, Type, Truck } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
@@ -55,9 +55,11 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [localStoreSettings, setLocalStoreSettings] = useState<StoreSettings | undefined>(storeSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [variantSurcharges, setVariantSurcharges] = useState<Record<string, number>>({});
 
   // New Tabs State
   const [activeTab, setActiveTab] = useState<Tab>('store');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [registrations, setRegistrations] = useState<ObCompany[]>([]);
   const [customers, setCustomers] = useState<ObCompany[]>([]);
   
@@ -76,6 +78,17 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   }, [settings, storeSettings]);
 
   useEffect(() => {
+    if (dbProducts.length > 0 && selectedPriceProduct) {
+      const prod = dbProducts.find(p => p.name === selectedPriceProduct);
+      if (prod && prod.variant_surcharges) {
+        setVariantSurcharges(prod.variant_surcharges);
+      } else {
+        setVariantSurcharges({});
+      }
+    }
+  }, [dbProducts, selectedPriceProduct]);
+
+  useEffect(() => {
     const checkUser = async () => {
       if (isOpen && supabase) {
         const { data: { session } } = await supabase.auth.getSession();
@@ -91,7 +104,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     if (isOpen && isAuthenticated) {
       fetchDashboardData();
     }
-  }, [isOpen, isAuthenticated]);
+  }, [isOpen, isAuthenticated, activeTab]);
 
   const handleResendInvoice = async (group: any) => {
     try {
@@ -293,6 +306,23 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
             }
           }
         }
+
+        // Save variant surcharges to ob_products
+        if (selectedPriceProduct) {
+           const cleanSurcharges = {};
+           for (const [k, v] of Object.entries(variantSurcharges)) {
+             if (v !== undefined && v !== null && !isNaN(v)) {
+               cleanSurcharges[k] = v;
+             }
+           }
+           await supabase.from('ob_products')
+             .update({ variant_surcharges: cleanSurcharges })
+             .eq('name', selectedPriceProduct);
+             
+           // Update local dbProducts state
+           setDbProducts(prev => prev.map(p => p.name === selectedPriceProduct ? { ...p, variant_surcharges: cleanSurcharges } : p));
+           setVariantSurcharges(cleanSurcharges);
+        }
         
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
@@ -328,17 +358,25 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d131f]/80 backdrop-blur-sm p-4 font-sans"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0d131f]/80 backdrop-blur-sm p-0 font-sans"
         >
           <motion.div 
             initial={{ scale: 0.95, y: 20 }}
             animate={{ scale: 1, y: 0 }}
             exit={{ scale: 0.95, y: 20 }}
-            className="bg-white shadow-2xl w-full max-w-4xl h-[90vh] overflow-hidden flex flex-col rounded-lg"
+            className="bg-white w-full h-full max-w-none rounded-none overflow-hidden flex flex-col"
           >
             {/* Header */}
             <div className="flex justify-between items-center p-6 border-b border-gray-200 shrink-0 bg-white">
-              <h2 className="text-2xl font-serif font-semibold text-[#05053D]">Moderator Paneel</h2>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                  className="p-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600 transition-colors"
+                >
+                  {isSidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+                </button>
+                <h2 className="text-2xl font-serif font-semibold text-[#05053D]">Moderator Paneel</h2>
+              </div>
               <div className="flex items-center gap-4">
                 {isAuthenticated && (
                   <button onClick={handleLogout} className="text-sm font-semibold text-red-600 hover:text-red-800 transition-colors">
@@ -376,26 +414,26 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                 <div className="flex w-full h-full flex-col md:flex-row">
                   
                   {/* Sidebar Navigation */}
-                  <div className="w-full md:w-64 bg-gray-50 border-r border-gray-200 p-4 shrink-0 overflow-y-auto">
-                    <nav className="space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible pb-2 md:pb-0">
+                  <div className={`w-full ${isSidebarCollapsed ? "md:w-20" : "md:w-64"} bg-gray-50 border-r border-gray-200 p-4 shrink-0 overflow-y-auto transition-all duration-300`}>
+                    <nav className="space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 items-start">
                       <button 
                         onClick={() => { setActiveTab('store'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'store' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Store size={18} /> Winkel Status
+                        <Store size={18} /> {!isSidebarCollapsed && <span>Winkel Status</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('content'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'content' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Type size={18} /> Website Teksten
+                        <Type size={18} /> {!isSidebarCollapsed && <span>Website Teksten</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('registrations'); setImpersonating(null); }}
                         className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'registrations' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
                         <div className="flex items-center gap-3">
-                          <Building2 size={18} /> Aanmeldingen
+                          <Building2 size={18} /> {!isSidebarCollapsed && <span>Aanmeldingen</span>}
                         </div>
                         {registrations.length > 0 && (
                           <span className="bg-red-500 text-white text-xs py-0.5 px-2 rounded-full font-bold">{registrations.length}</span>
@@ -405,32 +443,32 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         onClick={() => { setActiveTab('customers'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'customers' || impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Users size={18} /> Klanten (Kantoren)
+                        <Users size={18} /> {!isSidebarCollapsed && <span>Klanten (Kantoren)</span>}
                       </button>
                       <button onClick={() => { setActiveTab('orders'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'orders' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
                         <ShoppingBag size={18} />
-                        <span>Bestellingen</span>
+                        <span>{!isSidebarCollapsed && <span>Bestellingen</span>}</span>
                       </button>
                       <button 
                         onClick={() => { setActiveTab('prices'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'prices' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <DollarSign size={18} /> Portie Prijzen
+                        <DollarSign size={18} /> {!isSidebarCollapsed && <span>Portie Prijzen</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('menu'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'menu' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
-                        <span>Menu & Producten</span>
+                        <span>{!isSidebarCollapsed && <span>Menu & Producten</span>}</span>
                       </button>
                       <button
                         onClick={() => { setActiveTab('delivery'); setImpersonating(null); }}
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'delivery' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
                         <Truck size={18} />
-                        <span>Bezorgopties</span>
+                        <span>{!isSidebarCollapsed && <span>Bezorgopties</span>}</span>
                       </button>
                     </nav>
                   </div>
@@ -468,7 +506,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                                             ) : activeTab === 'content' && localStoreSettings ? (
                       <div className="space-y-8 animate-in fade-in duration-300">
                         <section>
-                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-6">Website Teksten Beheren</h3>
+                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-6">{!isSidebarCollapsed && <span>Website Teksten</span>} Beheren</h3>
                           <p className="text-sm text-gray-500 mb-6">Bewerk hier alle teksten, titels, ondertitels en knoppen van de homepagina.</p>
                           
                           {/* HERO */}
@@ -726,7 +764,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       <div className="space-y-10 max-w-2xl">
                         {/* Status Section */}
                         <section>
-                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">Winkel Status Beheren</h3>
+                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">{!isSidebarCollapsed && <span>Winkel Status</span>} Beheren</h3>
                           <p className="text-sm text-gray-500 mb-4">Binnen de reguliere tijden gaat de winkel automatisch open ("AUTO"). Je kan dit manueel overschrijven voor de rest van de dag.</p>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <button onClick={() => setLocalStoreSettings({...localStoreSettings, override_status: 'AUTO'})}
@@ -784,7 +822,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                     ) : activeTab === 'registrations' ? (
                       <div className="space-y-6 max-w-4xl">
                         <div>
-                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">Aanmeldingen</h3>
+                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">{!isSidebarCollapsed && <span>Aanmeldingen</span>}</h3>
                           <p className="text-sm text-gray-500 mb-6">Overzicht van kantoren die zich hebben ingeschreven en nog wachten op goedkeuring.</p>
                         </div>
                         {registrations.length === 0 ? (
@@ -817,7 +855,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                     ) : activeTab === 'customers' ? (
                       <div className="space-y-6 max-w-4xl">
                         <div>
-                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">Klanten (Kantoren)</h3>
+                          <h3 className="text-xl font-serif font-semibold text-[#05053D] mb-2">{!isSidebarCollapsed && <span>Klanten (Kantoren)</span>}</h3>
                           <p className="text-sm text-gray-500 mb-6">Overzicht van alle goedgekeurde kantoren. Klik op 'Beheren' om hun instellingen aan te passen.</p>
                         </div>
                         {customers.length === 0 ? (
@@ -851,7 +889,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       <div className="space-y-6">
                         <div className="flex items-center justify-between">
                           <div>
-                            <h3 className="text-xl font-bold text-[#05053D]">Alle Bestellingen</h3>
+                            <h3 className="text-xl font-bold text-[#05053D]">Alle {!isSidebarCollapsed && <span>Bestellingen</span>}</h3>
                             <p className="text-sm text-gray-500">Overzicht van alle geplaatste bestellingen (inclusief gasten).</p>
                           </div>
                           <div className="text-sm text-gray-500 font-medium">{orders.length} bestellingen totaal</div>
@@ -1066,6 +1104,62 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           </table>
                         </div>
                         <p className="text-xs text-gray-400 mt-2">Laat het veld leeg als de portie niet beschikbaar is.</p>
+
+                        {(() => {
+                           const prod = dbProducts.find(p => p.name === selectedPriceProduct);
+                           if (prod && prod.variants && prod.variants.length > 0) {
+                             return (
+                               <div className="mt-8">
+                                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Extra kosten per variant (Optioneel)</h4>
+                                 <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                   <table className="w-full text-left text-sm">
+                                     <thead className="bg-gray-50 border-b border-gray-200">
+                                       <tr>
+                                         <th className="px-4 py-3 font-semibold text-gray-700">Variant</th>
+                                         {(prod.portions || []).map((size: number) => (
+                                            <th key={size} className="px-4 py-3 font-semibold text-gray-700 text-right w-32">{size} st.</th>
+                                         ))}
+                                       </tr>
+                                     </thead>
+                                     <tbody className="divide-y divide-gray-100">
+                                       {prod.variants.map((v: string) => (
+                                         <tr key={v}>
+                                           <td className="px-4 py-3 text-gray-700">{v}</td>
+                                           {(prod.portions || []).map((size: number) => {
+                                              const key = `${v}_${size}`;
+                                              return (
+                                                <td key={size} className="px-4 py-2">
+                                                  <div className="flex items-center gap-1 justify-end">
+                                                    <span className="text-gray-500">€</span>
+                                                    <input
+                                                      type="number"
+                                                      step="0.01"
+                                                      min="0"
+                                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:border-[#151f33]"
+                                                      value={variantSurcharges[key] !== undefined ? variantSurcharges[key] : (variantSurcharges[v] !== undefined ? variantSurcharges[v] : '')}
+                                                      onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setVariantSurcharges(prev => ({
+                                                          ...prev,
+                                                          [key]: val === '' ? undefined : parseFloat(val)
+                                                        } as Record<string, number>));
+                                                      }}
+                                                    />
+                                                  </div>
+                                                </td>
+                                              );
+                                           })}
+                                         </tr>
+                                       ))}
+                                     </tbody>
+                                   </table>
+                                 </div>
+                               </div>
+                             );
+                           }
+                           return null;
+                        })()}
+
                       </div>
                                         ) : activeTab === 'menu' ? (
                       <MenuManager />
