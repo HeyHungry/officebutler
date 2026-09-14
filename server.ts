@@ -105,7 +105,7 @@ async function startServer() {
   
   app.post("/api/send-invoice", async (req, res) => {
     try {
-      const { companyId, selections, prices, addressId, phone, notes, totalOrderPrice, deliveryDate, deliveryTime } = req.body;
+      const { companyId, selections, prices, orderLines, addressId, phone, notes, totalOrderPrice, deliveryDate, deliveryTime, deliveryMethod, deliveryMethodPrice } = req.body;
       const apiKey = process.env.RESEND_API_KEY;
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
       const supabaseUrl = process.env.VITE_SUPABASE_URL;
@@ -135,15 +135,24 @@ async function startServer() {
       const resend = new Resend(apiKey);
       
       let itemsHtml = '';
-      for (const [prod, sizes] of Object.entries(selections)) {
-        for (const [sizeStr, qty] of Object.entries(sizes as any)) {
-          const size = Number(sizeStr);
-          const price = prices[`${prod}_${size}`] || 0;
-          const lineTotal = price * (qty as number);
+      if (orderLines && Array.isArray(orderLines)) {
+        for (const line of orderLines) {
           itemsHtml += `<tr>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${prod} (${size} stuks)</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${lineTotal.toFixed(2)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${line.qty}x ${line.product_name} (${line.portion_size} stuks)</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${line.lineTotal.toFixed(2)}</td>
           </tr>`;
+        }
+      } else {
+        for (const [prod, sizes] of Object.entries(selections)) {
+          for (const [sizeStr, qty] of Object.entries(sizes as any)) {
+            const size = Number(sizeStr);
+            const price = prices[`${prod}_${size}`] || 0;
+            const lineTotal = price * (qty as number);
+            itemsHtml += `<tr>
+              <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${prod} (${size} stuks)</td>
+              <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${lineTotal.toFixed(2)}</td>
+            </tr>`;
+          }
         }
       }
 
@@ -168,9 +177,13 @@ async function startServer() {
             </thead>
             <tbody>
               ${itemsHtml}
+              ${(deliveryMethod && deliveryMethodPrice > 0) ? `<tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">Bezorging (${deliveryMethod})</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${Number(deliveryMethodPrice).toFixed(2)}</td>
+              </tr>` : ''}
               <tr>
                 <td style="padding: 8px; font-weight: bold; text-align: right;">Totaal</td>
-                <td style="padding: 8px; font-weight: bold; text-align: right;">€${totalOrderPrice.toFixed(2)}</td>
+                <td style="padding: 8px; font-weight: bold; text-align: right;">€${(totalOrderPrice + (Number(deliveryMethodPrice) || 0)).toFixed(2)}</td>
               </tr>
             </tbody>
           </table>
@@ -214,7 +227,7 @@ async function startServer() {
   
   app.post("/api/send-guest-invoice", async (req, res) => {
     try {
-      const { guestName, guestEmail, guestBillingInfo, guestAddress, phone, notes, selections, prices, totalOrderPrice, deliveryDate, deliveryTime } = req.body;
+      const { guestName, guestEmail, guestBillingInfo, guestAddress, phone, notes, selections, prices, orderLines, totalOrderPrice, deliveryDate, deliveryTime, deliveryMethod, deliveryMethodPrice } = req.body;
       const apiKey = process.env.RESEND_API_KEY;
 
       if (!apiKey) {
@@ -225,15 +238,24 @@ async function startServer() {
       const resend = new Resend(apiKey);
       
       let itemsHtml = '';
-      for (const [prod, sizes] of Object.entries(selections)) {
-        for (const [sizeStr, qty] of Object.entries(sizes as any)) {
-          const size = Number(sizeStr);
-          const price = prices[`${prod}_${size}`] || 0;
-          const lineTotal = price * (qty as number);
+      if (orderLines && Array.isArray(orderLines)) {
+        for (const line of orderLines) {
           itemsHtml += `<tr>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${prod} (${size} stuks)</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${lineTotal.toFixed(2)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${line.qty}x ${line.product_name} (${line.portion_size} stuks)</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${line.lineTotal.toFixed(2)}</td>
           </tr>`;
+        }
+      } else {
+        for (const [prod, sizes] of Object.entries(selections)) {
+          for (const [sizeStr, qty] of Object.entries(sizes as any)) {
+            const size = Number(sizeStr);
+            const price = prices[`${prod}_${size}`] || 0;
+            const lineTotal = price * (qty as number);
+            itemsHtml += `<tr>
+              <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${prod} (${size} stuks)</td>
+              <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${lineTotal.toFixed(2)}</td>
+            </tr>`;
+          }
         }
       }
 
@@ -258,9 +280,13 @@ async function startServer() {
             </thead>
             <tbody>
               ${itemsHtml}
+              ${(deliveryMethod && deliveryMethodPrice > 0) ? `<tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">Bezorging (${deliveryMethod})</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${Number(deliveryMethodPrice).toFixed(2)}</td>
+              </tr>` : ''}
               <tr>
                 <td style="padding: 8px; font-weight: bold; text-align: right;">Totaal</td>
-                <td style="padding: 8px; font-weight: bold; text-align: right;">€${totalOrderPrice.toFixed(2)}</td>
+                <td style="padding: 8px; font-weight: bold; text-align: right;">€${(totalOrderPrice + (Number(deliveryMethodPrice) || 0)).toFixed(2)}</td>
               </tr>
             </tbody>
           </table>
