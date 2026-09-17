@@ -1,45 +1,15 @@
 const fs = require('fs');
-let code = fs.readFileSync('src/components/Assortments.tsx', 'utf8');
+const file = 'src/components/Assortments.tsx';
+let code = fs.readFileSync(file, 'utf8');
 
-code = code.replace(
-  /<h3 className="font-serif text-3xl mb-2">Basis Assortiment<\/h3>/,
-  '<h3 className="font-serif text-3xl mb-2">{content?.assort_snacks_title || "Office Snacks"}</h3>'
-);
+const s1 = '<p className="font-serif text-ob-text-light mb-8 italic">Puur genieten van warme en koude snacks.</p>';
+const r1 = '<p className="font-serif text-ob-text-light mb-8 italic" style={{ fontSize: content?.assort_snacks_subtitle_size }}>{content?.assort_snacks_subtitle || "Puur genieten van warme en koude snacks."}</p>';
+code = code.replace(s1, r1);
 
-code = code.replace(
-  /<span className="font-serif text-ob-text">Premium bittergarnituur \(ambachtelijk\)<\/span>/,
-  '<span className="font-serif text-ob-text">{content?.assort_snacks_item1 || "Premium bittergarnituur (ambachtelijk)"}</span>'
-);
+const s2 = '<p className="font-serif text-white/70 mb-8 italic">De volledige vrijmibo ervaring.</p>';
+const r2 = '<p className="font-serif text-white/70 mb-8 italic" style={{ fontSize: content?.assort_complete_subtitle_size }}>{content?.assort_complete_subtitle || "De volledige vrijmibo ervaring."}</p>';
+code = code.replace(s2, r2);
 
-code = code.replace(
-  /<span className="font-serif text-ob-text">Luxe koude hapjes en borrelplanken<\/span>/,
-  '<span className="font-serif text-ob-text">{content?.assort_snacks_item2 || "Luxe koude hapjes en borrelplanken"}</span>'
-);
-
-code = code.replace(
-  /<span className="font-serif text-ob-text">Geleverd in warmhoudboxen<\/span>/,
-  '<span className="font-serif text-ob-text">{content?.assort_snacks_item3 || "Geleverd in warmhoudboxen"}</span>'
-);
-
-
-code = code.replace(
-  /<h3 className="font-serif text-3xl mb-2 text-white">Compleet Assortiment<\/h3>/,
-  '<h3 className="font-serif text-3xl mb-2 text-white">{content?.assort_complete_title || "Office Compleet"}</h3>'
-);
-
-code = code.replace(
-  /<span className="font-serif text-white\/90">Alles uit het Basis Assortiment<\/span>/,
-  '<span className="font-serif text-white/90">{content?.assort_complete_item1 || "Alles uit het Basis Assortiment"}</span>'
-);
-
-code = code.replace(
-  /<span className="font-serif text-white\/90">Gekoelde bieren \(o\.a\. speciaalbier\), wijnen en fris<\/span>/,
-  '<span className="font-serif text-white/90">{content?.assort_complete_item2 || "Gekoelde bieren (o.a. speciaalbier), wijnen en fris"}</span>'
-);
-
-code = code.replace(
-  /<span className="font-serif text-white\/90">Optioneel: Inclusief glaswerk<\/span>/,
-  '<span className="font-serif text-white/90">{content?.assort_complete_item3 || "Optioneel: Inclusief glaswerk"}</span>'
-);
-
-fs.writeFileSync('src/components/Assortments.tsx', code);
+// Let's also add style={{ fontSize: ... }} to the titles in Assortments.tsx
+// wait, I can do this in a broader way, but let's stick to what's requested specifically or just provide a generic font size feature.
+fs.writeFileSync(file, code);

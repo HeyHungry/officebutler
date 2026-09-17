@@ -452,9 +452,10 @@ Extra Notities: ${notes}
                             {/* Action section pushed to bottom */}
                             <div className="p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col gap-3">
                               {(() => {
-                                const defaultVariant = (item.variants && item.variants.length > 0) ? (item.variants.find(v => v.trim().toLowerCase() === category.title.trim().toLowerCase()) || item.variants[0]) : '';
+                                const defaultVariant = (item.variants && item.variants.length > 0) ? (item.variants.find(v => v.toLowerCase() === category.title.toLowerCase()) || item.variants[0]) : '';
                                 const variantKey = `${category.title}_${product}`;
                                 const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
+                                
                                 return (
                                   <>
                                     {item.variants && item.variants.length > 0 && (
@@ -466,9 +467,11 @@ Extra Notities: ${notes}
                                         {item.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
                                       </select>
                                     )}
+                                    
                                     <div className="grid grid-cols-2 gap-2 w-full">
                                       {productSizes.length > 0 ? (
                                         productSizes.map(size => {
+                                          const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
                                     const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
                                     const countForCurrentSelection = prodSelections[selKey] || 0;
                                     const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
@@ -534,9 +537,6 @@ Extra Notities: ${notes}
                                   </div>
                                 </div>
                               )}
-                            </>
-                          );
-                        })()}
                             </div>
                           </div>
                         );
@@ -755,7 +755,7 @@ Extra Notities: ${notes}
                 <h4 className="font-bold text-ob-blue mb-3">Toevoegen aan bestelling</h4>
                 {(() => {
                   const modalCategory = infoModalProduct._openedFromCategory || '';
-                  const defaultModalVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (infoModalProduct.variants.find((v: string) => v.trim().toLowerCase() === modalCategory.trim().toLowerCase()) || infoModalProduct.variants[0]) : '';
+                  const defaultModalVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (infoModalProduct.variants.find((v: string) => v.toLowerCase() === modalCategory.toLowerCase()) || infoModalProduct.variants[0]) : '';
                   const variantKey = modalCategory ? `${modalCategory}_${infoModalProduct.name}` : infoModalProduct.name;
                   const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[variantKey] || defaultModalVariant) : '';
                   

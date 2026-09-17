@@ -83,12 +83,12 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
       }`}
     >
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8 flex items-center justify-between">
-        <div className="flex items-center gap-6 shrink-0">
-          <a href="#" className="font-serif flex items-center justify-center overflow-hidden h-12 md:h-16 w-auto">
+        <div className="flex items-center gap-6 xl:gap-10 shrink-0 ">
+          <a href="/" className="font-serif flex items-center justify-center overflow-hidden h-12 md:h-16 w-auto">
             <img src="https://i.imgur.com/ymXR7tL.png" alt="Office Butler" className="font-serif h-24 md:h-32 w-auto max-w-none" referrerPolicy="no-referrer" />
           </a>
           
-          {storeSettings && (
+          {false && storeSettings && (
             <div className="hidden sm:flex items-center gap-2 shrink-0">
               <span className={`w-2.5 h-2.5 rounded-full animate-pulse-slow ${isOpen ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`}></span>
               <span className="text-white/90 font-serif text-sm font-medium tracking-wide whitespace-nowrap">
@@ -99,7 +99,8 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
         </div>
 
         {/* Desktop Nav */}
-        <nav className="font-serif hidden lg:flex items-center gap-4 xl:gap-6 font-serif">
+                {/* Desktop Nav Links - Centered */}
+        <nav className="font-serif hidden lg:flex flex-1 items-center justify-center gap-6 xl:gap-10">
           {navLinks.map((link) => (
             <a 
               key={link.name} 
@@ -109,6 +110,10 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
               {link.name}
             </a>
           ))}
+        </nav>
+        
+        {/* Desktop Actions - Right aligned */}
+        <div className="font-serif hidden lg:flex items-center justify-end gap-6 xl:gap-10 shrink-0 ">
           <a 
             href="/auth"
             className="font-serif text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap"
@@ -116,12 +121,11 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
             Inloggen
           </a>
           <button 
-            
             onClick={openStep1} className="font-serif bg-white text-ob-blue px-6 py-2.5 hover:shadow-[0_0_20px_rgba(5,5,61,0.4)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm shadow-md font-semibold whitespace-nowrap shrink-0"
           >
             BESTEL NU
           </button>
-        </nav>
+        </div>
 
         {/* Mobile Menu Toggle */}
         <button 
@@ -149,7 +153,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
               <X size={32} />
             </button>
 
-            {storeSettings && (
+            {false && storeSettings && (
               <div className="flex items-center justify-center gap-2 mb-8">
                 <span className={`w-3 h-3 rounded-full animate-pulse-slow ${isOpen ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`}></span>
                 <span className="text-ob-text font-serif text-lg font-medium tracking-wide">

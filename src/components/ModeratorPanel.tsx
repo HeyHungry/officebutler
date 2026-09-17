@@ -514,41 +514,75 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 1: Hoofdscherm (Hero)</h4>
                             <div className="grid grid-cols-1 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Pre-titel (kleine tekst bovenaan)</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Pre-titel (kleine tekst bovenaan)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.hero_pre_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_pre_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_pre_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.hero_pre_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_pre_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Hoofdtitel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Hoofdtitel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.hero_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.hero_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
-                                <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Ondertitel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <textarea rows={2} className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.hero_subtitle || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_subtitle: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_subtitle: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.hero_subtitle_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_subtitle_size: e.target.value}} as any)} />
+                                </div>
                               </div>
-                              <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knop 1</label>
-                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
-                                    value={localStoreSettings.page_content?.hero_btn_scheduled || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_scheduled: e.target.value}} as any)} />
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Knop Bestel Nu</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.hero_btn_order || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_order: e.target.value}} as any)} />
+                                    <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                      value={localStoreSettings.page_content?.hero_btn_order_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_order_size: e.target.value}} as any)} />
+                                  </div>
                                 </div>
                                 <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knop 2</label>
-                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
-                                    value={localStoreSettings.page_content?.hero_btn_direct || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_direct: e.target.value}} as any)} />
-                                </div>
-                                <div>
-                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knop 3</label>
-                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
-                                    value={localStoreSettings.page_content?.hero_btn_offer || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_offer: e.target.value}} as any)} />
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Knop Bekijk Aanbod</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.hero_btn_offer || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_offer: e.target.value}} as any)} />
+                                    <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                      value={localStoreSettings.page_content?.hero_btn_offer_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_offer_size: e.target.value}} as any)} />
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -559,16 +593,32 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 2: Hoe Werkt Office Butler</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Titel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.how_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.how_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Ondertitel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.how_subtitle || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_subtitle: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_subtitle: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.how_subtitle_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_subtitle_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -607,19 +657,67 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
                           {/* ASSORTMENTS */}
                           <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
-                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 3: Assortimenten (Pakketten)</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <h4 className="font-bold text-ob-blue mb-4 border-b pb-2 mt-8">Sectie 3: Assortimenten Extra Teksten</h4>
+                            <div className="grid grid-cols-1 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assortments_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title: e.target.value}} as any)} />
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Office Snacks Ondertitel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.assort_snacks_subtitle || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.assort_snacks_subtitle_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Office Compleet Ondertitel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.assort_complete_subtitle || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.assort_complete_subtitle_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2 mt-8">Sectie 3: Assortimenten (Pakketten)</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Titel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                  value={localStoreSettings.page_content?.assortments_title || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.assortments_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Ondertitel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.assortments_subtitle || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.assortments_subtitle_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
@@ -667,16 +765,32 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 4: Menu Overzicht</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Titel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.menu_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.menu_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop (Volledig menu)</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Knop (Volledig menu)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.menu_btn || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_btn: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_btn: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.menu_btn_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_btn_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div className="md:col-span-2">
                                 <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
@@ -692,16 +806,32 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 5: Voor Bedrijven</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Titel</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.business_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.business_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Knop</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.business_btn || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_btn: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_btn: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.business_btn_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_btn_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div className="md:col-span-2">
                                 <label className="block text-xs font-medium text-gray-700 mb-1">Ondertitel</label>
@@ -712,22 +842,46 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Bullet 1</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Bullet 1</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.business_point1 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point1: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point1: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.business_point1_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point1_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Bullet 2</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Bullet 2</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.business_point2 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point2: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point2: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.business_point2_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point2_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Bullet 3</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Bullet 3</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.business_point3 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point3: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point3: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.business_point3_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point3_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -737,16 +891,32 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 6: Contact & FAQ</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel Contact Sectie</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Titel Contact Sectie</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.contact_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, contact_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, contact_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.contact_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, contact_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel FAQ Sectie</label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Titel FAQ Sectie</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                   value={localStoreSettings.page_content?.faq_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_title: e.target.value}} as any)} />
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_title: e.target.value}} as any)} />
+                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.faq_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                             </div>
                           </div>

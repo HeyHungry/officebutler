@@ -10,7 +10,7 @@ export function Hero({ content }: { content?: any }) {
       {/* Background Image & Overlay */}
       <div 
         className="absolute inset-0 z-0 bg-cover bg-[center_20%] bg-no-repeat"
-        style={{ backgroundImage: 'url("https://i.imgur.com/OvgsSyu.png")' }}
+        style={{ backgroundImage: 'url("https://i.imgur.com/VKJOvsI.png")' }}
       >
         <div className="absolute inset-0 bg-gradient-to-b from-ob-blue via-ob-blue/80 to-ob-blue/40"></div>
       </div>
@@ -27,24 +27,25 @@ export function Hero({ content }: { content?: any }) {
             <span className="font-serif h-[1px] w-12 bg-white/50"></span>
           </div>
           
-          <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-white mb-8 leading-tight" dangerouslySetInnerHTML={{ __html: content?.hero_title ? content.hero_title.replace('kantoorborrel', '<span class="font-serif italic text-white/90">kantoorborrel</span>') : 'De perfecte <span class="font-serif italic text-white/90">kantoorborrel</span>.' }}></h1>
+          <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl text-white mb-8 leading-tight" style={{ fontSize: content?.hero_title_size ? `calc(${String(content.hero_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }} dangerouslySetInnerHTML={{ __html: content?.hero_title ? content.hero_title.replace('kantoorborrel', '<span class="font-serif italic text-white/90">kantoorborrel</span>') : 'De perfecte <span class="font-serif italic text-white/90">kantoorborrel</span>.' }}></h1>
           
-          <p className="font-serif text-lg md:text-xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed">
+          <p className="font-serif text-lg md:text-xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed" style={{ fontSize: content?.hero_subtitle_size ? `calc(${String(content.hero_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>
             {content?.hero_subtitle || 'Onze butlers leveren de lekkerste snacks voor jouw kantoorborrel.'}
           </p>
           
           <div className="font-serif flex flex-col items-center justify-center gap-6">
             <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto justify-center">
-              <button onClick={() => openStep2('scheduled')} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:shadow-[0_0_20px_rgba(5,5,61,0.5)] hover:-translate-y-1 transition-all duration-300 shadow-lg w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">{content?.hero_btn_scheduled || "Bestel vooraf"}</span><CalendarClock size={18} className="font-serif group-hover:scale-110 transition-transform" /></button>
-
-              <button onClick={() => openStep2('zsm')} className="font-serif group bg-white text-ob-blue px-8 py-4 flex items-center gap-3 hover:shadow-[0_0_20px_rgba(5,5,61,0.5)] hover:-translate-y-1 transition-all duration-300 shadow-lg w-full sm:w-auto justify-center"><span className="font-serif tracking-widest uppercase text-sm font-semibold">{content?.hero_btn_direct || "Bestel direct"}</span><ArrowRight size={18} className="font-serif group-hover:translate-x-1 transition-transform" /></button>
+              <button onClick={() => window.location.href = '/guest-order'} className="font-serif group bg-white text-ob-blue border border-transparent px-8 py-4 flex items-center gap-3 hover:shadow-[0_0_20px_rgba(5,5,61,0.5)] hover:-translate-y-1 transition-all duration-300 shadow-lg w-full sm:w-[260px] justify-center h-[56px]">
+                <span className="font-serif tracking-widest uppercase text-sm font-semibold" style={{ fontSize: content?.hero_btn_order_size ? `calc(${String(content.hero_btn_order_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.hero_btn_order || "Bestel nu"}</span>
+                <ArrowRight size={18} className="font-serif group-hover:translate-x-1 transition-transform" />
+              </button>
             </div>
             
             <a 
               href="#menu"
-              className="font-serif group border border-white/50 text-white px-8 py-4 flex items-center gap-3 hover:bg-white hover:text-ob-blue hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:-translate-y-1 transition-all duration-300 w-full sm:w-auto justify-center"
+              className="font-serif group border border-white/50 text-white px-8 py-4 flex items-center gap-3 hover:bg-white hover:text-ob-blue hover:shadow-[0_0_20px_rgba(255,255,255,0.4)] hover:-translate-y-1 transition-all duration-300 w-full sm:w-[260px] justify-center h-[56px]"
             >
-              <span className="font-serif tracking-widest uppercase text-sm font-semibold">{content?.hero_btn_offer || "Bekijk aanbod"}</span>
+              <span className="font-serif tracking-widest uppercase text-sm font-semibold" style={{ fontSize: content?.hero_btn_offer_size ? `calc(${String(content.hero_btn_offer_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.hero_btn_offer || "Bekijk aanbod"}</span>
               <Utensils size={18} className="font-serif group-hover:scale-110 transition-transform" />
             </a>
           </div>

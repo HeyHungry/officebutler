@@ -88,10 +88,10 @@ export function BusinessRegistration({ content }: { content?: any }) {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-6">{content?.business_title || "Voor Bedrijven"}</h2>
+            <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-6" style={{ fontSize: content?.business_title_size ? `calc(${String(content.business_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.business_title || "Voor Bedrijven"}</h2>
             <div className="font-serif w-16 h-[1px] bg-ob-accent mb-8"></div>
             
-            <h3 className="font-serif text-2xl mb-4 text-ob-blue italic">{content?.business_subtitle || "Een vaste partner voor uw kantoor."}</h3>
+            <h3 className="font-serif text-2xl mb-4 text-ob-blue italic" style={{ fontSize: content?.business_subtitle_size ? `calc(${String(content.business_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.business_subtitle || "Een vaste partner voor uw kantoor."}</h3>
             
             <p className="font-serif text-ob-text-light mb-6 leading-relaxed">
               Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers.
@@ -100,15 +100,15 @@ export function BusinessRegistration({ content }: { content?: any }) {
             <ul className="font-serif space-y-4 mb-10">
               <li className="font-serif flex items-center gap-3">
                 <span className="font-serif w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="font-serif text-ob-text">{content?.business_point1 || "Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)"}</span>
+                <span className="font-serif text-ob-text" style={{ fontSize: content?.business_point1_size ? `calc(${String(content.business_point1_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.business_point1 || "Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)"}</span>
               </li>
               <li className="font-serif flex items-center gap-3">
                 <span className="font-serif w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="font-serif text-ob-text">{content?.business_point2 || "Gepersonaliseerd assortiment naar wens"}</span>
+                <span className="font-serif text-ob-text" style={{ fontSize: content?.business_point2_size ? `calc(${String(content.business_point2_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.business_point2 || "Gepersonaliseerd assortiment naar wens"}</span>
               </li>
               <li className="font-serif flex items-center gap-3">
                 <span className="font-serif w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="font-serif text-ob-text">{content?.business_point3 || "Optie tot betalen op factuur"}</span>
+                <span className="font-serif text-ob-text" style={{ fontSize: content?.business_point3_size ? `calc(${String(content.business_point3_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.business_point3 || "Optie tot betalen op factuur"}</span>
               </li>
             </ul>
           </motion.div>

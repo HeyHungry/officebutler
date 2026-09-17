@@ -18,6 +18,7 @@ type MenuCategory = {
 export function Menu({ content }: { content?: any }) {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
 
   // Helper to chunk arrays
   const chunkArray = <T,>(arr: T[], size: number): T[][] => {
@@ -44,10 +45,13 @@ export function Menu({ content }: { content?: any }) {
           // You might only want 'actief' and 'meest gekozen' etc. Let's just group them.
           if (['verborgen', 'inactief', 'hidden', 'inactive'].includes((item.status || '').toLowerCase())) return acc;
           
-          if (!acc[item.category]) {
-            acc[item.category] = [];
-          }
-          acc[item.category].push(item);
+          const itemCats = item.additional_categories && item.additional_categories.length > 0 ? Array.from(new Set([item.category, ...item.additional_categories])) : [item.category || 'Overig'];
+          itemCats.forEach(cat => {
+            if (!acc[cat]) {
+              acc[cat] = [];
+            }
+            acc[cat].push(item);
+          });
           return acc;
         }, {});
 
@@ -111,7 +115,7 @@ export function Menu({ content }: { content?: any }) {
                     {itemChunks.map((chunk, chunkIndex) => (
                       <div key={chunkIndex} className="font-serif flex flex-col gap-6 flex-1 min-w-[250px]">
                         {chunk.map((item) => (
-                          <div key={item.name} className="font-serif flex items-center gap-4 group cursor-pointer border-b border-black/5 pb-4 last:border-0 last:pb-0">
+                          <div key={item.name} className="font-serif flex items-center gap-4 group cursor-pointer border-b border-black/5 pb-4 last:border-0 last:pb-0" onClick={() => item.extra_info && setInfoModalProduct(item)}>
                             <div className="font-serif w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
                               {item.image_url ? (
                                 <img 
@@ -134,9 +138,19 @@ export function Menu({ content }: { content?: any }) {
   <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}</span>
 )}
                               </h4>
+                              {item.extra_info && <span className="text-[10px] uppercase tracking-wider text-ob-blue/60 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors">Meer info</span>}
                               {(item.variants && item.variants.length > 0) && (
                                 <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
-                                  <span className="font-semibold text-gray-700">Opties:</span> {item.variants.join(', ')}
+                                  <span className="font-semibold text-gray-700">Opties:</span> {(() => {
+                                    const sortedVariants = [...item.variants].sort((a, b) => {
+                                      const isAMatch = a.trim().toLowerCase() === category.title.trim().toLowerCase();
+                                      const isBMatch = b.trim().toLowerCase() === category.title.trim().toLowerCase();
+                                      if (isAMatch && !isBMatch) return -1;
+                                      if (!isAMatch && isBMatch) return 1;
+                                      return 0;
+                                    });
+                                    return sortedVariants.join(', ');
+                                  })()}
                                 </p>
                               )}
                               {(item.sauces && item.sauces.length > 0) && (
@@ -156,6 +170,37 @@ export function Menu({ content }: { content?: any }) {
           </div>
         )}
       </div>
+
+      {infoModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setInfoModalProduct(null)}>
+          <div className="bg-white rounded-2xl p-0 max-w-sm w-full shadow-2xl relative overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setInfoModalProduct(null)} className="absolute top-4 right-4 text-white bg-black/40 hover:bg-black/60 rounded-full p-1.5 backdrop-blur-sm z-10 transition-colors">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+            </button>
+            
+            {infoModalProduct.image_url ? (
+               <div className="w-full h-48 sm:h-56 shrink-0 bg-gray-100">
+                 <img src={infoModalProduct.image_url} alt={infoModalProduct.name} className="w-full h-full object-cover" />
+               </div>
+            ) : (
+               <div className="w-full h-24 shrink-0 bg-ob-cream flex items-center justify-center">
+                 <svg className="w-8 h-8 text-ob-blue/20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+               </div>
+            )}
+            
+            <div className="p-6 overflow-y-auto">
+              <h3 className="text-2xl font-serif font-bold text-ob-blue mb-2 pr-6">{infoModalProduct.name}</h3>
+              {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
+                <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-4">
+                  <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
+                  <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{infoModalProduct.sauces.join(', ')}</span></span>
+                </div>
+              )}
+              <div className="text-gray-600 whitespace-pre-wrap">{infoModalProduct.extra_info}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
