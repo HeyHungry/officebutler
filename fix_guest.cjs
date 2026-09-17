@@ -1,94 +1,147 @@
 const fs = require('fs');
+
 let code = fs.readFileSync('src/pages/GuestOrdering.tsx', 'utf8');
 
-// 1. Change type of selections
+// 1. Update setInfoModalProduct to include _openedFromCategory
 code = code.replace(
-  /const \[selections, setSelections\] = useState\<Record\<string, number\>\>\(\{\}\);/,
-  "const [selections, setSelections] = useState<Record<string, Record<number, number>>>({});"
+  'onClick={() => item.extra_info && setInfoModalProduct(item)}',
+  'onClick={() => item.extra_info && setInfoModalProduct({ ...item, _openedFromCategory: category.title })}'
 );
 
-// 2. handlePortionSelect
-const oldPortionSelect = `  const handlePortionSelect = (product: string, size: number) => {
-    setSelections(prev => ({
-      ...prev,
-      [product]: size
-    }));
-  };`;
-
-const newPortionSelect = `  const handlePortionSelect = (product: string, size: number) => {
-    setSelections(prev => {
-      const currentObj = prev[product] || {};
-      const currentQty = currentObj[size] || 0;
-      return {
-        ...prev,
-        [product]: {
-          ...currentObj,
-          [size]: currentQty + 1
-        }
-      };
-    });
-  };`;
-
-code = code.replace(oldPortionSelect, newPortionSelect);
-
-// 4. totalOrderPrice
-const oldTotalOrderPrice = `const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[\`\${prod}_\${size}\`] || 0), 0);`;
-const newTotalOrderPrice = `const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
-      let prodSum = 0;
-      for (const [s, qty] of Object.entries(sizes as any)) {
-        prodSum += (prices[\`\${prod}_\${s}\`] || 0) * (qty as number);
-      }
-      return sum + prodSum;
-    }, 0);`;
-
-code = code.replaceAll(oldTotalOrderPrice, newTotalOrderPrice);
-
-// 5. orderPromises
-const oldPromisesRegex = /const orderPromises = Object\.entries\(selections\)\.map\(\(\[prod, size\]\) => \{[\s\S]*?\}\);/;
-const newPromises = `const orderPromises: any[] = [];
-        Object.entries(selections).forEach(([prod, sizes]) => {
-          Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
-            const size = Number(sizeStr);
-            const price = prices[\`\${prod}_\${size}\`] || 0;
-            for (let i = 0; i < (qty as number); i++) {
-              orderPromises.push(supabase.from('ob_orders').insert({
-                product_name: prod,
-                portion_size: size,
-                price: price,
-                total_price: price,
-                phone: phone,
-                notes: fullNotes,
-                delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-                delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
-              }));
-            }
-          });
-        });`;
-code = code.replace(oldPromisesRegex, newPromises);
-
-// 6. Fix "selectedSize = selections[product];"
-code = code.replace(/const selectedSize = selections\[product\];/g, 'const prodSelections = selections[product] || {};');
-
-// 7. Fix buttons highlighting
-code = code.replace(/selectedSize === size \?/g, '(prodSelections[size] || 0) > 0 ?');
-code = code.replace(/selectedSize === size/g, '(prodSelections[size] || 0) > 0');
-
-// 8. Fix display of selected sizes
+// 2. Fix the Guest list rendering. 
+// We are inside category.items.map
 code = code.replace(
-  /<span className="text-xs font-semibold text-ob-blue">Geselecteerd: \{selectedSize\} st\.<\/span>/g,
-  `<div className="flex flex-col gap-1">
-                                    {Object.entries(prodSelections).map(([s, qty]) => (
-                                      <span key={s} className="text-xs font-semibold text-ob-blue">{qty as number}x {s} st.</span>
-                                    ))}
-                                  </div>`
+  `{item.variants && item.variants.length > 0 && (
+                                <select 
+                                  className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors"
+                                  value={selectedVariants[product] || item.variants[0]}
+                                  onChange={(e) => setSelectedVariants({...selectedVariants, [product]: e.target.value})}
+                                >
+                                  {item.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                                </select>
+                              )}
+                              
+                              <div className="grid grid-cols-2 gap-2 w-full">
+                                {productSizes.length > 0 ? (
+                                  productSizes.map(size => {
+                                    const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[product] || item.variants[0]) : '';`,
+  `{(() => {
+                                const defaultVariant = (item.variants && item.variants.length > 0) ? (item.variants.find(v => v.toLowerCase() === category.title.toLowerCase()) || item.variants[0]) : '';
+                                const variantKey = \`\${category.title}_\${product}\`;
+                                const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
+                                return (
+                                  <>
+                                    {item.variants && item.variants.length > 0 && (
+                                      <select 
+                                        className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors"
+                                        value={currentVariant}
+                                        onChange={(e) => setSelectedVariants({...selectedVariants, [variantKey]: e.target.value})}
+                                      >
+                                        {item.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                                      </select>
+                                    )}
+                                    <div className="grid grid-cols-2 gap-2 w-full">
+                                      {productSizes.length > 0 ? (
+                                        productSizes.map(size => {
+                                          const selKey = currentVariant ? \`\${size}_\${currentVariant}\` : size.toString();`
 );
 
-// 9. Fix conditional render of footer
-code = code.replace(/\{Object\.keys\(prodSelections\)\.length > 0 && \(/g, '{Object.keys(prodSelections).length > 0 && (');
-// wait, the old was `{selectedSize && (`
-code = code.replace(/\{selectedSize && \(/g, '{Object.keys(prodSelections).length > 0 && (');
+code = code.replace(
+  `}
+                                      {countForCurrentSelection > 0 && (
+                                        <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                          {countForCurrentSelection}
+                                        </span>
+                                      )}
+                                    </button>
+                                  )})
+                                ) : (
+                                  <div className="col-span-2 text-sm text-gray-500 text-center py-2 bg-gray-50 rounded-lg">Geen porties beschikbaar</div>
+                                )}
+                              </div>`,
+  `}
+                                      {countForCurrentSelection > 0 && (
+                                        <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                          {countForCurrentSelection}
+                                        </span>
+                                      )}
+                                    </button>
+                                  )})
+                                ) : (
+                                  <div className="col-span-2 text-sm text-gray-500 text-center py-2 bg-gray-50 rounded-lg">Geen porties beschikbaar</div>
+                                )}
+                                    </div>
+                                  </>
+                                );
+                              })()}`
+);
 
-// 10. Status badge wrap fix
-code = code.replace(/flex items-center gap-2">\{product\}/g, 'flex flex-wrap items-center gap-2">{product}');
+// 3. Fix modal logic
+code = code.replace(
+  `{infoModalProduct.variants && infoModalProduct.variants.length > 0 && (
+                  <select 
+                    className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors mb-3"
+                    value={selectedVariants[infoModalProduct.name] || infoModalProduct.variants[0]}
+                    onChange={(e) => setSelectedVariants({...selectedVariants, [infoModalProduct.name]: e.target.value})}
+                  >
+                    {infoModalProduct.variants.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                )}
+                
+                <div className="grid grid-cols-2 gap-2 w-full">
+                  {infoModalProduct.portions && [...infoModalProduct.portions].sort((a, b) => a - b).map(size => {
+                    const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[infoModalProduct.name] || infoModalProduct.variants[0]) : '';
+                    const selKey = currentVariant ? \`\${size}_\${currentVariant}\` : size.toString();`,
+  `{(() => {
+                  const modalCategory = infoModalProduct._openedFromCategory || '';
+                  const defaultModalVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (infoModalProduct.variants.find((v: string) => v.toLowerCase() === modalCategory.toLowerCase()) || infoModalProduct.variants[0]) : '';
+                  const variantKey = modalCategory ? \`\${modalCategory}_\${infoModalProduct.name}\` : infoModalProduct.name;
+                  const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[variantKey] || defaultModalVariant) : '';
+                  
+                  return (
+                    <>
+                      {infoModalProduct.variants && infoModalProduct.variants.length > 0 && (
+                        <select 
+                          className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors mb-3"
+                          value={currentVariant}
+                          onChange={(e) => setSelectedVariants({...selectedVariants, [variantKey]: e.target.value})}
+                        >
+                          {infoModalProduct.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
+                        </select>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-2 w-full">
+                        {infoModalProduct.portions && [...infoModalProduct.portions].sort((a: number, b: number) => a - b).map((size: number) => {
+                          const selKey = currentVariant ? \`\${size}_\${currentVariant}\` : size.toString();`
+);
+
+code = code.replace(
+  `)}
+                        {countForCurrentSelection > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                            {countForCurrentSelection}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>`,
+  `)}
+                        {countForCurrentSelection > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                            {countForCurrentSelection}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            );
+          })()}
+        </div>`
+);
+
 
 fs.writeFileSync('src/pages/GuestOrdering.tsx', code);
