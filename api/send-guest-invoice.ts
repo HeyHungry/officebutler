@@ -4,7 +4,7 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   
   try {
-    const { guestName, guestEmail, guestBillingInfo, guestAddress, phone, notes, selections, prices, totalOrderPrice, deliveryDate, deliveryTime } = req.body;
+    const { guestName, guestEmail, guestBillingInfo, guestAddress, phone, notes, selections, prices, orderLines, totalOrderPrice, deliveryDate, deliveryTime, deliveryMethod, deliveryMethodPrice } = req.body;
     const apiKey = process.env.RESEND_API_KEY;
 
     if (!apiKey) {
@@ -14,13 +14,30 @@ export default async function handler(req: any, res: any) {
 
     const resend = new Resend(apiKey);
     
-    let itemsHtml = Object.entries(selections).map(([prod, size]: any) => {
-      const price = prices[`${prod}_${size}`] || 0;
-      return `<tr>
-        <td style="padding: 8px; border-bottom: 1px solid #eee;">${prod} (${size} stuks)</td>
-        <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${price.toFixed(2)}</td>
-      </tr>`;
-    }).join('');
+    let itemsHtml = '';
+    if (orderLines && Array.isArray(orderLines)) {
+      for (const line of orderLines) {
+        itemsHtml += `<tr>
+          <td style="padding: 8px; border-bottom: 1px solid #eee;">${line.qty}x ${line.product_name} (${line.portion_size} stuks)</td>
+          <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${line.lineTotal.toFixed(2)}</td>
+        </tr>`;
+      }
+    } else {
+      for (const [prod, sizes] of Object.entries(selections)) {
+        for (const [sizeStr, qty] of Object.entries(sizes as any)) {
+          const parts = String(sizeStr).split('_');
+          const size = Number(parts[0]);
+          const variant = parts[1] || '';
+          const finalProd = variant ? `${prod} (${variant})` : prod;
+          const price = prices[`${prod}_${sizeStr}`] || prices[`${prod}_${size}`] || 0;
+          const lineTotal = price * (qty as number);
+          itemsHtml += `<tr>
+            <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${finalProd} (${size} stuks)</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${lineTotal.toFixed(2)}</td>
+          </tr>`;
+        }
+      }
+    }
 
     const emailHtml = `
       <div style="font-family: sans-serif; max-w-xl; margin: 0 auto; color: #333;">
@@ -43,6 +60,10 @@ export default async function handler(req: any, res: any) {
           </thead>
           <tbody>
             ${itemsHtml}
+            ${(deliveryMethod && deliveryMethodPrice > 0) ? `<tr>
+              <td style="padding: 8px; border-bottom: 1px solid #eee;">Bezorging (${deliveryMethod})</td>
+              <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${Number(deliveryMethodPrice).toFixed(2)}</td>
+            </tr>` : ''}
             <tr>
               <td style="padding: 8px; font-weight: bold; text-align: right;">Totaal</td>
               <td style="padding: 8px; font-weight: bold; text-align: right;">€${totalOrderPrice.toFixed(2)}</td>
