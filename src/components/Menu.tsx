@@ -1,7 +1,8 @@
-import { StoreSettings } from '../lib/supabase';
+import { StoreSettings, sortVariantsByCategory, supabase } from '../lib/supabase';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { supabase } from '../lib/supabase';
+import { ShoppingBag } from 'lucide-react';
 
 type MenuItem = {
   name: string;
@@ -16,6 +17,7 @@ type MenuCategory = {
 };
 
 export function Menu({ content }: { content?: any }) {
+  const navigate = useNavigate();
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
@@ -124,7 +126,7 @@ export function Menu({ content }: { content?: any }) {
                     {itemChunks.map((chunk, chunkIndex) => (
                       <div key={chunkIndex} className="font-serif flex flex-col gap-6 flex-1 min-w-[250px]">
                         {chunk.map((item: any) => (
-                          <div key={item.name} className="font-serif flex items-center gap-4 group cursor-pointer border-b border-black/5 pb-4 last:border-0 last:pb-0" onClick={() => item.extra_info && setInfoModalProduct(item)}>
+                          <div key={item.name} className="font-serif flex items-center gap-4 group cursor-pointer border-b border-black/5 pb-4 last:border-0 last:pb-0" onClick={() => setInfoModalProduct(item)}>
                             <div className="font-serif w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
                               {item.image_url ? (
                                 <img 
@@ -150,16 +152,7 @@ export function Menu({ content }: { content?: any }) {
                               {item.extra_info && <span className="text-[10px] uppercase tracking-wider text-ob-blue/60 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors">Meer info</span>}
                               {(item.variants && item.variants.length > 0) && (
                                 <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
-                                  <span className="font-semibold text-gray-700">Opties:</span> {(() => {
-                                    const sortedVariants = [...item.variants].sort((a, b) => {
-                                      const isAMatch = a.trim().toLowerCase() === category.title.trim().toLowerCase();
-                                      const isBMatch = b.trim().toLowerCase() === category.title.trim().toLowerCase();
-                                      if (isAMatch && !isBMatch) return -1;
-                                      if (!isAMatch && isBMatch) return 1;
-                                      return 0;
-                                    });
-                                    return sortedVariants.join(', ');
-                                  })()}
+                                  <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
                                 </p>
                               )}
                               {(item.sauces && item.sauces.length > 0) && (
@@ -199,13 +192,32 @@ export function Menu({ content }: { content?: any }) {
             
             <div className="p-6 overflow-y-auto">
               <h3 className="text-2xl font-serif font-bold text-ob-blue mb-2 pr-6">{infoModalProduct.name}</h3>
+              {infoModalProduct.variants && infoModalProduct.variants.length > 0 && (
+                <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                  <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct.category || '').join(', ')}
+                </p>
+              )}
               {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
-                <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-4">
+                <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3">
                   <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
                   <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{infoModalProduct.sauces.join(', ')}</span></span>
                 </div>
               )}
-              <div className="text-gray-600 whitespace-pre-wrap">{infoModalProduct.extra_info}</div>
+              {infoModalProduct.extra_info && <div className="text-gray-600 whitespace-pre-wrap mb-4">{infoModalProduct.extra_info}</div>}
+
+              <div className="pt-4 border-t border-gray-100 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInfoModalProduct(null);
+                    navigate('/guest-order');
+                  }}
+                  className="w-full bg-[#05053D] hover:bg-ob-blue text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-sans"
+                >
+                  <ShoppingBag size={18} />
+                  Bestellen
+                </button>
+              </div>
             </div>
           </div>
         </div>

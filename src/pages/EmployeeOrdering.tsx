@@ -1,7 +1,7 @@
-import { useState, useEffect, FormEvent } from 'react';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect, FormEvent, MouseEvent } from 'react';
+import { supabase, sortVariantsByCategory } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck } from 'lucide-react';
+import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck, X, Info, Utensils } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const PRODUCT_IMAGES: Record<string, string> = {
@@ -57,6 +57,7 @@ export function EmployeeOrdering() {
   const [selectedDeliveryMethod, setSelectedDeliveryMethod] = useState<any>(null);
 
   // New multi-select state
+  const [infoModalProduct, setInfoModalProduct] = useState<any | null>(null);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [selections, setSelections] = useState<Record<string, Record<string, number>>>({});
   const [selectedAddress, setSelectedAddress] = useState('');
@@ -79,6 +80,64 @@ export function EmployeeOrdering() {
     if (!prod || !prod.variant_surcharges) return 0;
     return prod.variant_surcharges[`${variant}_${size}`] || prod.variant_surcharges[variant] || 0;
   };
+
+  const handlePortionSelect = (product: string, size: number, variant: string = '') => {
+    setSelections(prev => {
+      const currentObj = prev[product] || {};
+      const key = variant ? `${size}_${variant}` : `${size}`;
+      const currentQty = currentObj[key] || 0;
+      return {
+        ...prev,
+        [product]: {
+          ...currentObj,
+          [key]: currentQty + 1
+        }
+      };
+    });
+  };
+
+  const handlePortionDeselect = (product: string, size: number, variant: string = '', e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    setSelections(prev => {
+      const currentObj = prev[product] || {};
+      const key = variant ? `${size}_${variant}` : `${size}`;
+      const currentQty = currentObj[key] || 0;
+      
+      if (currentQty <= 1) {
+        const newObj = { ...currentObj };
+        delete newObj[key];
+        if (Object.keys(newObj).length === 0) {
+          const newSelections = { ...prev };
+          delete newSelections[product];
+          return newSelections;
+        }
+        return { ...prev, [product]: newObj };
+      }
+      return {
+        ...prev,
+        [product]: {
+          ...currentObj,
+          [key]: currentQty - 1
+        }
+      };
+    });
+  };
+
+  const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
+    let prodSum = 0;
+    for (const [s, qty] of Object.entries(sizes as any)) {
+      const parts = String(s).split('_');
+      const sizeNum = parts[0];
+      const variant = parts[1] || '';
+      const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+      const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+      prodSum += (basePrice + surcharge) * (qty as number);
+    }
+    return sum + prodSum;
+  }, 0);
 
   const fetchData = async () => {
     if (!supabase) {
@@ -242,11 +301,12 @@ export function EmployeeOrdering() {
             for (let i = 0; i < (qty as number); i++) {
               orderPromises.push(supabase.from('ob_orders').insert({
                 company_id: companyId,
+                user_id: userId || null,
                 product_name: finalProdName,
                 portion_size: sizeNum,
                 price: price,
                 total_price: price,
-                delivery_address_id: selectedAddress,
+                address_id: selectedAddress,
                 phone: phone,
                 notes: notes,
                 delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
@@ -259,11 +319,12 @@ export function EmployeeOrdering() {
         if (selectedDeliveryMethod && selectedDeliveryMethod.price > 0) {
           orderPromises.push(supabase.from('ob_orders').insert({
             company_id: companyId,
+            user_id: userId || null,
             product_name: 'Bezorging: ' + selectedDeliveryMethod.name,
             portion_size: 1,
             price: selectedDeliveryMethod.price,
             total_price: selectedDeliveryMethod.price,
-            delivery_address_id: selectedAddress,
+            address_id: selectedAddress,
             phone: phone,
             notes: notes,
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
@@ -421,8 +482,8 @@ export function EmployeeOrdering() {
                 Kies uw Snacks & Porties
               </h2>
               {maxSpendLimit !== null && (
-                <div className="text-sm font-medium bg-blue-50 text-ob-blue px-3 py-1 rounded-lg">
-                  Budget: €{maxSpendLimit.toFixed(2)}
+                <div className={`text-sm font-medium px-3 py-1 rounded-lg ${totalOrderPrice > maxSpendLimit ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-ob-blue'}`}>
+                  Budget: €{maxSpendLimit.toFixed(2)} {totalOrderPrice > 0 && `(Gekozen: €${totalOrderPrice.toFixed(2)})`}
                 </div>
               )}
             </div>
@@ -430,140 +491,265 @@ export function EmployeeOrdering() {
             {assortment.length === 0 ? (
               <p className="text-gray-500 italic">Uw kantoor heeft momenteel geen assortiment geselecteerd. Neem contact op met uw office manager.</p>
             ) : (
-              <div className="space-y-4">
+              <div className="flex flex-col gap-10">
                 {(() => {
                   const itemsToRender = dbProducts.length > 0 
                     ? dbProducts.filter(p => assortment.includes(p.name) && !['inactive', 'inactief', 'verborgen'].includes((p.status || '').toLowerCase()))
                     : assortment.map(name => ({ name, status: 'Actief' }));
-                    
-                  return itemsToRender.map((item: any) => {
-                    const product = item.name;
-                    const isSelected = !!selections[product];
-                    let productSizes = PORTION_SIZES;
-                    if (item.portions && item.portions.length > 0) {
-                      productSizes = item.portions;
-                    }
-                    
-                  return (
-                    <div key={product} className={`border-2 rounded-xl p-4 transition-all ${isSelected ? 'border-ob-blue bg-blue-50/10' : 'border-gray-100'} ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'opacity-70' : ''}`}>
-                      <div className="flex flex-col md:flex-row md:items-start gap-4">
-                        <div className="flex items-start gap-4 md:w-1/3">
-                          <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-50 shrink-0 relative">
-                            {item.image_url || PRODUCT_IMAGES[product] ? (
-                              <img src={item.image_url || PRODUCT_IMAGES[product]} alt={product} className="w-full h-full object-cover" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                <PackageOpen size={24} />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-col flex-wrap">
-                            <div className="flex items-center gap-2">
-      <span className="font-semibold text-ob-text text-lg">{product}</span>
-      {isSelected && (
-        <button type="button" onClick={() => setSelections(prev => { const c = {...prev}; delete c[product]; return c; })} className="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 uppercase font-bold">Wissen</button>
-      )}
-    </div>
-                            {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
-      {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
-    </span>
-                            )}
-                            {item.variants && item.variants.length > 0 && (
-                              <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
-                                <span className="font-semibold text-gray-700">Opties:</span> {item.variants.join(', ')}
-                              </p>
-                            )}
-                            {item.sauces && item.sauces.length > 0 && (
-                              <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
-                                <span className="font-semibold text-gray-700">Inclusief:</span> {item.sauces.join(', ')}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="flex-1 flex flex-wrap gap-2">
-                          {productSizes.map((size: number) => {
-                            const price = prices[`${product}_${size}`];
-                            const isSizeSelected = (selections[product]?.[size] || 0) > 0;
-                            
-                            // If no price is set for this product+size, we disable it
-                            const hasPrice = price !== undefined;
-                            
-                            return (
-                              <button
-                                key={size}
-                                type="button"
-                                disabled={!hasPrice || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())}
-                                onClick={() => {
-                                  setSelections(prev => {
-                                    const prodSelections = prev[product] || {};
-                                    const currentQty = prodSelections[size] || 0;
-                                    return {
-                                      ...prev,
-                                      [product]: {
-                                        ...prodSelections,
-                                        [size]: currentQty + 1
-                                      }
-                                    };
-                                  });
-                                }}
-                                className={`relative flex-1 min-w-[80px] py-2 px-3 rounded-lg border text-center transition-all ${(!hasPrice || ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase())) ? 'opacity-50 cursor-not-allowed border-gray-100 bg-gray-50' : isSizeSelected ? 'border-ob-blue bg-ob-blue text-white shadow-sm' : 'border-gray-200 hover:border-ob-blue hover:-translate-y-1 hover:shadow-md text-gray-700 bg-white transition-all'}`}
-                              >
-                                {isSizeSelected && (
-                                  <div 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      e.preventDefault();
-                                      setSelections(prev => {
-                                        const prodSelections = prev[product] || {};
-                                        const currentQty = prodSelections[size] || 0;
-                                        if (currentQty <= 1) {
-                                          const newObj = { ...prodSelections };
-                                          delete newObj[size];
-                                          if (Object.keys(newObj).length === 0) {
-                                            const newSelections = { ...prev };
-                                            delete newSelections[product];
-                                            return newSelections;
-                                          }
-                                          return { ...prev, [product]: newObj };
-                                        }
-                                        return {
-                                          ...prev,
-                                          [product]: {
-                                            ...prodSelections,
-                                            [size]: currentQty - 1
-                                          }
-                                        };
-                                      });
-                                    }}
-                                    className="absolute top-5 -right-2 bg-gray-400 text-white text-[12px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white hover:bg-red-500 transition-colors z-10 cursor-pointer" role="button"
-                                    title="Verwijder één"
-                                  >
-                                    -
+
+                  // Group items by category if available, maintaining category sort order
+                  const grouped = itemsToRender.reduce((acc: any, item: any) => {
+                    const itemCats = item.additional_categories && item.additional_categories.length > 0 
+                      ? Array.from(new Set([item.category, ...item.additional_categories])) 
+                      : [item.category || 'Assortiment'];
+                    itemCats.forEach((cat: string) => {
+                      if (!acc[cat]) acc[cat] = [];
+                      acc[cat].push(item);
+                    });
+                    return acc;
+                  }, {});
+
+                  const categoryList = Object.keys(grouped).map(key => {
+                    const primaryItems = itemsToRender.filter(
+                      (i: any) => (i.category || 'Assortiment').trim().toLowerCase() === key.trim().toLowerCase()
+                    );
+                    const minSortOrder = primaryItems.length > 0
+                      ? Math.min(...primaryItems.map((i: any) => i.sort_order ?? 9999))
+                      : Math.min(...grouped[key].map((i: any) => i.sort_order ?? 9999));
+
+                    return {
+                      title: key,
+                      items: grouped[key],
+                      minSortOrder
+                    };
+                  });
+                  categoryList.sort((a, b) => a.minSortOrder - b.minSortOrder);
+
+                  return categoryList.map((category) => (
+                    <div key={category.title}>
+                      {categoryList.length > 1 && category.title !== 'Assortiment' && (
+                        <h3 className="text-2xl font-serif font-bold text-ob-blue mb-5 border-b pb-2">{category.title}</h3>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {category.items.map((item: any) => {
+                          const product = item.name;
+                          const prodSelections = selections[product] || {};
+                          const productSizes = (item.portions && item.portions.length > 0) ? item.portions : PORTION_SIZES;
+                          const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase());
+                          const hasSelections = Object.keys(prodSelections).length > 0;
+                          
+                          return (
+                            <div 
+                              key={product} 
+                              className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${
+                                hasSelections 
+                                  ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' 
+                                  : 'border-gray-200 bg-white hover:border-ob-blue/40 hover:shadow-sm'
+                              } ${isSoldOut ? 'opacity-70' : ''}`}
+                            >
+                              {/* Top info section */}
+                              <div className="p-4 flex gap-4">
+                                <div 
+                                  className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group cursor-pointer" 
+                                  onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                >
+                                  {item.image_url || PRODUCT_IMAGES[product] || item.image ? (
+                                    <img 
+                                      src={item.image_url || PRODUCT_IMAGES[product] || item.image} 
+                                      alt={product} 
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                      <PackageOpen size={24} />
+                                    </div>
+                                  )}
+                                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <span className="text-white text-xs font-semibold">Meer info</span>
                                   </div>
-                                )}
-                                <div className="font-bold">{isSizeSelected ? `${selections[product][size]}x ${size}` : size}</div>
-                                <div className={`text-xs ${isSizeSelected ? 'text-blue-100' : 'text-gray-500'}`}>
-                                  {hasPrice ? `€${price.toFixed(2)}` : '-'}
                                 </div>
-                              </button>
-                            );
-                          })}
-                        </div>
+                                
+                                <div className="flex-1 min-w-0 flex flex-col">
+                                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                                    <h4 className="font-bold text-[15px] text-[#05053D] leading-tight">{product}</h4>
+                                    {hasSelections && (
+                                      <button 
+                                        type="button" 
+                                        onClick={() => setSelections(prev => { const c = {...prev}; delete c[product]; return c; })} 
+                                        className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded hover:bg-red-100 uppercase font-bold shrink-0"
+                                      >
+                                        Wissen
+                                      </button>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                                    {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${isSoldOut ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                        {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                      className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                    >
+                                      <Info size={12} />
+                                      Meer info
+                                    </button>
+                                  </div>
+
+                                  {(item.variants && item.variants.length > 0) && (
+                                    <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                                      <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
+                                    </p>
+                                  )}
+
+                                  {item.sauces && item.sauces.length > 0 && (
+                                    <div className="mt-auto inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit">
+                                      <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
+                                      <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{item.sauces.join(', ')}</span></span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              
+                              {/* Action section pushed to bottom */}
+                              <div className="p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col gap-3">
+                                {(() => {
+                                  const sortedVariants = (item.variants && item.variants.length > 0)
+                                    ? sortVariantsByCategory(item.variants, category.title)
+                                    : [];
+                                  const defaultVariant = sortedVariants[0] || '';
+                                  const variantKey = `${category.title}_${product}`;
+                                  const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
+                                  
+                                  return (
+                                    <>
+                                      {sortedVariants.length > 0 && (
+                                        <div className="flex flex-col gap-1.5 w-full">
+                                          <div className="flex items-center text-xs">
+                                            <span className="font-semibold text-gray-700">Kies variant:</span>
+                                          </div>
+                                          <div className="flex flex-wrap gap-1.5 w-full">
+                                            {sortedVariants.map((v: string) => {
+                                              const isSelected = currentVariant === v;
+                                              return (
+                                                <button
+                                                  key={v}
+                                                  type="button"
+                                                  onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
+                                                  className={`flex-1 min-w-[70px] py-1.5 px-2.5 text-xs rounded-full font-bold transition-all border text-center ${
+                                                    isSelected
+                                                      ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                                  }`}
+                                                >
+                                                  {v}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                      <div className="grid grid-cols-2 gap-2 w-full">
+                                        {productSizes.map((size: number) => {
+                                          const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
+                                          const countForCurrentSelection = prodSelections[selKey] || 0;
+                                          const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
+                                          
+                                          const basePrice = prices[product + '_' + size];
+                                          const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(product, currentVariant, size) : undefined;
+                                          const isDisabled = basePrice === undefined || isSoldOut;
+                                          
+                                          return (
+                                            <button
+                                              key={size}
+                                              type="button"
+                                              disabled={isDisabled} 
+                                              onClick={() => {
+                                                handlePortionSelect(product, size, currentVariant);
+                                              }}
+                                              className={`relative py-2 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
+                                            >
+                                              <span className="font-bold text-[13px]">{size} st.</span>
+                                              <span className={`text-[11px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
+                                              
+                                              {countForCurrentSelection > 0 && (
+                                                <div 
+                                                  role="button"
+                                                  onClick={(e) => handlePortionDeselect(product, size, currentVariant, e)}
+                                                  className="absolute top-5 -right-2 bg-gray-400 text-white text-[12px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white hover:bg-red-500 transition-colors z-10 cursor-pointer"
+                                                  title="Verwijder één"
+                                                >
+                                                  -
+                                                </div>
+                                              )}
+                                              {countForCurrentSelection > 0 && (
+                                                <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                                  {countForCurrentSelection}
+                                                </span>
+                                              )}
+                                              
+                                              {countForCurrentSelection === 0 && totalCountForSize > 0 && (
+                                                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-ob-blue/40" title="Al gekozen in een andere variant"></span>
+                                              )}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+
+                                      {hasSelections && (
+                                        <div className="mt-2 pt-3 border-t border-gray-200">
+                                          <div className="flex flex-col gap-1">
+                                            {Object.entries(prodSelections).map(([s, qty]) => {
+                                              const parts = s.split('_');
+                                              const sizeNum = parts[0];
+                                              const variant = parts[1] || '';
+                                              const basePrice = prices[`${product}_${sizeNum}`] || 0;
+                                              const surcharge = getVariantSurcharge(product, variant, sizeNum);
+                                              const itemPrice = (basePrice + surcharge) * (qty as number);
+                                              return (
+                                                <div key={s} className="flex justify-between items-center text-xs bg-white px-2.5 py-1.5 rounded border border-gray-200">
+                                                  <span className="font-semibold text-gray-800">
+                                                    {qty}x {sizeNum} stuks {variant && <span className="text-ob-blue font-bold">({variant})</span>}
+                                                  </span>
+                                                  <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold text-gray-700">€{itemPrice.toFixed(2)}</span>
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => handlePortionDeselect(product, Number(sizeNum), variant, e)}
+                                                      className="text-gray-400 hover:text-red-500 font-bold px-1 rounded transition-colors"
+                                                      title="Verwijder één"
+                                                    >
+                                                      ×
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  );
-                });
+                  ));
                 })()}
               </div>
             )}
             
             {Object.keys(selections).length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-100 flex justify-between items-center">
-                <span className="font-bold text-gray-700">Totaalbedrag:</span>
+              <div className="mt-8 pt-6 border-t border-gray-100 flex justify-between items-center">
+                <span className="font-bold text-gray-700">Totaalbedrag snacks:</span>
                 <span className="text-2xl font-bold text-ob-blue">
-                  €{Object.entries(selections).reduce((sum, [prod, size]) => sum + (prices[`${prod}_${size}`] || 0), 0).toFixed(2)}
+                  €{totalOrderPrice.toFixed(2)}
                 </span>
               </div>
             )}
@@ -702,6 +888,152 @@ export function EmployeeOrdering() {
 
         </form>
       </div>
+
+      {/* Product Details Modal */}
+      {infoModalProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={() => setInfoModalProduct(null)}>
+          <div 
+            className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl relative border border-gray-100 flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button"
+              onClick={() => setInfoModalProduct(null)} 
+              className="absolute top-4 right-4 z-10 w-8 h-8 rounded-full bg-white/80 hover:bg-white text-gray-700 flex items-center justify-center backdrop-blur shadow-sm transition-all"
+            >
+              <X size={18} />
+            </button>
+            
+            {(infoModalProduct.image_url || PRODUCT_IMAGES[infoModalProduct.name] || infoModalProduct.image) ? (
+               <div className="w-full h-48 sm:h-56 shrink-0 bg-gray-100 relative">
+                 <img 
+                   src={infoModalProduct.image_url || PRODUCT_IMAGES[infoModalProduct.name] || infoModalProduct.image} 
+                   alt={infoModalProduct.name} 
+                   className="w-full h-full object-cover" 
+                 />
+                 {infoModalProduct._openedFromCategory && (
+                   <span className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-sm text-ob-blue px-2.5 py-1 rounded-full text-xs font-semibold shadow-sm">
+                     {infoModalProduct._openedFromCategory}
+                   </span>
+                 )}
+               </div>
+            ) : null}
+            
+            <div className="p-6 overflow-y-auto flex flex-col gap-4">
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
+                  <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                    <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}
+                  </p>
+                )}
+                {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
+                  <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3">
+                    <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
+                    <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{infoModalProduct.sauces.join(', ')}</span></span>
+                  </div>
+                )}
+                {infoModalProduct.extra_info && <div className="text-gray-600 whitespace-pre-wrap">{infoModalProduct.extra_info}</div>}
+              </div>
+              
+              <div className="mt-2 pt-4 border-t border-gray-100">
+                <h4 className="font-bold text-ob-blue mb-3">Toevoegen aan bestelling</h4>
+                {(() => {
+                  const modalCategory = infoModalProduct._openedFromCategory || '';
+                  const sortedModalVariants = (infoModalProduct.variants && infoModalProduct.variants.length > 0)
+                    ? sortVariantsByCategory(infoModalProduct.variants, modalCategory)
+                    : [];
+                  const defaultModalVariant = sortedModalVariants[0] || '';
+                  const variantKey = `${modalCategory}_${infoModalProduct.name}`;
+                  const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[variantKey] || defaultModalVariant) : '';
+                  const modalPortions = (infoModalProduct.portions && infoModalProduct.portions.length > 0)
+                    ? [...infoModalProduct.portions].sort((a: number, b: number) => a - b)
+                    : PORTION_SIZES;
+                  
+                  return (
+                    <>
+                      {sortedModalVariants.length > 0 && (
+                        <div className="flex flex-col gap-1.5 w-full mb-3">
+                          <div className="flex items-center text-xs">
+                            <span className="font-semibold text-gray-700">Kies variant:</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 w-full">
+                            {sortedModalVariants.map((v: string) => {
+                              const isSelected = currentVariant === v;
+                              return (
+                                <button
+                                  key={v}
+                                  type="button"
+                                  onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
+                                  className={`flex-1 min-w-[70px] py-1.5 px-3 text-xs rounded-full font-bold transition-all border text-center ${
+                                    isSelected
+                                      ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {v}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-2 w-full">
+                        {modalPortions.map((size: number) => {
+                          const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
+                          const prodSelections = selections[infoModalProduct.name] || {};
+                          const countForCurrentSelection = prodSelections[selKey] || 0;
+                          
+                          const basePrice = prices[infoModalProduct.name + '_' + size];
+                          const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(infoModalProduct.name, currentVariant, size) : undefined;
+                          
+                          const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((infoModalProduct.status || '').toLowerCase());
+                          const isDisabled = basePrice === undefined || isSoldOut;
+                          
+                          return (
+                            <button
+                              key={size}
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => {
+                                handlePortionSelect(infoModalProduct.name, size, currentVariant);
+                              }}
+                              className={`relative py-3 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
+                            >
+                              <span className="font-bold text-[14px]">{size} stuks</span>
+                              <span className={`text-[12px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
+                              
+                              {countForCurrentSelection > 0 && (
+                                <div 
+                                  role="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handlePortionDeselect(infoModalProduct.name, size, currentVariant, e);
+                                  }}
+                                  className="absolute top-5 -right-2 bg-gray-400 text-white text-[12px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white hover:bg-red-500 transition-colors z-10 cursor-pointer"
+                                  title="Verwijder één"
+                                >
+                                  -
+                                </div>
+                              )}
+                              {countForCurrentSelection > 0 && (
+                                <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                  {countForCurrentSelection}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

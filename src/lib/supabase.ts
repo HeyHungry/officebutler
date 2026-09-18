@@ -147,6 +147,44 @@ export function formatStoreSchedule(schedule?: StoreSchedule): string[] {
   });
 }
 
+export function getVariantScore(variant: string, categoryTitle: string): number {
+  if (!variant || !categoryTitle) return 0;
+  const v = variant.trim().toLowerCase();
+  const c = categoryTitle.trim().toLowerCase();
+
+  // Exact match to category title always gets maximum score
+  if (v === c) return 100;
+
+  // Check if category is a vegetarian / vegan category (e.g. "Vega", "Vegetarisch", "Vegan")
+  const isVegaCategory = /vega|vegan|vegetarisch/i.test(c);
+  if (isVegaCategory) {
+    if (v === 'vega' || v === 'vegetarisch') return 95;
+    if (v === 'vegan' || v === 'veganistisch') return 90;
+    if (v.includes('groente') || v.includes('groenten')) return 85;
+    if (v.includes('kaas') || v.includes('geit')) return 75;
+    if (v.includes('falafel') || v.includes('plant')) return 70;
+    if (/vega|vegan|vegetarisch/i.test(v)) return 65;
+    return 0;
+  }
+
+  // If category is not vega: partial match with category title gets boosted
+  if (c.includes(v) || v.includes(c)) return 50;
+
+  return 0;
+}
+
+export function sortVariantsByCategory(variants: string[] | undefined, categoryTitle: string): string[] {
+  if (!variants || variants.length === 0) return [];
+  return [...variants].sort((a, b) => {
+    const scoreA = getVariantScore(a, categoryTitle);
+    const scoreB = getVariantScore(b, categoryTitle);
+    if (scoreA !== scoreB) {
+      return scoreB - scoreA; // higher score first
+    }
+    return 0;
+  });
+}
+
 
 export type ObCompany = {
   id: string;

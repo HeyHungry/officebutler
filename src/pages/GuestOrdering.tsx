@@ -1,5 +1,5 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, sortVariantsByCategory } from '../lib/supabase';
 import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -451,16 +451,7 @@ Extra Notities: ${notes}
 
                                 {(item.variants && item.variants.length > 0) && (
                                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                                    <span className="font-semibold text-gray-700">Opties:</span> {(() => {
-                                      const sortedVariants = [...item.variants].sort((a, b) => {
-                                        const isAMatch = a.trim().toLowerCase() === category.title.trim().toLowerCase();
-                                        const isBMatch = b.trim().toLowerCase() === category.title.trim().toLowerCase();
-                                        if (isAMatch && !isBMatch) return -1;
-                                        if (!isAMatch && isBMatch) return 1;
-                                        return 0;
-                                      });
-                                      return sortedVariants.join(', ');
-                                    })()}
+                                    <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
                                   </p>
                                 )}
 
@@ -476,16 +467,12 @@ Extra Notities: ${notes}
                             {/* Action section pushed to bottom */}
                             <div className="p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col gap-3">
                               {(() => {
-                                const defaultVariant = (item.variants && item.variants.length > 0) ? (item.variants.find(v => v.trim().toLowerCase() === category.title.trim().toLowerCase()) || item.variants[0]) : '';
+                                const sortedVariants = (item.variants && item.variants.length > 0)
+                                  ? sortVariantsByCategory(item.variants, category.title)
+                                  : [];
+                                const defaultVariant = sortedVariants[0] || '';
                                 const variantKey = `${category.title}_${product}`;
                                 const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
-                                const sortedVariants = (item.variants && item.variants.length > 0) ? [...item.variants].sort((a: string, b: string) => {
-                                  const isAMatch = a.trim().toLowerCase() === category.title.trim().toLowerCase();
-                                  const isBMatch = b.trim().toLowerCase() === category.title.trim().toLowerCase();
-                                  if (isAMatch && !isBMatch) return -1;
-                                  if (!isAMatch && isBMatch) return 1;
-                                  return 0;
-                                }) : [];
                                 return (
                                   <>
                                     {sortedVariants.length > 0 && (
@@ -792,17 +779,7 @@ Extra Notities: ${notes}
                 <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
                 {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                    <span className="font-semibold text-gray-700">Opties:</span> {(() => {
-                      const modalCat = infoModalProduct._openedFromCategory || '';
-                      const sorted = [...infoModalProduct.variants].sort((a: string, b: string) => {
-                        const isAMatch = a.trim().toLowerCase() === modalCat.trim().toLowerCase();
-                        const isBMatch = b.trim().toLowerCase() === modalCat.trim().toLowerCase();
-                        if (isAMatch && !isBMatch) return -1;
-                        if (!isAMatch && isBMatch) return 1;
-                        return 0;
-                      });
-                      return sorted.join(', ');
-                    })()}
+                    <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}
                   </p>
                 )}
                 {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
@@ -818,16 +795,12 @@ Extra Notities: ${notes}
                 <h4 className="font-bold text-ob-blue mb-3">Toevoegen aan bestelling</h4>
                 {(() => {
                   const modalCategory = infoModalProduct._openedFromCategory || '';
-                  const defaultModalVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (infoModalProduct.variants.find((v: string) => v.trim().toLowerCase() === modalCategory.trim().toLowerCase()) || infoModalProduct.variants[0]) : '';
+                  const sortedModalVariants = (infoModalProduct.variants && infoModalProduct.variants.length > 0)
+                    ? sortVariantsByCategory(infoModalProduct.variants, modalCategory)
+                    : [];
+                  const defaultModalVariant = sortedModalVariants[0] || '';
                   const variantKey = modalCategory ? `${modalCategory}_${infoModalProduct.name}` : infoModalProduct.name;
                   const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[variantKey] || defaultModalVariant) : '';
-                  const sortedModalVariants = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? [...infoModalProduct.variants].sort((a: string, b: string) => {
-                    const isAMatch = a.trim().toLowerCase() === modalCategory.trim().toLowerCase();
-                    const isBMatch = b.trim().toLowerCase() === modalCategory.trim().toLowerCase();
-                    if (isAMatch && !isBMatch) return -1;
-                    if (!isAMatch && isBMatch) return 1;
-                    return 0;
-                  }) : [];
                   
                   return (
                     <>
