@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from 'react';
+import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
@@ -74,11 +74,20 @@ export function GuestOrdering() {
             return acc;
           }, {});
           
-          const cats = Object.keys(grouped).map(key => ({
-            title: key,
-            items: grouped[key],
-            minSortOrder: Math.min(...grouped[key].map((i: any) => i.sort_order || 0))
-          }));
+          const cats = Object.keys(grouped).map(key => {
+            const primaryItems = prods.filter(
+              (i: any) => (i.category || 'Overig').trim().toLowerCase() === key.trim().toLowerCase()
+            );
+            const minSortOrder = primaryItems.length > 0
+              ? Math.min(...primaryItems.map((i: any) => i.sort_order ?? 9999))
+              : Math.min(...grouped[key].map((i: any) => i.sort_order ?? 9999));
+
+            return {
+              title: key,
+              items: grouped[key],
+              minSortOrder
+            };
+          });
           cats.sort((a, b) => a.minSortOrder - b.minSortOrder);
           setCategories(cats);
 
@@ -440,6 +449,21 @@ Extra Notities: ${notes}
                                   )}
                                 </div>
 
+                                {(item.variants && item.variants.length > 0) && (
+                                  <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                                    <span className="font-semibold text-gray-700">Opties:</span> {(() => {
+                                      const sortedVariants = [...item.variants].sort((a, b) => {
+                                        const isAMatch = a.trim().toLowerCase() === category.title.trim().toLowerCase();
+                                        const isBMatch = b.trim().toLowerCase() === category.title.trim().toLowerCase();
+                                        if (isAMatch && !isBMatch) return -1;
+                                        if (!isAMatch && isBMatch) return 1;
+                                        return 0;
+                                      });
+                                      return sortedVariants.join(', ');
+                                    })()}
+                                  </p>
+                                )}
+
                                 {item.sauces && item.sauces.length > 0 && (
                                   <div className="mt-auto inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit">
                                     <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
@@ -455,16 +479,40 @@ Extra Notities: ${notes}
                                 const defaultVariant = (item.variants && item.variants.length > 0) ? (item.variants.find(v => v.trim().toLowerCase() === category.title.trim().toLowerCase()) || item.variants[0]) : '';
                                 const variantKey = `${category.title}_${product}`;
                                 const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
+                                const sortedVariants = (item.variants && item.variants.length > 0) ? [...item.variants].sort((a: string, b: string) => {
+                                  const isAMatch = a.trim().toLowerCase() === category.title.trim().toLowerCase();
+                                  const isBMatch = b.trim().toLowerCase() === category.title.trim().toLowerCase();
+                                  if (isAMatch && !isBMatch) return -1;
+                                  if (!isAMatch && isBMatch) return 1;
+                                  return 0;
+                                }) : [];
                                 return (
                                   <>
-                                    {item.variants && item.variants.length > 0 && (
-                                      <select 
-                                        className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors"
-                                        value={currentVariant}
-                                        onChange={(e) => setSelectedVariants({...selectedVariants, [variantKey]: e.target.value})}
-                                      >
-                                        {item.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
-                                      </select>
+                                    {sortedVariants.length > 0 && (
+                                      <div className="flex flex-col gap-1.5 w-full">
+                                        <div className="flex items-center text-xs">
+                                          <span className="font-semibold text-gray-700">Kies variant:</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5 w-full">
+                                          {sortedVariants.map((v: string) => {
+                                            const isSelected = currentVariant === v;
+                                            return (
+                                              <button
+                                                key={v}
+                                                type="button"
+                                                onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
+                                                className={`flex-1 min-w-[70px] py-1.5 px-2.5 text-xs rounded-full font-bold transition-all border text-center ${
+                                                  isSelected
+                                                    ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                                    : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                                }`}
+                                              >
+                                                {v}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
                                     )}
                                     <div className="grid grid-cols-2 gap-2 w-full">
                                       {productSizes.length > 0 ? (
@@ -742,6 +790,21 @@ Extra Notities: ${notes}
             <div className="p-6 overflow-y-auto flex flex-col gap-4">
               <div>
                 <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
+                  <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                    <span className="font-semibold text-gray-700">Opties:</span> {(() => {
+                      const modalCat = infoModalProduct._openedFromCategory || '';
+                      const sorted = [...infoModalProduct.variants].sort((a: string, b: string) => {
+                        const isAMatch = a.trim().toLowerCase() === modalCat.trim().toLowerCase();
+                        const isBMatch = b.trim().toLowerCase() === modalCat.trim().toLowerCase();
+                        if (isAMatch && !isBMatch) return -1;
+                        if (!isAMatch && isBMatch) return 1;
+                        return 0;
+                      });
+                      return sorted.join(', ');
+                    })()}
+                  </p>
+                )}
                 {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
                   <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3">
                     <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
@@ -758,17 +821,41 @@ Extra Notities: ${notes}
                   const defaultModalVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (infoModalProduct.variants.find((v: string) => v.trim().toLowerCase() === modalCategory.trim().toLowerCase()) || infoModalProduct.variants[0]) : '';
                   const variantKey = modalCategory ? `${modalCategory}_${infoModalProduct.name}` : infoModalProduct.name;
                   const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[variantKey] || defaultModalVariant) : '';
+                  const sortedModalVariants = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? [...infoModalProduct.variants].sort((a: string, b: string) => {
+                    const isAMatch = a.trim().toLowerCase() === modalCategory.trim().toLowerCase();
+                    const isBMatch = b.trim().toLowerCase() === modalCategory.trim().toLowerCase();
+                    if (isAMatch && !isBMatch) return -1;
+                    if (!isAMatch && isBMatch) return 1;
+                    return 0;
+                  }) : [];
                   
                   return (
                     <>
-                      {infoModalProduct.variants && infoModalProduct.variants.length > 0 && (
-                        <select 
-                          className="w-full text-sm border-2 border-gray-200 rounded-full shadow-sm focus:border-ob-blue focus:ring-0 py-2 px-4 bg-white text-[#05053D] font-bold cursor-pointer hover:border-gray-300 transition-colors mb-3"
-                          value={currentVariant}
-                          onChange={(e) => setSelectedVariants({...selectedVariants, [variantKey]: e.target.value})}
-                        >
-                          {infoModalProduct.variants.map((v: string) => <option key={v} value={v}>{v}</option>)}
-                        </select>
+                      {sortedModalVariants.length > 0 && (
+                        <div className="flex flex-col gap-1.5 w-full mb-3">
+                          <div className="flex items-center text-xs">
+                            <span className="font-semibold text-gray-700">Kies variant:</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 w-full">
+                            {sortedModalVariants.map((v: string) => {
+                              const isSelected = currentVariant === v;
+                              return (
+                                <button
+                                  key={v}
+                                  type="button"
+                                  onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
+                                  className={`flex-1 min-w-[70px] py-1.5 px-3 text-xs rounded-full font-bold transition-all border text-center ${
+                                    isSelected
+                                      ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                      : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {v}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       )}
                       
                       <div className="grid grid-cols-2 gap-2 w-full">

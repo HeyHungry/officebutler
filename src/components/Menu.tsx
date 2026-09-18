@@ -56,11 +56,20 @@ export function Menu({ content }: { content?: any }) {
         }, {});
 
         
-        const categoriesArray = Object.keys(grouped).map(key => ({
-          title: key,
-          items: grouped[key],
-          minSortOrder: Math.min(...grouped[key].map((i: any) => i.sort_order || 0))
-        }));
+        const categoriesArray = Object.keys(grouped).map(key => {
+          const primaryItems = (data || []).filter(
+            (i: any) => (i.category || 'Overig').trim().toLowerCase() === key.trim().toLowerCase()
+          );
+          const minSortOrder = primaryItems.length > 0
+            ? Math.min(...primaryItems.map((i: any) => i.sort_order ?? 9999))
+            : Math.min(...grouped[key].map((i: any) => i.sort_order ?? 9999));
+
+          return {
+            title: key,
+            items: grouped[key],
+            minSortOrder
+          };
+        });
         
         categoriesArray.sort((a, b) => a.minSortOrder - b.minSortOrder);
 
@@ -114,7 +123,7 @@ export function Menu({ content }: { content?: any }) {
                   <div className="flex flex-col md:flex-row gap-8">
                     {itemChunks.map((chunk, chunkIndex) => (
                       <div key={chunkIndex} className="font-serif flex flex-col gap-6 flex-1 min-w-[250px]">
-                        {chunk.map((item) => (
+                        {chunk.map((item: any) => (
                           <div key={item.name} className="font-serif flex items-center gap-4 group cursor-pointer border-b border-black/5 pb-4 last:border-0 last:pb-0" onClick={() => item.extra_info && setInfoModalProduct(item)}>
                             <div className="font-serif w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
                               {item.image_url ? (

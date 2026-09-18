@@ -129,7 +129,7 @@ export function MenuManager() {
         const newItems = arrayMove(items, oldIndex, newIndex);
         
         // Optimistically update sort_order in UI
-        const updatedItems = newItems.map((item, index) => ({ ...item, sort_order: index }));
+        const updatedItems = (newItems as any[]).map((item, index) => ({ ...item, sort_order: index }));
         
         // Save to DB in background
         if (supabase) {

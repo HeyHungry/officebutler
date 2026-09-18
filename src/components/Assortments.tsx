@@ -26,29 +26,37 @@ export function Assortments({ content }: { content?: any }) {
             <div className="font-serif text-ob-blue mb-4">
               <Utensils size={40} strokeWidth={1.5} />
             </div>
-            <h3 className="font-serif text-3xl mb-2" style={{ fontSize: content?.assort_snacks_title_size ? `calc(${String(content.assort_snacks_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_title || "Office Snacks"}</h3>
-            <p className="font-serif text-ob-text-light mb-8 italic" style={{ fontSize: content?.assort_snacks_subtitle_size ? `calc(${String(content.assort_snacks_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_subtitle || "Puur genieten van warme en koude snacks."}</p>
+            <h3 className="font-serif text-3xl mb-2" style={{ fontSize: content?.assort_snacks_title_size ? `calc(${String(content.assort_snacks_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_title || "Bezorgen"}</h3>
+            <p className="font-serif text-ob-text-light mb-8 italic" style={{ fontSize: content?.assort_snacks_subtitle_size ? `calc(${String(content.assort_snacks_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_subtitle || "Netjes en warm tot aan de deur geleverd"}</p>
             
             <ul className="font-serif space-y-4 mb-10 flex-grow">
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item1_size ? `calc(${String(content.assort_snacks_item1_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item1 || "Premium bittergarnituur (ambachtelijk)"}</span>
-              </li>
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item2_size ? `calc(${String(content.assort_snacks_item2_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item2 || "Luxe koude hapjes en borrelplanken"}</span>
-              </li>
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item3_size ? `calc(${String(content.assort_snacks_item3_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item3 || "Geleverd in warmhoudboxen"}</span>
-              </li>
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-ob-text">Vanaf 10 personen</span>
-              </li>
+              {(content?.assort_snacks_item1 ?? "Gegarandeerd warme levering") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item1_size ? `calc(${String(content.assort_snacks_item1_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item1 || "Gegarandeerd warme levering"}</span>
+                </li>
+              )}
+              {(content?.assort_snacks_item2 ?? "Stipt op de afgesproken tijd (of binnen 45 min)") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item2_size ? `calc(${String(content.assort_snacks_item2_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item2 || "Stipt op de afgesproken tijd (of binnen 45 min)"}</span>
+                </li>
+              )}
+              {(content?.assort_snacks_item3 ?? "Gratis bezorgservice") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item3_size ? `calc(${String(content.assort_snacks_item3_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item3 || "Gratis bezorgservice"}</span>
+                </li>
+              )}
+              {(content?.assort_snacks_item4 ?? "Vanaf 10 personen") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-ob-text" style={{ fontSize: content?.assort_snacks_item4_size ? `calc(${String(content.assort_snacks_item4_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_item4 || "Vanaf 10 personen"}</span>
+                </li>
+              )}
             </ul>
             
-            <button onClick={openStep1} className="font-serif w-full border-2 border-ob-blue text-ob-blue hover:bg-ob-blue hover:text-white hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 uppercase tracking-widest text-sm font-bold" style={{ fontSize: content?.assort_snacks_btn_size ? `calc(${String(content.assort_snacks_btn_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_btn || "Bestel Snacks"}
+            <button onClick={openStep1} className="font-serif w-full border-2 border-ob-blue text-ob-blue hover:bg-ob-blue hover:text-white hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 uppercase tracking-widest text-sm font-bold" style={{ fontSize: content?.assort_snacks_btn_size ? `calc(${String(content.assort_snacks_btn_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_snacks_btn || "Kies Bezorgen"}
             </button>
           </motion.div>
 
@@ -60,35 +68,45 @@ export function Assortments({ content }: { content?: any }) {
             transition={{ duration: 0.5, delay: 0.2 }}
             className="font-serif bg-ob-text text-white p-10 shadow-lg border-t-4 border-ob-accent flex flex-col h-full relative overflow-hidden"
           >
-            <div className="font-serif absolute top-0 right-0 bg-ob-accent text-white text-xs uppercase tracking-wider py-1 px-3">
-              Meest Gekozen
-            </div>
+            {(content?.assort_complete_badge ?? "Meest Gekozen") !== "" && (
+              <div className="font-serif absolute top-0 right-0 bg-ob-accent text-white text-xs uppercase tracking-wider py-1 px-3" style={{ fontSize: content?.assort_complete_badge_size ? `calc(${String(content.assort_complete_badge_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>
+                {content?.assort_complete_badge || "Meest Gekozen"}
+              </div>
+            )}
             <div className="font-serif text-ob-accent mb-4">
               <Wine size={40} strokeWidth={1.5} />
             </div>
-            <h3 className="font-serif text-3xl mb-2 text-white" style={{ fontSize: content?.assort_complete_title_size ? `calc(${String(content.assort_complete_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_title || "Office Compleet"}</h3>
-            <p className="font-serif text-white/70 mb-8 italic" style={{ fontSize: content?.assort_complete_subtitle_size ? `calc(${String(content.assort_complete_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_subtitle || "De volledige vrijmibo ervaring."}</p>
+            <h3 className="font-serif text-3xl mb-2 text-white" style={{ fontSize: content?.assort_complete_title_size ? `calc(${String(content.assort_complete_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_title || "Uitpakken & uitserveren"}</h3>
+            <p className="font-serif text-white/70 mb-8 italic" style={{ fontSize: content?.assort_complete_subtitle_size ? `calc(${String(content.assort_complete_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_subtitle || "De ultieme butler ervaring"}</p>
             
             <ul className="font-serif space-y-4 mb-10 flex-grow">
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item1_size ? `calc(${String(content.assort_complete_item1_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item1 || "Alles uit het Basis Assortiment"}</span>
-              </li>
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item2_size ? `calc(${String(content.assort_complete_item2_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item2 || "Gekoelde bieren (o.a. speciaalbier), wijnen en fris"}</span>
-              </li>
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item3_size ? `calc(${String(content.assort_complete_item3_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item3 || "Optioneel: Inclusief glaswerk"}</span>
-              </li>
-              <li className="font-serif flex items-start gap-3">
-                <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
-                <span className="font-serif text-white/90">Identiek aan de kwaliteit van Canal Butler</span>
-              </li>
+              {(content?.assort_complete_item1 ?? "Butlers pakken de snacks uit en maken ze eetklaar") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item1_size ? `calc(${String(content.assort_complete_item1_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item1 || "Butlers pakken de snacks uit en maken ze eetklaar"}</span>
+                </li>
+              )}
+              {(content?.assort_complete_item2 ?? "Butlers serveren de warme hapjes direct uit") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item2_size ? `calc(${String(content.assort_complete_item2_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item2 || "Butlers serveren de warme hapjes direct uit"}</span>
+                </li>
+              )}
+              {(content?.assort_complete_item3 ?? "Ideaal voor grotere groepen of evenementen") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item3_size ? `calc(${String(content.assort_complete_item3_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item3 || "Ideaal voor grotere groepen of evenementen"}</span>
+                </li>
+              )}
+              {(content?.assort_complete_item4 ?? "Identiek aan de kwaliteit van Canal Butler") !== "" && (
+                <li className="font-serif flex items-start gap-3">
+                  <Check className="font-serif text-ob-accent mt-1 shrink-0" size={18} />
+                  <span className="font-serif text-white/90" style={{ fontSize: content?.assort_complete_item4_size ? `calc(${String(content.assort_complete_item4_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_item4 || "Identiek aan de kwaliteit van Canal Butler"}</span>
+                </li>
+              )}
             </ul>
             
-            <button onClick={openStep1} className="font-serif w-full bg-ob-accent text-white hover:bg-ob-accent-hover hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 uppercase tracking-widest text-sm font-bold" style={{ fontSize: content?.assort_complete_btn_size ? `calc(${String(content.assort_complete_btn_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_btn || "Bestel Compleet"}
+            <button onClick={openStep1} className="font-serif w-full bg-ob-accent text-white hover:bg-ob-accent-hover hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 uppercase tracking-widest text-sm font-bold" style={{ fontSize: content?.assort_complete_btn_size ? `calc(${String(content.assort_complete_btn_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.assort_complete_btn || "Kies Butler Service"}
             </button>
           </motion.div>
         </div>

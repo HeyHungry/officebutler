@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice } from '../lib/supabase';
+import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule } from '../lib/supabase';
 import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
@@ -225,6 +225,20 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           .eq('id', 1);
 
         if (storeError) throw storeError;
+
+        // Also synchronize shared_settings.opening_hours
+        const scheduleLines = formatStoreSchedule(localStoreSettings.schedule);
+        const hoursSummary = localStoreSettings.page_content?.opening_hours_custom?.trim() || scheduleLines.join(' | ');
+        if (hoursSummary) {
+          await supabase
+            .from('shared_settings')
+            .update({ opening_hours: hoursSummary })
+            .eq('id', 1);
+
+          if (onSettingsUpdated) {
+            onSettingsUpdated({ ...settings, opening_hours: hoursSummary });
+          }
+        }
       }
       if (onStoreSettingsUpdated) {
         onStoreSettingsUpdated(localStoreSettings);
@@ -309,10 +323,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
         // Save variant surcharges to ob_products
         if (selectedPriceProduct) {
-           const cleanSurcharges = {};
+           const cleanSurcharges: Record<string, number> = {};
            for (const [k, v] of Object.entries(variantSurcharges)) {
-             if (v !== undefined && v !== null && !isNaN(v)) {
-               cleanSurcharges[k] = v;
+             if (v !== undefined && v !== null && !isNaN(v as any)) {
+               cleanSurcharges[k] = Number(v);
              }
            }
            await supabase.from('ob_products')
@@ -655,107 +669,276 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             </div>
                           </div>
 
-                          {/* ASSORTMENTS */}
+                          {/* ASSORTMENTS / BUTLER SERVICE */}
                           <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
-                                                        <h4 className="font-bold text-ob-blue mb-4 border-b pb-2 mt-8">Sectie 3: Assortimenten Extra Teksten</h4>
-                            <div className="grid grid-cols-1 gap-4">
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
-                                  <span>Office Snacks Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
-                                </label>
-                                <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                    value={localStoreSettings.page_content?.assort_snacks_subtitle || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle: e.target.value}} as any)} />
-                                  <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
-                                    value={localStoreSettings.page_content?.assort_snacks_subtitle_size || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle_size: e.target.value}} as any)} />
-                                </div>
-                              </div>
-                              <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
-                                  <span>Office Compleet Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
-                                </label>
-                                <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                    value={localStoreSettings.page_content?.assort_complete_subtitle || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle: e.target.value}} as any)} />
-                                  <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
-                                    value={localStoreSettings.page_content?.assort_complete_subtitle_size || ''}
-                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle_size: e.target.value}} as any)} />
-                                </div>
-                              </div>
-                            </div>
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 3: Onze Butler Service (Assortimenten / Pakketten)</h4>
                             
-                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2 mt-8">Sectie 3: Assortimenten (Pakketten)</h4>
+                            {/* Algemene sectietitel & ondertitel */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
-                                  <span>Titel</span>
+                                  <span>Sectie Titel</span>
                                   <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
                                 </label>
                                 <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assortments_title || ''}
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm" placeholder="Onze Butler Service"
+                                    value={localStoreSettings.page_content?.assortments_title || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title: e.target.value}} as any)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.assortments_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title_size: e.target.value}} as any)} />
                                 </div>
                               </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
-                                  <span>Ondertitel</span>
+                                  <span>Sectie Ondertitel</span>
                                   <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
                                 </label>
                                 <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assortments_subtitle || ''}
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm" placeholder="Kies de service die het beste bij de kantoorborrel past."
+                                    value={localStoreSettings.page_content?.assortments_subtitle || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle: e.target.value}} as any)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.assortments_subtitle_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle_size: e.target.value}} as any)} />
                                 </div>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-4">
-                              <div className="space-y-3">
-                                <h5 className="font-semibold text-sm">Pakket 1 (Links)</h5>
-                                <input type="text" placeholder="Titel Pakket 1" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_snacks_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_title: e.target.value}} as any)} />
-                                <input type="text" placeholder="Bullet 1" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_snacks_item1 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item1: e.target.value}} as any)} />
-                                <input type="text" placeholder="Bullet 2" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_snacks_item2 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item2: e.target.value}} as any)} />
-                                <input type="text" placeholder="Bullet 3" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_snacks_item3 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item3: e.target.value}} as any)} />
-                                <input type="text" placeholder="Knop Tekst" className="w-full px-3 py-2 border rounded-md text-sm font-medium"
-                                  value={localStoreSettings.page_content?.assort_snacks_btn || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_btn: e.target.value}} as any)} />
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-6">
+                              {/* Pakket 1 (Links) */}
+                              <div className="space-y-3 bg-gray-50/70 p-4 rounded-lg border border-gray-200">
+                                <h5 className="font-semibold text-sm text-ob-blue border-b pb-1">Pakket 1 (Links - Wit)</h5>
+                                
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Titel (bijv. Bezorgen)</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Titel Pakket 1" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_title || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_title: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_title_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_title_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Ondertitel</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Ondertitel Pakket 1" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_subtitle || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_subtitle_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 1</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 1" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item1 || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item1: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item1_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item1_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 2</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 2" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item2 || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item2: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item2_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item2_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 3</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 3" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item3 || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item3: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item3_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item3_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 4 (voorheen 'Vanaf 10 personen')</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 4" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item4 !== undefined ? localStoreSettings.page_content.assort_snacks_item4 : ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item4: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_item4_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item4_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Knop Tekst</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Knop Tekst" className="flex-1 px-3 py-2 border rounded-md text-sm font-medium"
+                                      value={localStoreSettings.page_content?.assort_snacks_btn || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_btn: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_snacks_btn_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_btn_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
                               </div>
-                              <div className="space-y-3">
-                                <h5 className="font-semibold text-sm">Pakket 2 (Rechts)</h5>
-                                <input type="text" placeholder="Titel Pakket 2" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_complete_title || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_title: e.target.value}} as any)} />
-                                <input type="text" placeholder="Bullet 1" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_complete_item1 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item1: e.target.value}} as any)} />
-                                <input type="text" placeholder="Bullet 2" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_complete_item2 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item2: e.target.value}} as any)} />
-                                <input type="text" placeholder="Bullet 3" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  value={localStoreSettings.page_content?.assort_complete_item3 || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item3: e.target.value}} as any)} />
-                                <input type="text" placeholder="Knop Tekst" className="w-full px-3 py-2 border rounded-md text-sm font-medium"
-                                  value={localStoreSettings.page_content?.assort_complete_btn || ''}
-                                  onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_btn: e.target.value}} as any)} />
+
+                              {/* Pakket 2 (Rechts) */}
+                              <div className="space-y-3 bg-gray-50/70 p-4 rounded-lg border border-gray-200">
+                                <h5 className="font-semibold text-sm text-ob-blue border-b pb-1">Pakket 2 (Rechts - Donker)</h5>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Badge / Label (bovenkant rechts)</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="bijv. Meest Gekozen" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_badge !== undefined ? localStoreSettings.page_content.assort_complete_badge : ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_badge: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_badge_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_badge_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Titel (bijv. Uitpakken & uitserveren)</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Titel Pakket 2" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_title || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_title: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_title_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_title_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Ondertitel</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Ondertitel Pakket 2" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_subtitle || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_subtitle_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 1</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 1" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item1 || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item1: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item1_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item1_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 2</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 2" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item2 || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item2: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item2_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item2_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 3</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 3" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item3 || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item3: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item3_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item3_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Bullet 4 (voorheen 'Identiek aan...')</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Bullet 4" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item4 !== undefined ? localStoreSettings.page_content.assort_complete_item4 : ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item4: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_item4_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item4_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                    <span>Knop Tekst</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <input type="text" placeholder="Knop Tekst" className="flex-1 px-3 py-2 border rounded-md text-sm font-medium"
+                                      value={localStoreSettings.page_content?.assort_complete_btn || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_btn: e.target.value}} as any)} />
+                                    <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                      value={localStoreSettings.page_content?.assort_complete_btn_size || ''}
+                                      onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_btn_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -957,12 +1140,42 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         {/* Opening Hours Section */}
                         <section>
                           <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-serif font-semibold text-[#05053D]">Openingstijden Beheren</h3>
+                            <div>
+                              <h3 className="text-xl font-serif font-semibold text-[#05053D]">Openingstijden Beheren</h3>
+                              <p className="text-xs text-gray-500 mt-0.5">Stel hier de openingstijden per dag in. Deze worden direct op de website onderaan getoond.</p>
+                            </div>
                             <button onClick={handleSaveStoreSettings} disabled={isSaving} className="bg-[#111827] text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-[#1f2937] transition-colors disabled:opacity-50">
                               {isSaving ? 'Bezig...' : 'Tijden Opslaan'}
                             </button>
                           </div>
                           {saveSuccess && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-6 text-sm flex items-center gap-2"><span>Instellingen succesvol opgeslagen!</span></div>}
+
+                          {/* Live preview banner */}
+                          <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-lg mb-4 text-xs text-ob-blue flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <span className="font-bold block mb-0.5">Huidige weergave onderaan de website:</span>
+                              <span className="font-medium text-gray-800">
+                                {localStoreSettings.page_content?.opening_hours_custom?.trim() || formatStoreSchedule(localStoreSettings.schedule).join(' • ') || 'Nog geen tijden ingesteld'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Optional custom override */}
+                          <div className="mb-5 bg-gray-50/60 p-3.5 rounded-lg border border-gray-200">
+                            <label className="block text-xs font-medium text-gray-700 mb-1">
+                              Aangepaste tekst (optioneel — laat leeg om automatisch de dagen hieronder te groeperen):
+                            </label>
+                            <input 
+                              type="text" 
+                              placeholder="bijv. Ma - Vr: 15:00 - 21:00 (of laat leeg voor automatische weergave)" 
+                              className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                              value={localStoreSettings.page_content?.opening_hours_custom || ''}
+                              onChange={e => setLocalStoreSettings({
+                                ...localStoreSettings,
+                                page_content: { ...localStoreSettings.page_content, opening_hours_custom: e.target.value }
+                              } as any)}
+                            />
+                          </div>
                           
                           <div className="space-y-3">
                             {DAYS_OF_WEEK.map((day) => {

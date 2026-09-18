@@ -104,7 +104,7 @@ export function DeliveryOptionsManager() {
         const newIndex = items.findIndex((i) => i.id === over.id);
         const newItems = arrayMove(items, oldIndex, newIndex);
         
-        const updatedItems = newItems.map((item, index) => ({ ...item, sort_order: index }));
+        const updatedItems = newItems.map((item: any, index: number) => ({ ...item, sort_order: index }));
         
         if (supabase) {
           Promise.all(updatedItems.map(item => 

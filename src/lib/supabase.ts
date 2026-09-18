@@ -65,23 +65,87 @@ export type StoreSettings = {
     
     // ASSORTMENTS
     assortments_title?: string;
+    assortments_title_size?: string;
     assortments_subtitle?: string;
+    assortments_subtitle_size?: string;
     assort_snacks_title?: string;
+    assort_snacks_title_size?: string;
+    assort_snacks_subtitle?: string;
+    assort_snacks_subtitle_size?: string;
     assort_snacks_item1?: string;
+    assort_snacks_item1_size?: string;
     assort_snacks_item2?: string;
+    assort_snacks_item2_size?: string;
     assort_snacks_item3?: string;
+    assort_snacks_item3_size?: string;
+    assort_snacks_item4?: string;
+    assort_snacks_item4_size?: string;
     assort_snacks_btn?: string;
+    assort_snacks_btn_size?: string;
+    assort_complete_badge?: string;
+    assort_complete_badge_size?: string;
     assort_complete_title?: string;
+    assort_complete_title_size?: string;
+    assort_complete_subtitle?: string;
+    assort_complete_subtitle_size?: string;
     assort_complete_item1?: string;
+    assort_complete_item1_size?: string;
     assort_complete_item2?: string;
+    assort_complete_item2_size?: string;
     assort_complete_item3?: string;
+    assort_complete_item3_size?: string;
+    assort_complete_item4?: string;
+    assort_complete_item4_size?: string;
     assort_complete_btn?: string;
+    assort_complete_btn_size?: string;
     
     // CONTACT/FAQ
     contact_title?: string;
     faq_title?: string;
+    opening_hours_custom?: string;
   };
 };
+
+export function formatStoreSchedule(schedule?: StoreSchedule): string[] {
+  if (!schedule) return [];
+
+  const days = [
+    { id: '1', short: 'Ma' },
+    { id: '2', short: 'Di' },
+    { id: '3', short: 'Wo' },
+    { id: '4', short: 'Do' },
+    { id: '5', short: 'Vr' },
+    { id: '6', short: 'Za' },
+    { id: '0', short: 'Zo' },
+  ];
+
+  const hasConfiguredDay = days.some(d => schedule[d.id] !== undefined);
+  if (!hasConfiguredDay) return [];
+
+  const formattedDays = days.map(d => {
+    const s = schedule[d.id];
+    if (!s || s.closed) {
+      return { short: d.short, text: 'Gesloten' };
+    }
+    return { short: d.short, text: `${s.open} - ${s.close}` };
+  });
+
+  // Group consecutive days with the same hours
+  const groups: { start: string; end: string; text: string }[] = [];
+  for (const item of formattedDays) {
+    const last = groups[groups.length - 1];
+    if (last && last.text === item.text) {
+      last.end = item.short;
+    } else {
+      groups.push({ start: item.short, end: item.short, text: item.text });
+    }
+  }
+
+  return groups.map(g => {
+    const dayLabel = g.start === g.end ? g.start : `${g.start} - ${g.end}`;
+    return `${dayLabel}: ${g.text}`;
+  });
+}
 
 
 export type ObCompany = {

@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
-import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar } from 'lucide-react';
+import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const PRODUCT_IMAGES: Record<string, string> = {
@@ -246,7 +246,7 @@ export function EmployeeOrdering() {
                 portion_size: sizeNum,
                 price: price,
                 total_price: price,
-                delivery_address_id: addressId,
+                delivery_address_id: selectedAddress,
                 phone: phone,
                 notes: notes,
                 delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
@@ -263,7 +263,7 @@ export function EmployeeOrdering() {
             portion_size: 1,
             price: selectedDeliveryMethod.price,
             total_price: selectedDeliveryMethod.price,
-            delivery_address_id: addressId,
+            delivery_address_id: selectedAddress,
             phone: phone,
             notes: notes,
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
@@ -468,6 +468,16 @@ export function EmployeeOrdering() {
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
       {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
     </span>
+                            )}
+                            {item.variants && item.variants.length > 0 && (
+                              <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
+                                <span className="font-semibold text-gray-700">Opties:</span> {item.variants.join(', ')}
+                              </p>
+                            )}
+                            {item.sauces && item.sauces.length > 0 && (
+                              <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
+                                <span className="font-semibold text-gray-700">Inclusief:</span> {item.sauces.join(', ')}
+                              </p>
                             )}
                           </div>
                         </div>

@@ -14,7 +14,7 @@ export function Home({ settings, storeSettings }: { settings: SharedSettings, st
       <Menu content={storeSettings?.page_content} />
       <BusinessRegistration content={storeSettings?.page_content} />
       <Assortments content={storeSettings?.page_content} />
-      <ContactFAQ settings={settings} content={storeSettings?.page_content} />
+      <ContactFAQ settings={settings} storeSettings={storeSettings} content={storeSettings?.page_content} />
     </main>
   );
 }

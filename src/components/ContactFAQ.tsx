@@ -1,12 +1,16 @@
 import { motion } from 'motion/react';
 import { Mail, Phone, MapPin } from 'lucide-react';
-import { SharedSettings } from '../lib/supabase';
+import { SharedSettings, StoreSettings, formatStoreSchedule } from '../lib/supabase';
 
 interface ContactFAQProps {
   settings: SharedSettings;
+  storeSettings?: StoreSettings;
+  content?: any;
 }
 
-export function ContactFAQ({ settings, content }: ContactFAQProps & { content?: any }) {
+export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps) {
+  const customHours = content?.opening_hours_custom?.trim();
+  const scheduleLines = formatStoreSchedule(storeSettings?.schedule);
   return (
     <section id="contact" className="font-serif py-24 bg-ob-cream">
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8">
@@ -46,7 +50,17 @@ export function ContactFAQ({ settings, content }: ContactFAQProps & { content?: 
 
             <div className="font-serif mt-12 p-6 bg-white border border-ob-cream-dark shadow-sm">
               <h4 className="font-serif text-xl mb-2 text-ob-blue">Openingstijden Bezorging</h4>
-              <p className="font-serif text-ob-text font-serif">{settings.opening_hours}</p>
+              {customHours ? (
+                <p className="font-serif text-ob-text font-serif">{customHours}</p>
+              ) : scheduleLines.length > 0 ? (
+                <div className="space-y-1">
+                  {scheduleLines.map((line, idx) => (
+                    <p key={idx} className="font-serif text-ob-text font-serif">{line}</p>
+                  ))}
+                </div>
+              ) : (
+                <p className="font-serif text-ob-text font-serif">{settings?.opening_hours || "Ma - Vr: 15:00 - 21:00"}</p>
+              )}
             </div>
           </motion.div>
 
