@@ -4,6 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { Resend } from "resend";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
+import { GoogleGenAI } from "@google/genai";
 
 async function startServer() {
   const app = express();
@@ -12,7 +13,93 @@ async function startServer() {
   app.use(express.json());
   app.use(cors());
 
+  const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({}) : null;
+  const translationCache = new Map<string, string>();
+
   // API Routes
+  app.post("/api/translate", async (req, res) => {
+    try {
+      const { texts, targetLang = "en" } = req.body;
+      if (!texts || typeof texts !== "object") {
+        return res.status(400).json({ error: "Invalid texts payload" });
+      }
+
+      if (targetLang === "nl") {
+        return res.status(200).json({ translations: texts });
+      }
+
+      if (!ai) {
+        return res.status(200).json({ translations: texts });
+      }
+
+      const results: Record<string, string> = {};
+      const toTranslate: Record<string, string> = {};
+
+      for (const [key, val] of Object.entries(texts)) {
+        if (typeof val !== "string" || !val.trim()) {
+          results[key] = String(val || "");
+          continue;
+        }
+        const cacheKey = `${val.trim()}_${targetLang}`;
+        if (translationCache.has(cacheKey)) {
+          results[key] = translationCache.get(cacheKey)!;
+        } else {
+          toTranslate[key] = val;
+        }
+      }
+
+      if (Object.keys(toTranslate).length > 0) {
+        try {
+          const prompt = `You are the bilingual translator for Office Butler, a premium B2B office catering brand in Amsterdam.
+Translate the following JSON map of Dutch texts into natural, elegant English for a high-end corporate audience.
+Rules:
+- Keep brand names unchanged: "Office Butler", "Canal Butler", "Mokum Local Kitchen".
+- Keep Dutch snack names recognizable: e.g. "Bitterballen", "Vlammetjes", "Kalfskroketjes" (you may add a short description if helpful).
+- Preserve all numbers, currency signs (€), URLs, and punctuation.
+- Return ONLY a valid JSON object where keys match the input keys and values are the English translations.
+
+Input:
+${JSON.stringify(toTranslate, null, 2)}
+`;
+
+          const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+            },
+          });
+
+          const responseText = response.text?.trim() || "{}";
+          const parsed = JSON.parse(responseText);
+          for (const [key, transVal] of Object.entries(parsed)) {
+            if (typeof transVal === "string") {
+              results[key] = transVal;
+              const originalVal = toTranslate[key];
+              if (originalVal) {
+                translationCache.set(`${originalVal.trim()}_${targetLang}`, transVal);
+              }
+            }
+          }
+        } catch (apiErr: any) {
+          // Gracefully fallback to original text without throwing or breaking client
+          if (apiErr?.status === 'RESOURCE_EXHAUSTED' || apiErr?.message?.includes('429')) {
+            console.warn("[/api/translate] Rate limit reached. Using fallback text.");
+          } else {
+            console.warn("[/api/translate] Translation service notice:", apiErr?.message || apiErr);
+          }
+          for (const [k, v] of Object.entries(toTranslate)) {
+            results[k] = v;
+          }
+        }
+      }
+
+      res.status(200).json({ translations: results });
+    } catch (err: any) {
+      console.warn("[/api/translate] Catch block fallback triggered");
+      res.status(200).json({ translations: req.body?.texts || {} });
+    }
+  });
   app.post("/api/notify-admin", async (req, res) => {
     try {
       const { companyName, contactPerson, email, phone, wishes } = req.body;
@@ -230,7 +317,28 @@ async function startServer() {
   
   app.post("/api/send-guest-invoice", async (req, res) => {
     try {
-      const { guestName, guestEmail, guestBillingInfo, guestAddress, phone, notes, selections, prices, orderLines, totalOrderPrice, deliveryDate, deliveryTime, deliveryMethod, deliveryMethodPrice } = req.body;
+      const { 
+        guestName, 
+        guestEmail, 
+        guestBillingInfo, 
+        guestAddress, 
+        phone, 
+        notes, 
+        selections, 
+        prices, 
+        orderLines, 
+        totalOrderPrice, 
+        deliveryDate, 
+        deliveryTime, 
+        deliveryMethod, 
+        deliveryMethodPrice,
+        discountCode,
+        discountType,
+        discountValue,
+        discountAmount,
+        freeProductInfo,
+        finalTotal
+      } = req.body;
       const apiKey = process.env.RESEND_API_KEY;
 
       if (!apiKey) {
@@ -245,7 +353,7 @@ async function startServer() {
         for (const line of orderLines) {
           itemsHtml += `<tr>
             <td style="padding: 8px; border-bottom: 1px solid #eee;">${line.qty}x ${line.product_name} (${line.portion_size} stuks)</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${line.lineTotal.toFixed(2)}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${line.price === 0 ? '<strong style="color: #16a34a;">GRATIS</strong>' : `€${line.lineTotal.toFixed(2)}`}</td>
           </tr>`;
         }
       } else {
@@ -265,12 +373,23 @@ async function startServer() {
         }
       }
 
+      const calculatedFinalTotal = finalTotal != null 
+        ? Number(finalTotal) 
+        : Math.max(0, (totalOrderPrice - (Number(discountAmount) || 0))) + (Number(deliveryMethodPrice) || 0);
+
       const emailHtml = `
         <div style="font-family: sans-serif; max-w-xl; margin: 0 auto; color: #333;">
           <div style="background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
             <h3 style="margin-top: 0; color: #0d47a1;">Interne Notitie (Office Butler) - GAST BESTELLING</h3>
             <p style="margin: 5px 0;">Er is zojuist een <strong>particuliere/eenmalige</strong> bestelling geplaatst door <strong>${guestName}</strong>.</p>
             <p style="margin: 5px 0;">Controleer deze factuur en stuur deze vervolgens handmatig door naar: <a href="mailto:${guestEmail}">${guestEmail}</a></p>
+            ${discountCode ? `
+            <div style="margin-top: 10px; padding: 8px 12px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; color: #1b5e20;">
+              <strong>🎟️ Toegepaste Kortingscode:</strong> <span style="font-family: monospace; font-weight: bold; background: #fff; padding: 2px 6px; border-radius: 4px; border: 1px solid #81c784;">${discountCode}</span>
+              ${discountType === 'percentage' ? ` &mdash; <strong>${discountValue}% korting</strong> (-€${Number(discountAmount || 0).toFixed(2)})` : ''}
+              ${discountType === 'free_product' ? ` &mdash; <strong>Gratis product: ${freeProductInfo || 'Gratis item'}</strong>` : ''}
+            </div>
+            ` : ''}
           </div>
 
           <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur (Eenmalig)</h2>
@@ -286,13 +405,34 @@ async function startServer() {
             </thead>
             <tbody>
               ${itemsHtml}
+              ${(freeProductInfo && (!orderLines || !orderLines.some((l: any) => l.product_name && l.product_name.includes(discountCode)))) ? `
+              <tr style="background-color: #f0fdf4; color: #166534;">
+                <td style="padding: 8px; border-bottom: 1px solid #bbf7d0;">
+                  🎁 <strong>GRATIS PRODUCT:</strong> ${freeProductInfo} <br/>
+                  <span style="font-size: 11px; color: #15803d;">Toegevoegd via kortingscode: <strong>${discountCode}</strong></span>
+                </td>
+                <td style="padding: 8px; border-bottom: 1px solid #bbf7d0; text-align: right; font-weight: bold; color: #16a34a;">
+                  GRATIS (€0,00)
+                </td>
+              </tr>
+              ` : ''}
               ${(deliveryMethod && deliveryMethodPrice > 0) ? `<tr>
                 <td style="padding: 8px; border-bottom: 1px solid #eee;">Bezorging (${deliveryMethod})</td>
                 <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${Number(deliveryMethodPrice).toFixed(2)}</td>
               </tr>` : ''}
+              ${(discountAmount && Number(discountAmount) > 0) ? `
+              <tr style="background-color: #f0fdf4; color: #166534;">
+                <td style="padding: 8px; border-bottom: 1px solid #bbf7d0; font-weight: 500;">
+                  🏷️ Korting via code <strong>${discountCode}</strong> (-${discountValue}%):
+                </td>
+                <td style="padding: 8px; border-bottom: 1px solid #bbf7d0; text-align: right; font-weight: bold; color: #16a34a;">
+                  -€${Number(discountAmount).toFixed(2)}
+                </td>
+              </tr>
+              ` : ''}
               <tr>
                 <td style="padding: 8px; font-weight: bold; text-align: right;">Totaal</td>
-                <td style="padding: 8px; font-weight: bold; text-align: right;">€${(totalOrderPrice + (Number(deliveryMethodPrice) || 0)).toFixed(2)}</td>
+                <td style="padding: 8px; font-weight: bold; text-align: right;">€${calculatedFinalTotal.toFixed(2)}</td>
               </tr>
             </tbody>
           </table>
@@ -305,6 +445,7 @@ async function startServer() {
             <p style="margin: 5px 0;"><strong>Bezorgadres:</strong> ${guestAddress}</p>
             <p style="margin: 5px 0;"><strong>Contactnummer:</strong> ${phone}</p>
             <p style="margin: 5px 0;"><strong>Factuurgegevens (Naam/KVK/etc):</strong><br/>${guestBillingInfo}</p>
+            ${discountCode ? `<p style="margin: 5px 0;"><strong>Kortingscode:</strong> ${discountCode}</p>` : ''}
             ${notes ? `<p style="margin: 5px 0;"><strong>Extra Notities:</strong> ${notes}</p>` : ''}
           </div>
           
@@ -315,7 +456,9 @@ async function startServer() {
       const { data, error } = await resend.emails.send({
         from: 'Office Butler <info@office-butler.com>',
         to: ['info@office-butler.com'],
-        subject: `Nieuwe GAST Bestelling & Factuur - ${guestName}`,
+        subject: discountCode 
+          ? `Nieuwe GAST Bestelling & Factuur [Korting: ${discountCode}] - ${guestName}`
+          : `Nieuwe GAST Bestelling & Factuur - ${guestName}`,
         html: emailHtml
       });
 
