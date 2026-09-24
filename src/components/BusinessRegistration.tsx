@@ -2,8 +2,10 @@ import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
 import { CheckCircle2 } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export function BusinessRegistration({ content }: { content?: any }) {
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     companyName: '',
     contactPerson: '',
@@ -93,8 +95,11 @@ export function BusinessRegistration({ content }: { content?: any }) {
             
             <h3 className="font-serif text-2xl mb-4 text-ob-blue italic" style={{ fontSize: content?.business_subtitle_size ? `calc(${String(content.business_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}>{content?.business_subtitle || "Een vaste partner voor uw kantoor."}</h3>
             
-            <p className="font-serif text-ob-text-light mb-6 leading-relaxed">
-              Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers.
+            <p 
+              className="font-serif text-ob-text-light mb-6 leading-relaxed"
+              style={{ fontSize: content?.business_desc_size ? `calc(${String(content.business_desc_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}
+            >
+              {content?.business_desc || "Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers."}
             </p>
             
             <ul className="font-serif space-y-4 mb-10">
@@ -125,26 +130,26 @@ export function BusinessRegistration({ content }: { content?: any }) {
             {isSuccess ? (
               <div className="font-serif flex flex-col items-center justify-center text-center h-full min-h-[300px] space-y-4">
                 <CheckCircle2 size={48} className="text-green-600 mb-2" />
-                <h3 className="font-serif text-2xl text-ob-text">Bedankt voor uw aanvraag!</h3>
+                <h3 className="font-serif text-2xl text-ob-text">{t('Bedankt voor uw aanvraag!', 'Thank you for your registration!')}</h3>
                 <p className="font-serif text-ob-text-light">
-                  Wij hebben uw gegevens in goede orde ontvangen en nemen zo spoedig mogelijk contact met u op.
+                  {t('Wij hebben uw gegevens in goede orde ontvangen en nemen zo spoedig mogelijk contact met u op.', 'We have received your details in good order and will contact you as soon as possible.')}
                 </p>
                 <button 
                   onClick={() => setIsSuccess(false)}
-                  className="font-serif mt-6 text-sm text-ob-blue underline hover:text-ob-blue-dark"
+                  className="font-serif mt-6 text-sm text-ob-blue underline hover:text-ob-blue-dark cursor-pointer"
                 >
-                  Nog een aanvraag doen
+                  {t('Nog een aanvraag doen', 'Submit another request')}
                 </button>
               </div>
             ) : (
               <>
-                <h3 className="font-serif text-2xl mb-8 text-center">Bedrijf Aanmelden</h3>
+                <h3 className="font-serif text-2xl mb-8 text-center">{content?.business_form_title || t('Bedrijf Aanmelden')}</h3>
                 <form className="font-serif space-y-5" onSubmit={handleSubmit}>
                   <div>
                     <input 
                       type="text" 
                       required
-                      placeholder="Bedrijfsnaam" 
+                      placeholder={t('Bedrijfsnaam', 'Company Name')} 
                       value={formData.companyName}
                       onChange={(e) => setFormData({...formData, companyName: e.target.value})}
                       className="font-serif w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-serif" 
@@ -154,7 +159,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                     <input 
                       type="text" 
                       required
-                      placeholder="Contactpersoon" 
+                      placeholder={t('Contactpersoon', 'Contact Person')} 
                       value={formData.contactPerson}
                       onChange={(e) => setFormData({...formData, contactPerson: e.target.value})}
                       className="font-serif w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-serif" 
@@ -164,7 +169,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                     <input 
                       type="email" 
                       required
-                      placeholder="E-mailadres" 
+                      placeholder={t('E-mailadres', 'Email Address')} 
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
                       className="font-serif w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-serif" 
@@ -172,7 +177,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                     <input 
                       type="tel" 
                       required
-                      placeholder="Telefoonnummer" 
+                      placeholder={t('Telefoonnummer', 'Phone Number')} 
                       value={formData.phone}
                       onChange={(e) => setFormData({...formData, phone: e.target.value})}
                       className="font-serif w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-serif" 
@@ -180,20 +185,20 @@ export function BusinessRegistration({ content }: { content?: any }) {
                   </div>
                   <div>
                     <textarea 
-                      placeholder="Eventuele wensen (bijv. frequentie, grootte team)" 
+                      placeholder={t('Eventuele wensen (bijv. frequentie, grootte team)', 'Special requests (e.g. frequency, team size)')} 
                       rows={3} 
                       value={formData.wishes}
                       onChange={(e) => setFormData({...formData, wishes: e.target.value})}
-                      className="font-serif w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-serif resize-none"
+                      className="font-serif w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-serif resize-none" 
                     ></textarea>
                   </div>
                   {errorMsg && <p className="font-serif text-red-500 text-sm">{errorMsg}</p>}
                   <button 
                     type="submit"
                     disabled={isSubmitting}
-                    className="font-serif w-full bg-ob-text text-white py-4 hover:bg-ob-blue transition-colors uppercase tracking-widest text-sm mt-4 font-serif disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
+                    className="font-serif w-full bg-ob-text text-white py-4 hover:bg-ob-blue transition-colors uppercase tracking-widest text-sm mt-4 font-serif disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center cursor-pointer"
                   >
-                    {isSubmitting ? 'Versturen...' : (content?.business_btn || 'Kantoor Inschrijven')}
+                    {isSubmitting ? t('Versturen...', 'Submitting...') : (content?.business_btn || t('Kantoor Inschrijven'))}
                   </button>
                 </form>
               </>

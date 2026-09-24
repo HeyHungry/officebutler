@@ -1,6 +1,6 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
-import { supabase, sortVariantsByCategory } from '../lib/supabase';
-import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X } from 'lucide-react';
+import { supabase, sortVariantsByCategory, DiscountCode } from '../lib/supabase';
+import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X, Tag, Percent, Gift } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 export function GuestOrdering() {
@@ -49,6 +49,13 @@ export function GuestOrdering() {
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
 
+  // Discount / Coupon states
+  const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>([]);
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [emailFailed, setEmailFailed] = useState(false);
@@ -59,8 +66,34 @@ export function GuestOrdering() {
   useEffect(() => {
     async function fetchAssortment() {
       if (supabase) {
-        const { data: globalPrices } = await supabase.from('ob_product_prices').select('*');
-        let prods = null; try { const { data } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }); prods = data; } catch (e) { console.warn('No products table'); }
+        let prods = null;
+        let globalPrices: any = null;
+        try {
+          const [pricesRes, prodsRes, storeRes] = await Promise.all([
+            supabase.from('ob_product_prices').select('*'),
+            supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }),
+            supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle()
+          ]);
+          globalPrices = pricesRes.data;
+          const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
+          const loadedCodes: DiscountCode[] = storeRes?.data?.page_content?.discount_codes || [];
+          setDiscountCodes(loadedCodes);
+          if (prodsRes.data) {
+            prods = prodsRes.data.map((p: any) => ({
+              ...p,
+              brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || ''
+            }));
+          }
+          if (pricesRes.data) {
+            const pMap: Record<string, number> = {};
+            pricesRes.data.forEach((p: any) => {
+              pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+            });
+            setPrices(pMap);
+          }
+        } catch (e) {
+          console.warn('Error loading products or prices', e);
+        }
         if (prods) setDbProducts(prods);
         if (prods) {
           const grouped = prods.reduce((acc, item) => {
@@ -179,6 +212,44 @@ export function GuestOrdering() {
     });
   };
 
+  const handleApplyCoupon = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setCouponError(null);
+    setCouponSuccess(null);
+
+    const clean = couponInput.trim().toUpperCase().replace(/\s+/g, '');
+    if (!clean) {
+      setCouponError('Vul a.u.b. een kortingscode in.');
+      return;
+    }
+
+    const found = discountCodes.find(c => c.code.toUpperCase() === clean);
+    if (!found || found.is_active === false) {
+      setCouponError('Deze kortingscode is ongeldig of niet actief.');
+      return;
+    }
+
+    if (found.min_order_amount && found.min_order_amount > 0 && totalOrderPrice < found.min_order_amount) {
+      setCouponError(`Deze kortingscode is pas geldig vanaf een bestelbedrag van €${Number(found.min_order_amount).toFixed(2)}.`);
+      return;
+    }
+
+    setAppliedDiscount(found);
+    if (found.type === 'percentage') {
+      const disc = (totalOrderPrice * found.value) / 100;
+      setCouponSuccess(`Code "${found.code}" toegepast: ${found.value}% korting (-€${disc.toFixed(2)})!`);
+    } else {
+      setCouponSuccess(`Code "${found.code}" toegepast: Gratis ${found.free_product?.portion_size} stuks ${found.free_product?.product_name}!`);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedDiscount(null);
+    setCouponInput('');
+    setCouponError(null);
+    setCouponSuccess(null);
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (Object.keys(selections).length === 0 || !guestName || !guestEmail || !guestAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))) {
@@ -202,13 +273,27 @@ export function GuestOrdering() {
       return sum + prodSum;
     }, 0);
 
+    const discountAmount = (appliedDiscount && appliedDiscount.type === 'percentage')
+      ? (totalOrderPrice * (appliedDiscount.value || 0)) / 100
+      : 0;
+
+    let discountNote = '';
+    if (appliedDiscount) {
+      if (appliedDiscount.type === 'percentage') {
+        discountNote = `Kortingscode: ${appliedDiscount.code} (${appliedDiscount.value}% korting, -€${discountAmount.toFixed(2)})`;
+      } else if (appliedDiscount.type === 'free_product' && appliedDiscount.free_product) {
+        const fp = appliedDiscount.free_product;
+        discountNote = `Kortingscode: ${appliedDiscount.code} (Gratis product: ${fp.portion_size} stuks ${fp.product_name}${fp.variant ? ` (${fp.variant})` : ''})`;
+      }
+    }
+
     const fullNotes = `
 [GAST BESTELLING]
 Naam: ${guestName}
 Email: ${guestEmail}
 Factuuradres/KVK: ${guestBillingInfo}
 Bezorgadres: ${guestAddress}
-Extra Notities: ${notes}
+${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
     `.trim();
 
     if (supabase) {
@@ -252,6 +337,30 @@ Extra Notities: ${notes}
           });
         });
 
+        // Add free product if applicable
+        if (appliedDiscount && appliedDiscount.type === 'free_product' && appliedDiscount.free_product) {
+          const fp = appliedDiscount.free_product;
+          const freeProdName = fp.variant ? `${fp.product_name} (${fp.variant})` : fp.product_name;
+          const labeledName = `[GRATIS VIA CODE ${appliedDiscount.code}] ${freeProdName}`;
+          orderLines.push({
+            product_name: labeledName,
+            portion_size: fp.portion_size,
+            price: 0,
+            qty: 1,
+            lineTotal: 0
+          });
+          orderPromises.push(supabase.from('ob_orders').insert({
+            product_name: labeledName,
+            portion_size: fp.portion_size,
+            price: 0,
+            total_price: 0,
+            phone: phone,
+            notes: fullNotes,
+            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+          }));
+        }
+
         if (selectedDeliveryMethod && selectedDeliveryMethod.price > 0) {
           orderPromises.push(supabase.from('ob_orders').insert({
             product_name: 'Bezorging: ' + selectedDeliveryMethod.name,
@@ -265,10 +374,11 @@ Extra Notities: ${notes}
           }));
         }
 
-        
         const results = await Promise.all(orderPromises);
         const errors = results.filter(r => r.error);
         if (errors.length > 0) throw errors[0].error;
+
+        const calculatedFinalTotal = Math.max(0, totalOrderPrice - discountAmount) + (selectedDeliveryMethod?.price || 0);
 
         try {
           const res = await fetch('/api/send-guest-invoice', {
@@ -288,7 +398,15 @@ Extra Notities: ${notes}
               deliveryDate: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
               deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
               deliveryMethod: selectedDeliveryMethod?.name || 'Standaard Bezorging',
-              deliveryMethodPrice: selectedDeliveryMethod?.price || 0
+              deliveryMethodPrice: selectedDeliveryMethod?.price || 0,
+              discountCode: appliedDiscount?.code || null,
+              discountType: appliedDiscount?.type || null,
+              discountValue: appliedDiscount?.value || 0,
+              discountAmount: discountAmount,
+              freeProductInfo: (appliedDiscount?.type === 'free_product' && appliedDiscount.free_product)
+                ? `${appliedDiscount.free_product.portion_size} stuks ${appliedDiscount.free_product.product_name}${appliedDiscount.free_product.variant ? ` (${appliedDiscount.free_product.variant})` : ''}`
+                : null,
+              finalTotal: calculatedFinalTotal
             })
           });
           if (!res.ok) {
@@ -346,6 +464,13 @@ Extra Notities: ${notes}
       return sum + prodSum;
     }, 0);
 
+  const discountAmount = (appliedDiscount && appliedDiscount.type === 'percentage')
+    ? (totalOrderPrice * (appliedDiscount.value || 0)) / 100
+    : 0;
+
+  const deliveryPrice = Number(selectedDeliveryMethod?.price) || 0;
+  const finalTotalAmount = Math.max(0, totalOrderPrice - discountAmount) + deliveryPrice;
+
   return (
     <div className="font-serif min-h-screen bg-gray-50 pb-20 pt-10">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
@@ -395,7 +520,7 @@ Extra Notities: ${notes}
                           <span className="font-semibold text-gray-900 block text-lg">{method.name}</span>
                           <span className="text-xs text-gray-500 block mb-2">{method.description}</span>
                           <span className="font-bold text-[#05053D] block">
-                            {method.price === 0 ? 'Gratis' : `+ €${Number(method.price).toFixed(2)}`}
+                            {method.price === 0 ? 'Gratis' : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}`}
                           </span>
                         </div>
                       </div>
@@ -429,24 +554,33 @@ Extra Notities: ${notes}
                           <div key={product} className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${Object.keys(prodSelections).length > 0 ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' : 'border-gray-200 bg-white hover:border-ob-blue/40 hover:shadow-sm'}`}>
                             {/* Top info section */}
                             <div className="p-4 flex gap-4">
-                              <div className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group" onClick={() => item.extra_info && setInfoModalProduct({ ...item, _openedFromCategory: category.title })}>
-                                <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover" />
-                                {item.extra_info && (
-                                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                                    <span className="text-white text-xs font-semibold">Meer info</span>
-                                  </div>
-                                )}
+                              <div 
+                                className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group cursor-pointer" 
+                                onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                              >
+                                <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                  <span className="text-white text-xs font-semibold">Extra informatie</span>
+                                </div>
                               </div>
                               
                               <div className="flex-1 min-w-0 flex flex-col">
                                 <h4 className="font-bold text-[15px] text-[#05053D] leading-tight mb-1.5">{product}</h4>
                                 
-                                <div className="flex flex-wrap gap-1.5 mb-2">
+                                <div className="flex flex-wrap items-center gap-1.5 mb-2">
                                   {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
                                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
                                       {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
                                     </span>
                                   )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                    className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                  >
+                                    <Info size={12} />
+                                    Extra informatie
+                                  </button>
                                 </div>
 
                                 {(item.variants && item.variants.length > 0) && (
@@ -747,6 +881,121 @@ Extra Notities: ${notes}
             </div>
           </section>
 
+          {/* Kortingscode Sectie */}
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2">
+                <Tag size={20} className="text-ob-accent" /> Kortingscode
+              </h2>
+              {appliedDiscount && (
+                <span className="text-xs bg-green-100 text-green-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <CheckCircle size={14} /> Toegepast
+                </span>
+              )}
+            </div>
+
+            <div className="p-6 space-y-4">
+              {!appliedDiscount ? (
+                <div>
+                  <label className="block text-sm font-semibold text-ob-text mb-2">
+                    Heeft u een kortingscode?
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                      placeholder="VOER KORTINGSCODE IN..."
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-ob-blue font-mono uppercase tracking-wider text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      className="px-6 py-3 bg-[#05053D] hover:bg-ob-blue text-white rounded-xl font-bold text-sm transition-colors cursor-pointer"
+                    >
+                      Toepassen
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-green-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                      {appliedDiscount.type === 'percentage' ? <Percent size={18} /> : <Gift size={18} />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-sm bg-white px-2 py-0.5 rounded border border-green-300 text-green-900">
+                          {appliedDiscount.code}
+                        </span>
+                        <span className="text-xs text-green-700 font-semibold">Actief</span>
+                      </div>
+                      <p className="text-sm font-medium text-green-800 mt-1">
+                        {appliedDiscount.type === 'percentage' 
+                          ? `${appliedDiscount.value}% korting op uw bestelling (-€${discountAmount.toFixed(2)})`
+                          : `Gratis product: ${appliedDiscount.free_product?.portion_size} stuks ${appliedDiscount.free_product?.product_name}${appliedDiscount.free_product?.variant ? ` (${appliedDiscount.free_product?.variant})` : ''}`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+                    title="Kortingscode verwijderen"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              )}
+
+              {couponError && (
+                <p className="text-sm text-red-600 flex items-center gap-1.5 font-medium">
+                  <Info size={16} /> {couponError}
+                </p>
+              )}
+              {couponSuccess && !couponError && (
+                <p className="text-sm text-green-600 flex items-center gap-1.5 font-medium">
+                  <CheckCircle size={16} /> {couponSuccess}
+                </p>
+              )}
+
+              {/* Price Breakdown */}
+              <div className="pt-4 border-t border-gray-100 space-y-2 text-sm">
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotaal ({Object.keys(selections).length} {Object.keys(selections).length === 1 ? 'product' : 'producten'})</span>
+                  <span className="font-semibold text-gray-900">€{totalOrderPrice.toFixed(2)}</span>
+                </div>
+
+                {selectedDeliveryMethod && Number(selectedDeliveryMethod.price) > 0 && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>Bezorging ({selectedDeliveryMethod.name})</span>
+                    <span className="font-semibold text-gray-900">€{Number(selectedDeliveryMethod.price).toFixed(2)}</span>
+                  </div>
+                )}
+
+                {appliedDiscount && appliedDiscount.type === 'percentage' && discountAmount > 0 && (
+                  <div className="flex justify-between text-green-700 font-medium">
+                    <span>Korting ({appliedDiscount.code} &mdash; {appliedDiscount.value}%)</span>
+                    <span>-€{discountAmount.toFixed(2)}</span>
+                  </div>
+                )}
+
+                {appliedDiscount && appliedDiscount.type === 'free_product' && appliedDiscount.free_product && (
+                  <div className="flex justify-between text-green-700 font-medium">
+                    <span>🎁 Gratis: {appliedDiscount.free_product.portion_size}x {appliedDiscount.free_product.product_name}</span>
+                    <span className="font-bold">GRATIS</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between text-lg font-bold text-ob-blue pt-3 border-t border-gray-100">
+                  <span>Totaal</span>
+                  <span>€{finalTotalAmount.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
           {/* Submit */}
           <div className="pt-4">
             <button 
@@ -754,7 +1003,7 @@ Extra Notities: ${notes}
               disabled={isSubmitting || Object.keys(selections).length === 0 || !guestName || !guestEmail || !guestAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
               className="w-full bg-[#05053D] text-white py-4 rounded-xl font-bold text-lg hover:bg-ob-blue transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
-              {isSubmitting ? 'Bezig met plaatsen...' : <><ShoppingBag size={20} /> Bestelling Plaatsen (€{totalOrderPrice.toFixed(2)})</>}
+              {isSubmitting ? 'Bezig met plaatsen...' : <><ShoppingBag size={20} /> Bestelling Plaatsen (€{finalTotalAmount.toFixed(2)})</>}
             </button>
           </div>
 
@@ -777,6 +1026,12 @@ Extra Notities: ${notes}
             <div className="p-6 overflow-y-auto flex flex-col gap-4">
               <div>
                 <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                {infoModalProduct.brand && (
+                  <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
+                    <span className="text-ob-blue/70 font-semibold">Merk:</span>
+                    <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
+                  </div>
+                )}
                 {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
                     <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}

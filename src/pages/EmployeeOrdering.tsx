@@ -187,7 +187,22 @@ export function EmployeeOrdering() {
       const { data: addrData } = await supabase.from('ob_company_addresses').select('*').eq('company_id', compId);
       if (addrData) setAddresses(addrData);
 
-      let prods = null; try { const { data } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }); prods = data; } catch (e) { console.warn('No products table'); }
+      let prods = null;
+      try {
+        const [prodsRes, storeRes] = await Promise.all([
+          supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }),
+          supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle()
+        ]);
+        const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
+        if (prodsRes.data) {
+          prods = prodsRes.data.map((p: any) => ({
+            ...p,
+            brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || ''
+          }));
+        }
+      } catch (e) {
+        console.warn('No products table or store_settings');
+      }
       if (prods) setDbProducts(prods);
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
       if (priceData) {
@@ -463,7 +478,7 @@ export function EmployeeOrdering() {
                         <span className="font-semibold text-gray-900 block text-lg">{method.name}</span>
                         <span className="text-xs text-gray-500 block mb-2">{method.description}</span>
                         <span className="font-bold text-[#05053D] block">
-                          {method.price === 0 ? 'Gratis' : `+ €${Number(method.price).toFixed(2)}`}
+                          {method.price === 0 ? 'Gratis' : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}`}
                         </span>
                       </div>
                     </div>
@@ -565,7 +580,7 @@ export function EmployeeOrdering() {
                                     </div>
                                   )}
                                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="text-white text-xs font-semibold">Meer info</span>
+                                    <span className="text-white text-xs font-semibold">Extra informatie</span>
                                   </div>
                                 </div>
                                 
@@ -595,7 +610,7 @@ export function EmployeeOrdering() {
                                       className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
                                     >
                                       <Info size={12} />
-                                      Meer info
+                                      Extra informatie
                                     </button>
                                   </div>
 
@@ -922,6 +937,12 @@ export function EmployeeOrdering() {
             <div className="p-6 overflow-y-auto flex flex-col gap-4">
               <div>
                 <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                {infoModalProduct.brand && (
+                  <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
+                    <span className="text-ob-blue/70 font-semibold">Merk:</span>
+                    <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
+                  </div>
+                )}
                 {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
                     <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}

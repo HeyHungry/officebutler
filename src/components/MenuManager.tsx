@@ -19,6 +19,7 @@ export type ObProduct = {
   sauces?: string[];
   variants?: string[];
   variant_surcharges?: Record<string, number>;
+  brand?: string;
 };
 
 export type EditFormState = Partial<ObProduct> & {
@@ -64,6 +65,11 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: 
           )}
           <div className="flex flex-col">
             <span className="font-semibold text-gray-800">{p.name}</span>
+            {p.brand && (
+              <span className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded w-fit mt-0.5 border border-amber-200 font-medium">
+                Merk: {p.brand}
+              </span>
+            )}
             {p.variants && p.variants.length > 0 && <span className="text-[10px] text-gray-500">Varianten: {p.variants.join(', ')}</span>}
             {p.sauces && p.sauces.length > 0 && <span className="text-[10px] text-gray-500">Sauzen: {p.sauces.join(', ')}</span>}
           </div>
@@ -147,8 +153,19 @@ export function MenuManager() {
     setIsLoading(true);
     if (!supabase) return;
     try {
-      const { data, error } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
-      if (data) setProducts(data);
+      const [productsRes, storeRes] = await Promise.all([
+        supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }),
+        supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle()
+      ]);
+
+      const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
+      if (productsRes.data) {
+        const enriched = productsRes.data.map((p: any) => ({
+          ...p,
+          brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || ''
+        }));
+        setProducts(enriched);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -235,10 +252,12 @@ export function MenuManager() {
 
     const variantsToSave = editForm.variants || [];
     const saucesToSave = editForm.sauces || [];
+    const brandToSave = editForm.brand?.trim() || null;
 
     try {
+      let savedProduct: any = null;
       if (editingId === 'new') {
-        const { data, error } = await supabase.from('ob_products').insert({
+        const insertPayload: any = {
           name: editForm.name,
           category: categoryToSave,
           image_url: editForm.image_url || '',
@@ -249,14 +268,29 @@ export function MenuManager() {
           additional_categories: editForm.additional_categories || [],
           sauces: saucesToSave,
           sort_order: products.length
-        }).select();
+        };
+        if (brandToSave) insertPayload.brand = brandToSave;
+
+        let { data, error } = await supabase.from('ob_products').insert(insertPayload).select();
+
+        // If column 'brand' does not exist in ob_products table yet, retry without brand column
+        if (error && error.message?.toLowerCase().includes('brand')) {
+          delete insertPayload.brand;
+          const retry = await supabase.from('ob_products').insert(insertPayload).select();
+          data = retry.data;
+          error = retry.error;
+        }
+
         if (error) { alert('Error: ' + error.message); }
-        if (data) setProducts([...products, data[0]]);
+        if (data && data[0]) {
+          savedProduct = { ...data[0], brand: brandToSave || '' };
+          setProducts([...products, savedProduct]);
+        }
       } else {
         const oldProduct = products.find(p => p.id === editingId);
         const oldName = oldProduct?.name;
 
-        const { data, error } = await supabase.from('ob_products').update({
+        const updatePayload: any = {
           name: editForm.name,
           category: categoryToSave,
           image_url: editForm.image_url,
@@ -266,16 +300,55 @@ export function MenuManager() {
           extra_info: editForm.extra_info || null,
           additional_categories: editForm.additional_categories || [],
           sauces: saucesToSave
-        }).eq('id', editingId).select();
+        };
+        if (brandToSave !== undefined) updatePayload.brand = brandToSave;
+
+        let { data, error } = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
+
+        // If column 'brand' does not exist in ob_products table yet, retry without brand column
+        if (error && error.message?.toLowerCase().includes('brand')) {
+          delete updatePayload.brand;
+          const retry = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
+          data = retry.data;
+          error = retry.error;
+        }
+
         if (error) { alert('Error: ' + error.message); }
-        if (data) {
+        if (data && data[0]) {
+          savedProduct = { ...data[0], brand: brandToSave || '' };
           if (oldName && oldName !== editForm.name) {
              await supabase.from('ob_product_prices').update({ product_name: editForm.name }).eq('product_name', oldName);
              await supabase.from('ob_company_assortment').update({ product_name: editForm.name }).eq('product_name', oldName);
           }
-          setProducts(products.map(p => p.id === editingId ? data[0] : p));
+          setProducts(products.map(p => p.id === editingId ? savedProduct : p));
         }
       }
+
+      // Sync brand in store_settings.page_content.product_brands for reliable persistence
+      try {
+        const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+        const currentContent = storeData?.page_content || {};
+        const currentBrands = { ...(currentContent.product_brands || {}) };
+        const prodId = editingId === 'new' ? savedProduct?.id : editingId;
+
+        if (brandToSave) {
+          if (prodId) currentBrands[prodId] = brandToSave;
+          currentBrands[editForm.name] = brandToSave;
+        } else {
+          if (prodId) delete currentBrands[prodId];
+          delete currentBrands[editForm.name];
+        }
+
+        await supabase.from('store_settings').update({
+          page_content: {
+            ...currentContent,
+            product_brands: currentBrands
+          }
+        }).eq('id', 1);
+      } catch (brandErr) {
+        console.warn('Could not sync brand to store_settings:', brandErr);
+      }
+
       setEditingId(null);
       setEditForm({});
       setIsCreatingCategory(false);
@@ -296,6 +369,17 @@ export function MenuManager() {
       if (oldProduct) {
         await supabase.from('ob_product_prices').delete().eq('product_name', oldProduct.name);
         await supabase.from('ob_company_assortment').delete().eq('product_name', oldProduct.name);
+        try {
+          const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+          if (storeData?.page_content?.product_brands) {
+            const brands = { ...storeData.page_content.product_brands };
+            delete brands[id];
+            delete brands[oldProduct.name];
+            await supabase.from('store_settings').update({
+              page_content: { ...storeData.page_content, product_brands: brands }
+            }).eq('id', 1);
+          }
+        } catch (e) {}
       }
       await supabase.from('ob_products').delete().eq('id', id);
       setProducts(products.filter(p => p.id !== id));
@@ -321,6 +405,7 @@ export function MenuManager() {
         <td className="px-2 py-2 align-top space-y-3">
           <div className="space-y-1.5">
             <input type="text" placeholder="Naam" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.name || ''} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+            <input type="text" placeholder="Merk (optioneel, bijv. Mora of Van Dobben)" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.brand || ''} onChange={e => setEditForm({...editForm, brand: e.target.value})} />
             <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
             <textarea placeholder="Extra informatie (bijv. allergenen)..." className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none min-h-[60px]" value={editForm.extra_info || ''} onChange={e => setEditForm({...editForm, extra_info: e.target.value})} />
             

@@ -10,6 +10,7 @@ import {
 
 import { Navbar } from "./components/Navbar";
 import { OrderModalProvider } from "./contexts/OrderModalContext";
+import { LanguageProvider, useLanguage } from "./contexts/LanguageContext";
 import { OrderModal } from "./components/OrderModal";
 import { GuestOrdering } from "./pages/GuestOrdering";
 import { Footer } from "./components/Footer";
@@ -21,12 +22,58 @@ import { Auth } from "./pages/Auth";
 import { CompanyDashboard } from "./pages/CompanyDashboard";
 import { EmployeeOrdering } from "./pages/EmployeeOrdering";
 
+function AppContent({
+  settings,
+  setSettings,
+  storeSettings,
+  setStoreSettings,
+}: {
+  settings: SharedSettings;
+  setSettings: (s: SharedSettings) => void;
+  storeSettings: StoreSettings;
+  setStoreSettings: (s: StoreSettings) => void;
+}) {
+  const [isModPanelOpen, setIsModPanelOpen] = useState(false);
+  const { getTranslatedStoreSettings, getTranslatedSharedSettings } = useLanguage();
+
+  const activeStoreSettings = getTranslatedStoreSettings(storeSettings) || storeSettings;
+  const activeSettings = getTranslatedSharedSettings(settings) || settings;
+
+  return (
+    <div className="font-serif min-h-screen flex flex-col relative selection:bg-ob-accent/30">
+      <Navbar storeSettings={activeStoreSettings} />
+
+      <Routes>
+        <Route path="/" element={<Home settings={activeSettings} storeSettings={activeStoreSettings} />} />
+        <Route path="/auth" element={<Auth />} />
+        <Route path="/dashboard" element={<CompanyDashboard />} />
+        <Route path="/order" element={<EmployeeOrdering />} />
+        <Route path="/guest-order" element={<GuestOrdering />} />
+      </Routes>
+
+      <Footer onOpenModPanel={() => setIsModPanelOpen(true)} />
+
+      <WhatsAppWidget />
+
+      <ModeratorPanel
+        isOpen={isModPanelOpen}
+        onClose={() => setIsModPanelOpen(false)}
+        settings={settings}
+        storeSettings={storeSettings}
+        onSettingsUpdated={setSettings}
+        onStoreSettingsUpdated={setStoreSettings}
+      />
+
+      <OrderModal content={activeStoreSettings?.page_content} />
+    </div>
+  );
+}
+
 export default function App() {
   const [settings, setSettings] = useState<SharedSettings>(fallbackSettings);
   const [storeSettings, setStoreSettings] = useState<StoreSettings>(
     fallbackStoreSettings,
   );
-  const [isModPanelOpen, setIsModPanelOpen] = useState(false);
 
   useEffect(() => {
     async function fetchSettings() {
@@ -65,33 +112,17 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <OrderModalProvider>
-      <div className="font-serif min-h-screen flex flex-col relative selection:bg-ob-accent/30">
-        <Navbar storeSettings={storeSettings} />
-
-        <Routes>
-          <Route path="/" element={<Home settings={settings} storeSettings={storeSettings} />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={<CompanyDashboard />} />
-          <Route path="/order" element={<EmployeeOrdering />} />
-          <Route path="/guest-order" element={<GuestOrdering />} />
-        </Routes>
-
-        <Footer onOpenModPanel={() => setIsModPanelOpen(true)} />
-
-        <WhatsAppWidget />
-
-        <ModeratorPanel
-          isOpen={isModPanelOpen}
-          onClose={() => setIsModPanelOpen(false)}
-          settings={settings}
-          storeSettings={storeSettings}
-          onSettingsUpdated={setSettings}
-          onStoreSettingsUpdated={setStoreSettings}
-        />
-      </div>
-            <OrderModal />
-      </OrderModalProvider>
+      <LanguageProvider customTranslations={storeSettings?.page_content?.custom_translations}>
+        <OrderModalProvider>
+          <AppContent
+            settings={settings}
+            setSettings={setSettings}
+            storeSettings={storeSettings}
+            setStoreSettings={setStoreSettings}
+          />
+        </OrderModalProvider>
+      </LanguageProvider>
     </BrowserRouter>
   );
 }
+

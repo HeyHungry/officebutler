@@ -744,7 +744,7 @@ export function CompanyDashboard() {
                       <div className="flex-1">
                         <span className="font-medium text-gray-800 block text-lg">{method.name}</span>
                         <span className="text-sm text-gray-500 block mb-2">{method.description}</span>
-                        <span className="font-semibold text-[#05053D]">€{Number(method.price).toFixed(2)}</span>
+                        <span className="font-semibold text-[#05053D]">€{Number(method.price).toFixed(2)}{method.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}</span>
                       </div>
                     </label>
                   ))}

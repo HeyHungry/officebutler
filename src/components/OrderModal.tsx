@@ -2,9 +2,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Building2, Clock, Zap, LogIn, User } from 'lucide-react';
 import { useOrderModal } from '../contexts/OrderModalContext';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
 
-export function OrderModal() {
+export function OrderModal({ content }: { content?: any }) {
   const { step, deliveryPref, closeModal, openStep2 } = useOrderModal();
+  const { t } = useLanguage();
   const navigate = useNavigate();
 
   if (step === 'none') return null;
@@ -28,9 +30,9 @@ export function OrderModal() {
         >
           <div className="flex justify-between items-center p-6 border-b border-gray-100">
             <h2 className="text-2xl font-serif font-bold text-ob-blue">
-              {step === 'step1' ? 'Hoe wilt u bestellen?' : 'Maak uw keuze'}
+              {step === 'step1' ? t('Hoe wilt u bestellen?') : t('Maak uw keuze')}
             </h2>
-            <button onClick={closeModal} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full transition-colors">
+            <button onClick={closeModal} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full transition-colors cursor-pointer" aria-label="Close">
               <X size={20} />
             </button>
           </div>
@@ -45,38 +47,38 @@ export function OrderModal() {
                     if (el) el.scrollIntoView({ behavior: 'smooth' });
                     else navigate('/#business');
                   }}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
                 >
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
                     <Building2 size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Word vaste klant</h3>
-                    <p className="text-sm text-gray-500">Meld uw bedrijf aan voor een vaste bestelomgeving</p>
+                    <h3 className="font-bold text-gray-900">{content?.business_title || t("Word vaste klant")}</h3>
+                    <p className="text-sm text-gray-500">{content?.business_subtitle || t("Meld uw bedrijf aan voor een vaste bestelomgeving")}</p>
                   </div>
                 </button>
 
                 <button
-                  onClick={() => openStep2('scheduled')} className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group">
+                  onClick={() => openStep2('scheduled')} className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer">
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
                     <Clock size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Bestel vooraf</h3>
-                    <p className="text-sm text-gray-500">Plan uw bestelling voor een later moment</p>
+                    <h3 className="font-bold text-gray-900">{t('Bestel vooraf', 'Pre-order')}</h3>
+                    <p className="text-sm text-gray-500">{t('Plan uw bestelling voor een later moment', 'Schedule your order for a later time')}</p>
                   </div>
                 </button>
 
                 <button
                   onClick={() => openStep2('zsm')}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
                 >
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
                     <Zap size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Bestel direct</h3>
-                    <p className="text-sm text-gray-500">Ontvang uw bestelling zo snel mogelijk</p>
+                    <h3 className="font-bold text-gray-900">{t('Bestel direct', 'Order directly')}</h3>
+                    <p className="text-sm text-gray-500">{t('Ontvang uw bestelling zo snel mogelijk', 'Receive your order as quickly as possible')}</p>
                   </div>
                 </button>
               </>
@@ -89,14 +91,14 @@ export function OrderModal() {
                     closeModal();
                     navigate('/auth', { state: { deliveryMode: deliveryPref } });
                   }}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
                 >
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
                     <LogIn size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Inloggen</h3>
-                    <p className="text-sm text-gray-500">Voor bestaande zakelijke klanten en medewerkers</p>
+                    <h3 className="font-bold text-gray-900">{t('Inloggen')}</h3>
+                    <p className="text-sm text-gray-500">{t('Voor bestaande zakelijke klanten en medewerkers', 'For registered corporate clients and employees')}</p>
                   </div>
                 </button>
 
@@ -105,14 +107,14 @@ export function OrderModal() {
                     closeModal();
                     navigate('/guest-order', { state: { deliveryMode: deliveryPref } });
                   }}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
                 >
                   <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
                     <User size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Eenmalig / Particulier bestellen</h3>
-                    <p className="text-sm text-gray-500">Snel bestellen zonder account</p>
+                    <h3 className="font-bold text-gray-900">{t('Eenmalig / Particulier bestellen', 'One-time / Guest order')}</h3>
+                    <p className="text-sm text-gray-500">{t('Snel bestellen zonder account', 'Quick ordering without an account')}</p>
                   </div>
                 </button>
               </>

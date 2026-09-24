@@ -2,13 +2,20 @@ import { StoreSettings, sortVariantsByCategory, supabase } from '../lib/supabase
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ShoppingBag } from 'lucide-react';
+import { ShoppingBag, Info } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 
 type MenuItem = {
+  id?: string;
   name: string;
   image_url: string;
   category: string;
   status: string;
+  brand?: string;
+  extra_info?: string;
+  variants?: string[];
+  sauces?: string[];
+  [key: string]: any;
 };
 
 type MenuCategory = {
@@ -18,6 +25,7 @@ type MenuCategory = {
 
 export function Menu({ content }: { content?: any }) {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
@@ -34,16 +42,32 @@ export function Menu({ content }: { content?: any }) {
   useEffect(() => {
     async function fetchMenu() {
       try {
-        const { data, error } = await supabase
-          .from('ob_products')
-          .select('*')
-          .neq('status', 'verborgen') // Ensure we don't show hidden items
-          .order('sort_order', { ascending: true, nullsFirst: false }).order('category', { ascending: true }).order('name', { ascending: true });
+        const [prodsRes, storeRes] = await Promise.all([
+          supabase
+            .from('ob_products')
+            .select('*')
+            .neq('status', 'verborgen') // Ensure we don't show hidden items
+            .order('sort_order', { ascending: true, nullsFirst: false })
+            .order('category', { ascending: true })
+            .order('name', { ascending: true }),
+          supabase
+            .from('store_settings')
+            .select('page_content')
+            .eq('id', 1)
+            .maybeSingle()
+        ]);
 
-        if (error) throw error;
+        if (prodsRes.error) throw prodsRes.error;
+        const data = prodsRes.data;
+
+        const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || content?.product_brands || {};
+        const itemsWithBrands = (data || []).map((item: any) => ({
+          ...item,
+          brand: item.brand || brandsMap[item.id] || brandsMap[item.name] || ''
+        }));
 
         // Group by category
-        const grouped = (data || []).reduce((acc: Record<string, MenuItem[]>, item) => {
+        const grouped = itemsWithBrands.reduce((acc: Record<string, MenuItem[]>, item: any) => {
           // You might only want 'actief' and 'meest gekozen' etc. Let's just group them.
           if (['verborgen', 'inactief', 'hidden', 'inactive'].includes((item.status || '').toLowerCase())) return acc;
           
@@ -91,8 +115,18 @@ export function Menu({ content }: { content?: any }) {
     <section id="menu" className="font-serif py-24 bg-ob-cream">
       <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8">
         <div className="font-serif text-center mb-20">
-          <h2 className="font-serif text-3xl md:text-5xl text-ob-text mb-4">Onze Selectie</h2>
-          <p className="font-serif text-ob-text-light max-w-2xl mx-auto font-serif">Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen.</p>
+          <h2 
+            className="font-serif text-3xl md:text-5xl text-ob-text mb-4"
+            style={{ fontSize: content?.menu_title_size ? `calc(${String(content.menu_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}
+          >
+            {content?.menu_title || "Onze Selectie"}
+          </h2>
+          <p 
+            className="font-serif text-ob-text-light max-w-2xl mx-auto font-serif"
+            style={{ fontSize: content?.menu_subtitle_size ? `calc(${String(content.menu_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}
+          >
+            {content?.menu_subtitle || "Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen."}
+          </p>
           <div className="font-serif w-16 h-[1px] bg-ob-accent mx-auto mt-6"></div>
         </div>
 
@@ -102,7 +136,7 @@ export function Menu({ content }: { content?: any }) {
           </div>
         ) : categories.length === 0 ? (
           <div className="text-center py-20 text-gray-500 font-serif">
-            Op dit moment zijn er geen producten beschikbaar.
+            {t('Op dit moment zijn er geen producten beschikbaar.', 'Currently there are no products available.')}
           </div>
         ) : (
           <div className="font-serif flex flex-wrap gap-12 lg:gap-16 justify-center">
@@ -119,7 +153,7 @@ export function Menu({ content }: { content?: any }) {
                   className={`font-serif flex flex-col w-full ${itemChunks.length > 1 ? 'md:w-[calc(100%-1.5rem)] lg:w-[calc(66.666%-2rem)]' : 'md:w-[calc(50%-1.5rem)] lg:w-[calc(33.333%-2rem)]'}`}
                 >
                   <div className="font-serif border-b-2 border-ob-accent pb-4 mb-8">
-                    <h3 className="font-serif text-2xl lg:text-3xl text-ob-blue uppercase tracking-widest text-center">{category.title}</h3>
+                    <h3 className="font-serif text-2xl lg:text-3xl text-ob-blue uppercase tracking-widest text-center">{t(category.title)}</h3>
                   </div>
                   
                   <div className="flex flex-col md:flex-row gap-8">
@@ -131,33 +165,38 @@ export function Menu({ content }: { content?: any }) {
                               {item.image_url ? (
                                 <img 
                                   src={item.image_url} 
-                                  alt={item.name}
+                                  alt={t(item.name)}
                                   className="font-serif w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                   loading="lazy"
                                   referrerPolicy="no-referrer"
                                 />
                               ) : (
                                 <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-300">
-                                  <span className="text-xs">Geen foto</span>
+                                  <span className="text-xs">{t('Geen foto', 'No photo')}</span>
                                 </div>
                               )}
                             </div>
                             <div className="font-serif flex-1 flex flex-col justify-center">
                               <h4 className="font-serif text-lg text-ob-text group-hover:text-ob-accent transition-colors duration-300 font-medium font-serif flex flex-wrap items-center gap-2">
-                                {item.name}
+                                {t(item.name)}
                                 {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
-  <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}</span>
+  <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? t('Nieuw', 'New') : item.status === 'popular' ? t('Meest Gekozen', 'Most Popular') : item.status === 'sold_out' ? t('Uitverkocht', 'Sold Out') : item.status === 'coming_soon' ? t('Binnenkort', 'Coming Soon') : item.status}</span>
 )}
                               </h4>
-                              {item.extra_info && <span className="text-[10px] uppercase tracking-wider text-ob-blue/60 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors">Meer info</span>}
+                              {(item.extra_info || item.brand) && (
+                                <span className="text-[10px] uppercase tracking-wider text-ob-blue/80 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors flex items-center gap-1 font-medium">
+                                  <Info size={11} />
+                                  {t('Extra informatie', 'Extra info')}
+                                </span>
+                              )}
                               {(item.variants && item.variants.length > 0) && (
                                 <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
-                                  <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
+                                  <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(item.variants, category.title).map((v: string) => t(v)).join(', ')}
                                 </p>
                               )}
                               {(item.sauces && item.sauces.length > 0) && (
                                 <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
-                                  <span className="font-semibold text-gray-700">Inclusief:</span> {item.sauces.join(', ')}
+                                  <span className="font-semibold text-gray-700">{t('Inclusief', 'Includes')}:</span> {item.sauces.map((s: string) => t(s)).join(', ')}
                                 </p>
                               )}
                             </div>
@@ -182,7 +221,7 @@ export function Menu({ content }: { content?: any }) {
             
             {infoModalProduct.image_url ? (
                <div className="w-full h-48 sm:h-56 shrink-0 bg-gray-100">
-                 <img src={infoModalProduct.image_url} alt={infoModalProduct.name} className="w-full h-full object-cover" />
+                 <img src={infoModalProduct.image_url} alt={t(infoModalProduct.name)} className="w-full h-full object-cover" />
                </div>
             ) : (
                <div className="w-full h-24 shrink-0 bg-ob-cream flex items-center justify-center">
@@ -191,19 +230,25 @@ export function Menu({ content }: { content?: any }) {
             )}
             
             <div className="p-6 overflow-y-auto">
-              <h3 className="text-2xl font-serif font-bold text-ob-blue mb-2 pr-6">{infoModalProduct.name}</h3>
+              <h3 className="text-2xl font-serif font-bold text-ob-blue mb-2 pr-6">{t(infoModalProduct.name)}</h3>
+              {infoModalProduct.brand && (
+                <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
+                  <span className="text-ob-blue/70 font-semibold">{t('Merk', 'Brand')}:</span>
+                  <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
+                </div>
+              )}
               {infoModalProduct.variants && infoModalProduct.variants.length > 0 && (
                 <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                  <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct.category || '').join(', ')}
+                  <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct.category || '').map((v: string) => t(v)).join(', ')}
                 </p>
               )}
               {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
                 <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3">
                   <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
-                  <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{infoModalProduct.sauces.join(', ')}</span></span>
+                  <span className="text-xs text-gray-600 font-medium leading-tight">{t('Inclusief', 'Includes')}: <span className="font-bold text-gray-900">{infoModalProduct.sauces.map((s: string) => t(s)).join(', ')}</span></span>
                 </div>
               )}
-              {infoModalProduct.extra_info && <div className="text-gray-600 whitespace-pre-wrap mb-4">{infoModalProduct.extra_info}</div>}
+              {infoModalProduct.extra_info && <div className="text-gray-600 whitespace-pre-wrap mb-4">{t(infoModalProduct.extra_info)}</div>}
 
               <div className="pt-4 border-t border-gray-100 mt-2">
                 <button
@@ -215,7 +260,7 @@ export function Menu({ content }: { content?: any }) {
                   className="w-full bg-[#05053D] hover:bg-ob-blue text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-sans"
                 >
                   <ShoppingBag size={18} />
-                  Bestellen
+                  {t('Bestellen', 'Order')}
                 </button>
               </div>
             </div>

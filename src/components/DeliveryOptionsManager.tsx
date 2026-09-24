@@ -56,7 +56,7 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: 
           </div>
         </div>
       </td>
-      <td className="px-2 py-2 font-medium">€{Number(p.price).toFixed(2)}</td>
+      <td className="px-2 py-2 font-medium">€{Number(p.price).toFixed(2)}{p.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}</td>
       <td className="px-2 py-2">
         <span className={`px-2 py-1 rounded-md text-xs font-medium ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
           {p.is_active ? 'Actief' : 'Inactief'}
@@ -190,7 +190,10 @@ export function DeliveryOptionsManager() {
           <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
         </td>
         <td className="px-2 py-2 align-top">
-          <input type="number" step="0.01" placeholder="Prijs" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.price !== undefined ? editForm.price : ''} onChange={e => setEditForm({...editForm, price: parseFloat(e.target.value) || 0})} />
+          <input type="number" step="0.01" placeholder={editForm.name?.toLowerCase().includes('uitserveren') ? "Uurtarief (€/uur)" : "Prijs"} className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.price !== undefined ? editForm.price : ''} onChange={e => setEditForm({...editForm, price: parseFloat(e.target.value) || 0})} />
+          {editForm.name?.toLowerCase().includes('uitserveren') && (
+            <span className="text-[11px] text-gray-500 block mt-1">Uurtarief voor uitserveren</span>
+          )}
         </td>
         <td className="px-2 py-2 align-top">
           <select 
