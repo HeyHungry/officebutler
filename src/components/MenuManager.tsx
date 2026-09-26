@@ -245,9 +245,9 @@ export function MenuManager() {
     if (!supabase || !editForm.name || (!editForm.category && !newCategory)) return;
     setIsSaving(true);
     
-    // Cleanup portions
+    const trimmedName = editForm.name.trim();
     const portionsToSave = (editForm.portions || []).filter(n => n > 0);
-    const categoryToSave = isCreatingCategory && newCategory ? newCategory : editForm.category;
+    const categoryToSave = isCreatingCategory && newCategory ? newCategory.trim() : (editForm.category || '').trim();
     const statusToSave = isCreatingStatus && newStatus ? newStatus : (editForm.status || 'active');
 
     const variantsToSave = editForm.variants || [];
@@ -258,7 +258,7 @@ export function MenuManager() {
       let savedProduct: any = null;
       if (editingId === 'new') {
         const insertPayload: any = {
-          name: editForm.name,
+          name: trimmedName,
           category: categoryToSave,
           image_url: editForm.image_url || '',
           status: statusToSave,
@@ -291,7 +291,7 @@ export function MenuManager() {
         const oldName = oldProduct?.name;
 
         const updatePayload: any = {
-          name: editForm.name,
+          name: trimmedName,
           category: categoryToSave,
           image_url: editForm.image_url,
           status: statusToSave,
@@ -316,9 +316,10 @@ export function MenuManager() {
         if (error) { alert('Error: ' + error.message); }
         if (data && data[0]) {
           savedProduct = { ...data[0], brand: brandToSave || '' };
-          if (oldName && oldName !== editForm.name) {
-             await supabase.from('ob_product_prices').update({ product_name: editForm.name }).eq('product_name', oldName);
-             await supabase.from('ob_company_assortment').update({ product_name: editForm.name }).eq('product_name', oldName);
+          const cleanOldName = (oldName || '').trim();
+          if (cleanOldName && cleanOldName !== trimmedName) {
+             await supabase.from('ob_product_prices').update({ product_name: trimmedName }).ilike('product_name', cleanOldName);
+             await supabase.from('ob_company_assortment').update({ product_name: trimmedName }).ilike('product_name', cleanOldName);
           }
           setProducts(products.map(p => p.id === editingId ? savedProduct : p));
         }
@@ -367,8 +368,9 @@ export function MenuManager() {
     const oldProduct = products.find(p => p.id === id);
     try {
       if (oldProduct) {
-        await supabase.from('ob_product_prices').delete().eq('product_name', oldProduct.name);
-        await supabase.from('ob_company_assortment').delete().eq('product_name', oldProduct.name);
+        const cleanName = (oldProduct.name || '').trim();
+        await supabase.from('ob_product_prices').delete().ilike('product_name', cleanName);
+        await supabase.from('ob_company_assortment').delete().ilike('product_name', cleanName);
         try {
           const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
           if (storeData?.page_content?.product_brands) {

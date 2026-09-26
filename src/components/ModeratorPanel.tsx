@@ -404,52 +404,73 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const handleSaveProductPrices = async () => {
     setIsSaving(true);
     try {
-      if (supabase) {
-        for (const p of productPrices) {
-          if (p.price > 0) {
-            // First check if it exists
-            const { data: existing } = await supabase.from('ob_product_prices')
-              .select('id')
-              .eq('product_name', p.product_name)
-              .eq('portion_size', p.portion_size)
-              .is('company_id', p.company_id || null)
-              .maybeSingle();
-              
-            if (existing) {
-              await supabase.from('ob_product_prices').update({ price: p.price }).eq('id', existing.id);
-            } else {
-              await supabase.from('ob_product_prices').insert({
-                company_id: p.company_id,
-                product_name: p.product_name,
-                portion_size: p.portion_size,
-                price: p.price
-              });
-            }
-          }
+      if (supabase && selectedPriceProduct) {
+        const cleanProductName = selectedPriceProduct.trim();
+        const selectedProdObj = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanProductName.toLowerCase());
+        const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
+
+        // 1. Delete existing prices for this product and company deal to avoid duplicates
+        let delQuery = supabase
+          .from('ob_product_prices')
+          .delete()
+          .ilike('product_name', cleanProductName);
+          
+        if (selectedPriceCompany) {
+          delQuery = delQuery.eq('company_id', selectedPriceCompany);
+        } else {
+          delQuery = delQuery.is('company_id', null);
+        }
+        await delQuery;
+
+        // 2. Insert new prices for all portions that have a price > 0
+        const rowsToInsert = portionsToUse
+          .map((portion: number) => {
+            const p = productPrices.find(
+              x => (x.product_name || '').trim().toLowerCase() === cleanProductName.toLowerCase() &&
+                   (x.company_id || null) === (selectedPriceCompany || null) &&
+                   Number(x.portion_size) === Number(portion)
+            );
+            return p && Number(p.price) > 0 ? {
+              company_id: selectedPriceCompany || null,
+              product_name: cleanProductName,
+              portion_size: portion,
+              price: Number(p.price)
+            } : null;
+          })
+          .filter(Boolean);
+
+        if (rowsToInsert.length > 0) {
+          const { error: insErr } = await supabase.from('ob_product_prices').insert(rowsToInsert);
+          if (insErr) throw insErr;
         }
 
-        // Save variant surcharges to ob_products
-        if (selectedPriceProduct) {
-           const cleanSurcharges: Record<string, number> = {};
-           for (const [k, v] of Object.entries(variantSurcharges)) {
-             if (v !== undefined && v !== null && !isNaN(v as any)) {
-               cleanSurcharges[k] = Number(v);
-             }
-           }
-           await supabase.from('ob_products')
-             .update({ variant_surcharges: cleanSurcharges })
-             .eq('name', selectedPriceProduct);
-             
-           // Update local dbProducts state
-           setDbProducts(prev => prev.map(p => p.name === selectedPriceProduct ? { ...p, variant_surcharges: cleanSurcharges } : p));
-           setVariantSurcharges(cleanSurcharges);
+        // 3. Save variant surcharges to ob_products
+        const cleanSurcharges: Record<string, number> = {};
+        for (const [k, v] of Object.entries(variantSurcharges)) {
+          if (v !== undefined && v !== null && !isNaN(v as any)) {
+            cleanSurcharges[k] = Number(v);
+          }
+        }
+        await supabase.from('ob_products')
+          .update({ variant_surcharges: cleanSurcharges })
+          .ilike('name', cleanProductName);
+          
+        // Update local dbProducts state
+        setDbProducts(prev => prev.map(p => (p.name || '').trim().toLowerCase() === cleanProductName.toLowerCase() ? { ...p, variant_surcharges: cleanSurcharges } : p));
+        setVariantSurcharges(cleanSurcharges);
+
+        // 4. Refresh local productPrices from database
+        const { data: refreshedPrices } = await supabase.from('ob_product_prices').select('*');
+        if (refreshedPrices) {
+          setProductPrices(refreshedPrices);
         }
         
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error saving prices:', e);
+      alert('Er ging iets mis bij het opslaan van de prijzen.');
     } finally {
       setIsSaving(false);
     }
@@ -457,19 +478,36 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
   const handleProductPriceChange = (portion: number, value: string) => {
     const numValue = parseFloat(value) || 0;
+    const cleanCurrentProd = selectedPriceProduct.trim().toLowerCase();
     setProductPrices(prev => {
-      const exists = prev.find(p => p.product_name === selectedPriceProduct && p.company_id === selectedPriceCompany && p.portion_size === portion);
-      if (exists) {
-        return prev.map(p => p === exists ? { ...p, price: numValue } : p);
+      const existsIndex = prev.findIndex(p => 
+        (p.product_name || '').trim().toLowerCase() === cleanCurrentProd && 
+        (p.company_id || null) === (selectedPriceCompany || null) && 
+        Number(p.portion_size) === Number(portion)
+      );
+      if (existsIndex >= 0) {
+        const next = [...prev];
+        next[existsIndex] = { ...next[existsIndex], price: numValue };
+        return next;
       } else {
-        return [...prev, { company_id: selectedPriceCompany, product_name: selectedPriceProduct, portion_size: portion, price: numValue }];
+        return [...prev, { 
+          company_id: selectedPriceCompany, 
+          product_name: selectedPriceProduct.trim(), 
+          portion_size: portion, 
+          price: numValue 
+        }];
       }
     });
   };
   
   const getDisplayPrice = (portion: number) => {
-    const p = productPrices.find(p => p.product_name === selectedPriceProduct && p.company_id === selectedPriceCompany && p.portion_size === portion);
-    return p ? p.price : '';
+    const cleanCurrentProd = selectedPriceProduct.trim().toLowerCase();
+    const p = productPrices.find(p => 
+      (p.product_name || '').trim().toLowerCase() === cleanCurrentProd && 
+      (p.company_id || null) === (selectedPriceCompany || null) && 
+      Number(p.portion_size) === Number(portion)
+    );
+    return p && p.price > 0 ? p.price : '';
   };
 
   return (
@@ -2212,9 +2250,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
                              >
                                {dbProducts.length > 0 ? dbProducts.map(prod => (
-                                 <option key={prod.name} value={prod.name}>{prod.name}</option>
+                                 <option key={prod.name} value={(prod.name || '').trim()}>{(prod.name || '').trim()}</option>
                                )) : AVAILABLE_PRODUCTS.map(prod => (
-                                 <option key={prod} value={prod}>{prod}</option>
+                                 <option key={prod} value={prod.trim()}>{prod.trim()}</option>
                                ))}
                              </select>
                            </div>
@@ -2242,7 +2280,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               </tr>
                             </thead>
                             {(() => {
-                                const selectedProdObj = dbProducts.find(p => p.name === selectedPriceProduct);
+                                const cleanSelected = selectedPriceProduct.trim().toLowerCase();
+                                const selectedProdObj = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanSelected);
                                 const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
                                 return (
                                   <tbody className="divide-y divide-gray-100">
@@ -2272,7 +2311,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         <p className="text-xs text-gray-400 mt-2">Laat het veld leeg als de portie niet beschikbaar is.</p>
 
                         {(() => {
-                           const prod = dbProducts.find(p => p.name === selectedPriceProduct);
+                           const cleanSelected = selectedPriceProduct.trim().toLowerCase();
+                           const prod = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanSelected);
                            if (prod && prod.variants && prod.variants.length > 0) {
                              return (
                                <div className="mt-8">

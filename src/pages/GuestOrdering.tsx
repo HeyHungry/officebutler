@@ -87,7 +87,10 @@ export function GuestOrdering() {
           if (pricesRes.data) {
             const pMap: Record<string, number> = {};
             pricesRes.data.forEach((p: any) => {
-              pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+              const cleanName = (p.product_name || '').trim();
+              const price = parseFloat(p.price);
+              pMap[`${cleanName}_${p.portion_size}`] = price;
+              pMap[`${p.product_name}_${p.portion_size}`] = price;
             });
             setPrices(pMap);
           }
@@ -126,12 +129,15 @@ export function GuestOrdering() {
 
         }
 
-                        if (globalPrices) {
+        if (globalPrices) {
           const newPrices: Record<string, number> = {};
           const productNames = new Set<string>();
           globalPrices.forEach(gp => {
-            newPrices[`${gp.product_name}_${gp.portion_size}`] = gp.price || gp.default_price;
-            productNames.add(gp.product_name);
+            const cleanName = (gp.product_name || '').trim();
+            const price = gp.price || gp.default_price;
+            newPrices[`${cleanName}_${gp.portion_size}`] = price;
+            newPrices[`${gp.product_name}_${gp.portion_size}`] = price;
+            productNames.add(cleanName);
           });
           if (Object.keys(newPrices).length > 0) {
             setPrices(prev => ({ ...prev, ...newPrices }));
@@ -642,7 +648,8 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                     const countForCurrentSelection = prodSelections[selKey] || 0;
                                     const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
                                     
-                                    const basePrice = prices[product + '_' + size];
+                                    const cleanProd = (product || '').trim();
+                                    const basePrice = prices[cleanProd + '_' + size] ?? prices[product + '_' + size];
                                     const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(product, currentVariant, size) : undefined;
                                     
                                     const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase());
@@ -1092,7 +1099,8 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                     const prodSelections = selections[infoModalProduct.name] || {};
                     const countForCurrentSelection = prodSelections[selKey] || 0;
                     
-                    const basePrice = prices[infoModalProduct.name + '_' + size];
+                    const cleanInfoProd = (infoModalProduct.name || '').trim();
+                    const basePrice = prices[cleanInfoProd + '_' + size] ?? prices[infoModalProduct.name + '_' + size];
                     const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(infoModalProduct.name, currentVariant, size) : undefined;
                     
                     const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((infoModalProduct.status || '').toLowerCase());

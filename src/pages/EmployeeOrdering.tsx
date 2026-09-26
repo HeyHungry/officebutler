@@ -210,15 +210,21 @@ export function EmployeeOrdering() {
         
         // 1. Default prices (no company_id)
         priceData.filter((p: any) => !p.company_id).forEach((p: any) => {
-          pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+          const cleanName = (p.product_name || '').trim();
+          const price = parseFloat(p.price);
+          pMap[`${cleanName}_${p.portion_size}`] = price;
+          pMap[`${p.product_name}_${p.portion_size}`] = price;
         });
 
         // 2. Company specific override
         priceData.filter((p: any) => p.company_id === compId).forEach((p: any) => {
-          pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+          const cleanName = (p.product_name || '').trim();
+          const price = parseFloat(p.price);
+          pMap[`${cleanName}_${p.portion_size}`] = price;
+          pMap[`${p.product_name}_${p.portion_size}`] = price;
         });
         
-                setPrices(pMap);
+        setPrices(pMap);
       }
 
             // Fetch allowed delivery methods
