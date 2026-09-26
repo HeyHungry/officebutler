@@ -236,7 +236,8 @@ ${JSON.stringify(toTranslate, null, 2)}
             const size = Number(parts[0]);
             const variant = parts[1] || '';
             const finalProd = variant ? `${prod} (${variant})` : prod;
-            const price = prices[`${prod}_${sizeStr}`] || prices[`${prod}_${size}`] || 0;
+            const cleanProd = (prod || '').trim();
+            const price = prices[`${cleanProd}_${sizeStr}`] || prices[`${cleanProd}_${size}`] || prices[`${prod}_${sizeStr}`] || prices[`${prod}_${size}`] || 0;
             const lineTotal = price * (qty as number);
             itemsHtml += `<tr>
               <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${finalProd} (${size} stuks)</td>
@@ -363,7 +364,8 @@ ${JSON.stringify(toTranslate, null, 2)}
             const size = Number(parts[0]);
             const variant = parts[1] || '';
             const finalProd = variant ? `${prod} (${variant})` : prod;
-            const price = prices[`${prod}_${sizeStr}`] || prices[`${prod}_${size}`] || 0;
+            const cleanProd = (prod || '').trim();
+            const price = prices[`${cleanProd}_${sizeStr}`] || prices[`${cleanProd}_${size}`] || prices[`${prod}_${sizeStr}`] || prices[`${prod}_${size}`] || 0;
             const lineTotal = price * (qty as number);
             itemsHtml += `<tr>
               <td style="padding: 8px; border-bottom: 1px solid #eee;">${qty}x ${finalProd} (${size} stuks)</td>
