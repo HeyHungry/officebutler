@@ -92,6 +92,20 @@ export function GuestOrdering() {
               pMap[`${cleanName}_${p.portion_size}`] = price;
               pMap[`${p.product_name}_${p.portion_size}`] = price;
             });
+            if (prods) {
+              prods.forEach((prodItem: any) => {
+                const prodName = prodItem.name || '';
+                const cleanProdName = prodName.trim();
+                pricesRes.data.forEach((p: any) => {
+                  const pClean = (p.product_name || '').trim();
+                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                    const price = parseFloat(p.price);
+                    pMap[`${prodName}_${p.portion_size}`] = price;
+                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                  }
+                });
+              });
+            }
             setPrices(pMap);
           }
         } catch (e) {
@@ -159,7 +173,8 @@ export function GuestOrdering() {
 
   const getVariantSurcharge = (productName: string, variant: string, size: string | number) => {
     if (!variant) return 0;
-    const prod = dbProducts.find(p => p.name === productName);
+    const cleanName = (productName || '').trim().toLowerCase();
+    const prod = dbProducts.find(p => p.name === productName || (p.name || '').trim().toLowerCase() === cleanName);
     if (!prod || !prod.variant_surcharges) return 0;
     return prod.variant_surcharges[`${variant}_${size}`] || prod.variant_surcharges[variant] || 0;
   };
@@ -268,11 +283,12 @@ export function GuestOrdering() {
 
     const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
+      const cleanProd = (prod || '').trim();
       for (const [s, qty] of Object.entries(sizes as any)) {
         const parts = s.split('_');
         const sizeNum = parts[0];
         const variant = parts[1] || '';
-        const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+        const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
         const surcharge = getVariantSurcharge(prod, variant, sizeNum);
         prodSum += (basePrice + surcharge) * (qty as number);
       }
@@ -307,15 +323,16 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
         const orderPromises: any[] = [];
         const orderLines: any[] = [];
         Object.entries(selections).forEach(([prod, sizes]) => {
+          const cleanProd = (prod || '').trim();
           Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
             const parts = String(sizeStr).split('_');
             const sizeNum = Number(parts[0]);
             const variant = parts[1] || '';
-            const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+            const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
             const surcharge = getVariantSurcharge(prod, variant, sizeNum);
             const price = basePrice + surcharge;
             let finalProdName = variant ? `${prod} (${variant})` : prod;
-            const dbProduct = dbProducts.find(p => p.name === prod);
+            const dbProduct = dbProducts.find(p => p.name === prod || (p.name || '').trim().toLowerCase() === cleanProd.toLowerCase());
             if (dbProduct && dbProduct.sauces && dbProduct.sauces.length > 0) {
               finalProdName += ` [+ ${dbProduct.sauces.join(', ')}]`;
             }
@@ -459,11 +476,12 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
 
   const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
+      const cleanProd = (prod || '').trim();
       for (const [s, qty] of Object.entries(sizes as any)) {
         const parts = s.split('_');
         const sizeNum = parts[0];
         const variant = parts[1] || '';
-        const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+        const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
         const surcharge = getVariantSurcharge(prod, variant, sizeNum);
         prodSum += (basePrice + surcharge) * (qty as number);
       }

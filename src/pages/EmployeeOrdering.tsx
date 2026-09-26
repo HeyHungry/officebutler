@@ -76,7 +76,8 @@ export function EmployeeOrdering() {
 
   const getVariantSurcharge = (productName: string, variant: string, size: string | number) => {
     if (!variant) return 0;
-    const prod = dbProducts.find(p => p.name === productName);
+    const cleanName = (productName || '').trim().toLowerCase();
+    const prod = dbProducts.find(p => p.name === productName || (p.name || '').trim().toLowerCase() === cleanName);
     if (!prod || !prod.variant_surcharges) return 0;
     return prod.variant_surcharges[`${variant}_${size}`] || prod.variant_surcharges[variant] || 0;
   };
@@ -128,11 +129,12 @@ export function EmployeeOrdering() {
 
   const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
     let prodSum = 0;
+    const cleanProd = (prod || '').trim();
     for (const [s, qty] of Object.entries(sizes as any)) {
       const parts = String(s).split('_');
       const sizeNum = parts[0];
       const variant = parts[1] || '';
-      const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+      const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
       const surcharge = getVariantSurcharge(prod, variant, sizeNum);
       prodSum += (basePrice + surcharge) * (qty as number);
     }
@@ -223,6 +225,22 @@ export function EmployeeOrdering() {
           pMap[`${cleanName}_${p.portion_size}`] = price;
           pMap[`${p.product_name}_${p.portion_size}`] = price;
         });
+
+        // Also cross-link with dbProducts in case product.name has whitespace or different casing
+        if (prods) {
+          prods.forEach((prodItem: any) => {
+            const prodName = prodItem.name || '';
+            const cleanProdName = prodName.trim();
+            priceData.forEach((p: any) => {
+              const pClean = (p.product_name || '').trim();
+              if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                const price = parseFloat(p.price);
+                pMap[`${prodName}_${p.portion_size}`] = price;
+                pMap[`${cleanProdName}_${p.portion_size}`] = price;
+              }
+            });
+          });
+        }
         
         setPrices(pMap);
       }
@@ -276,11 +294,12 @@ export function EmployeeOrdering() {
 
     const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
+      const cleanProd = (prod || '').trim();
       for (const [s, qty] of Object.entries(sizes as any)) {
         const parts = String(s).split('_');
         const sizeNum = parts[0];
         const variant = parts[1] || '';
-        const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+        const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
         const surcharge = getVariantSurcharge(prod, variant, sizeNum);
         prodSum += (basePrice + surcharge) * (qty as number);
       }
@@ -298,15 +317,16 @@ export function EmployeeOrdering() {
         const orderPromises: any[] = [];
         const orderLines: any[] = [];
         Object.entries(selections).forEach(([prod, sizes]) => {
+          const cleanProd = (prod || '').trim();
           Object.entries(sizes as any).forEach(([sizeStr, qty]) => {
             const parts = String(sizeStr).split('_');
             const sizeNum = Number(parts[0]);
             const variant = parts[1] || '';
-            const basePrice = prices[`${prod}_${sizeNum}`] || 0;
+            const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
             const surcharge = getVariantSurcharge(prod, variant, sizeNum);
             const price = basePrice + surcharge;
             let finalProdName = variant ? `${prod} (${variant})` : prod;
-            const dbProduct = dbProducts.find(p => p.name === prod);
+            const dbProduct = dbProducts.find(p => p.name === prod || (p.name || '').trim().toLowerCase() === cleanProd.toLowerCase());
             if (dbProduct && dbProduct.sauces && dbProduct.sauces.length > 0) {
               finalProdName += ` [+ ${dbProduct.sauces.join(', ')}]`;
             }
@@ -679,7 +699,8 @@ export function EmployeeOrdering() {
                                           const countForCurrentSelection = prodSelections[selKey] || 0;
                                           const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
                                           
-                                          const basePrice = prices[product + '_' + size];
+                                          const cleanProd = (product || '').trim();
+                                          const basePrice = prices[cleanProd + '_' + size] ?? prices[product + '_' + size];
                                           const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(product, currentVariant, size) : undefined;
                                           const isDisabled = basePrice === undefined || isSoldOut;
                                           
@@ -727,7 +748,8 @@ export function EmployeeOrdering() {
                                               const parts = s.split('_');
                                               const sizeNum = parts[0];
                                               const variant = parts[1] || '';
-                                              const basePrice = prices[`${product}_${sizeNum}`] || 0;
+                                              const cleanProd = (product || '').trim();
+                                              const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${product}_${sizeNum}`] ?? 0;
                                               const surcharge = getVariantSurcharge(product, variant, sizeNum);
                                               const itemPrice = (basePrice + surcharge) * (qty as number);
                                               return (
@@ -1012,7 +1034,8 @@ export function EmployeeOrdering() {
                           const prodSelections = selections[infoModalProduct.name] || {};
                           const countForCurrentSelection = prodSelections[selKey] || 0;
                           
-                          const basePrice = prices[infoModalProduct.name + '_' + size];
+                          const cleanInfoProd = (infoModalProduct.name || '').trim();
+                          const basePrice = prices[cleanInfoProd + '_' + size] ?? prices[infoModalProduct.name + '_' + size];
                           const displayPrice = basePrice !== undefined ? basePrice + getVariantSurcharge(infoModalProduct.name, currentVariant, size) : undefined;
                           
                           const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((infoModalProduct.status || '').toLowerCase());
