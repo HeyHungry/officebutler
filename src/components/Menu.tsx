@@ -61,9 +61,11 @@ export function Menu({ content }: { content?: any }) {
         const data = prodsRes.data;
 
         const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || content?.product_brands || {};
+        const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || content?.hide_image_products || {};
         const itemsWithBrands = (data || []).map((item: any) => ({
           ...item,
-          brand: item.brand || brandsMap[item.id] || brandsMap[item.name] || ''
+          brand: item.brand || brandsMap[item.id] || brandsMap[item.name] || '',
+          hide_image: item.hide_image != null ? Boolean(item.hide_image) : Boolean(hideImagesMap[item.id] || hideImagesMap[item.name] || hideImagesMap[(item.name || '').trim()])
         }));
 
         // Group by category
@@ -159,49 +161,52 @@ export function Menu({ content }: { content?: any }) {
                   <div className="flex flex-col md:flex-row gap-8">
                     {itemChunks.map((chunk, chunkIndex) => (
                       <div key={chunkIndex} className="font-serif flex flex-col gap-6 flex-1 min-w-[250px]">
-                        {chunk.map((item: any) => (
-                          <div key={item.name} className="font-serif flex items-center gap-4 group cursor-pointer border-b border-black/5 pb-4 last:border-0 last:pb-0" onClick={() => setInfoModalProduct(item)}>
-                            <div className="font-serif w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
-                              {item.image_url ? (
-                                <img 
-                                  src={item.image_url} 
-                                  alt={t(item.name)}
-                                  className="font-serif w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-300">
-                                  <span className="text-xs">{t('Geen foto', 'No photo')}</span>
+                        {chunk.map((item: any) => {
+                          const hasVisibleImage = !item.hide_image && Boolean(item.image_url);
+                          return (
+                            <div key={item.name} className={`font-serif flex items-center ${hasVisibleImage ? 'gap-4 pb-4' : 'gap-3 pb-2.5'} group cursor-pointer border-b border-black/5 last:border-0 last:pb-0`} onClick={() => setInfoModalProduct(item)}>
+                              {hasVisibleImage && (
+                                <div className="font-serif w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
+                                  <img 
+                                    src={item.image_url} 
+                                    alt={t(item.name)}
+                                    className="font-serif w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                    loading="lazy"
+                                    referrerPolicy="no-referrer"
+                                  />
                                 </div>
                               )}
+                              <div className="font-serif flex-1 flex flex-col justify-center">
+                                <h4 className="font-serif text-lg text-ob-text group-hover:text-ob-accent transition-colors duration-300 font-medium font-serif flex flex-wrap items-center gap-2">
+                                  {t(item.name)}
+                                  {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? t('Nieuw', 'New') : item.status === 'popular' ? t('Meest Gekozen', 'Most Popular') : item.status === 'sold_out' ? t('Uitverkocht', 'Sold Out') : item.status === 'coming_soon' ? t('Binnenkort', 'Coming Soon') : item.status}</span>
+                                  )}
+                                </h4>
+                                {(item.extra_info || item.brand) && (
+                                  <span className="text-[10px] uppercase tracking-wider text-ob-blue/80 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors flex items-center gap-1 font-medium">
+                                    <Info size={11} />
+                                    {t('Extra informatie', 'Extra info')}
+                                  </span>
+                                )}
+                                {(item.variants && item.variants.length > 1) ? (
+                                  <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
+                                    <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(item.variants, category.title).map((v: string) => t(v)).join(', ')}
+                                  </p>
+                                ) : (item.variants && item.variants.length === 1) ? (
+                                  <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-1">
+                                    <span className="font-semibold text-gray-700">{t('Variant', 'Variant')}:</span> <span className="text-[11px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded border border-gray-200">{item.variants[0]}</span>
+                                  </p>
+                                ) : null}
+                                {(item.sauces && item.sauces.length > 0) && (
+                                  <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
+                                    <span className="font-semibold text-gray-700">{t('Inclusief', 'Includes')}:</span> {item.sauces.map((s: string) => t(s)).join(', ')}
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            <div className="font-serif flex-1 flex flex-col justify-center">
-                              <h4 className="font-serif text-lg text-ob-text group-hover:text-ob-accent transition-colors duration-300 font-medium font-serif flex flex-wrap items-center gap-2">
-                                {t(item.name)}
-                                {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
-  <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? t('Nieuw', 'New') : item.status === 'popular' ? t('Meest Gekozen', 'Most Popular') : item.status === 'sold_out' ? t('Uitverkocht', 'Sold Out') : item.status === 'coming_soon' ? t('Binnenkort', 'Coming Soon') : item.status}</span>
-)}
-                              </h4>
-                              {(item.extra_info || item.brand) && (
-                                <span className="text-[10px] uppercase tracking-wider text-ob-blue/80 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors flex items-center gap-1 font-medium">
-                                  <Info size={11} />
-                                  {t('Extra informatie', 'Extra info')}
-                                </span>
-                              )}
-                              {(item.variants && item.variants.length > 0) && (
-                                <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
-                                  <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(item.variants, category.title).map((v: string) => t(v)).join(', ')}
-                                </p>
-                              )}
-                              {(item.sauces && item.sauces.length > 0) && (
-                                <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
-                                  <span className="font-semibold text-gray-700">{t('Inclusief', 'Includes')}:</span> {item.sauces.map((s: string) => t(s)).join(', ')}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ))}
                   </div>

@@ -45,6 +45,12 @@ De beheeromgeving / "Moderator Panel" is afgeschermd met de native Supabase Auth
 - Herkenbare componenten zoals de geblokte footer worden gedeeld tussen de projecten om een eenvormig merk neer te zetten (Canal Butler / Office Butler).
 - Er wordt gebruik gemaakt van donkerblauw, wit en goud/bruine accenten afhankelijk van het specifieke label.
 
+## Vaste Productweergave Regels
+- **Merken van producten:** Merknamen (zoals Oma Bobs, Mora, etc.) worden **UITSLUITEND** getoond in de "Extra informatie" popup / modal. Ze mogen **NOOIT** direct op het productkaartje op de bestelpagina's (`GuestOrdering`, `EmployeeOrdering`) of in het assortiment (`Menu`) worden getoond.
+- **Varianten:** Als een product slechts 1 variant heeft (bijv. 'Cups'), wordt er géén grote keuzeknop getoond, maar een klein subtiel label (`Variant: Cups`) direct boven de porties.
+- **Afbeeldingen uitschakelen:** Wanneer de afbeelding van een product is uitgeschakeld (`hide_image`), mag er géén leeg grijs of wit vlak overblijven op de kaart; de kaart moet compacter worden weergegeven. De afbeelding blijft wél zichtbaar wanneer op "Extra informatie" wordt geklikt.
+- **Extra informatie tekst/knop:** Bij producten met een actieve afbeelding wordt het losse knopje/tekstje "Extra informatie" weggelaten van de productkaart en uitsluitend getoond wanneer over de productafbeelding wordt gehovered. Bij producten zonder afbeelding of waar de afbeelding is uitgeschakeld (`!hasImage`), wordt de knop "Extra informatie" wél op de kaart getoond.
+
 ## Cross-Project Samenwerking
 Zorg er altijd voor dat instellingen die aangepast worden in een gedeelde tabel, de werking van de andere websites niet negatief beïnvloeden.
 

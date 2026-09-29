@@ -1,11 +1,13 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule, DEFAULT_SECTION_ORDER, SECTION_METADATA, HomepageSectionKey } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
 import { DeliveryOptionsManager } from './DeliveryOptionsManager';
 import { DiscountCodesManager } from './DiscountCodesManager';
+import { DeadlinesManager } from './DeadlinesManager';
+import { ModificationRulesConfig, CompanyCustomDeadlines, DEFAULT_DEADLINE_TIERS } from '../lib/orderDeadlines';
 import { useLanguage } from '../contexts/LanguageContext';
 
 type ModeratorPanelProps = {
@@ -43,7 +45,7 @@ const DAYS_OF_WEEK = [
   { id: '0', name: 'Zondag' }
 ];
 
-type Tab = 'store' | 'content' | 'registrations' | 'prices' | 'customers' | 'orders' | 'menu' | 'delivery' | 'translations' | 'discounts';
+type Tab = 'store' | 'deadlines' | 'content' | 'registrations' | 'prices' | 'customers' | 'orders' | 'menu' | 'delivery' | 'translations' | 'discounts';
 
 export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSettingsUpdated, onStoreSettingsUpdated }: ModeratorPanelProps) {
   const navigate = useNavigate();
@@ -58,12 +60,16 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [variantSurcharges, setVariantSurcharges] = useState<Record<string, number>>({});
+  const [variantFullPrices, setVariantFullPrices] = useState<Record<string, number | string>>({});
+  const lastLoadedProductRef = useRef<string>('');
+  const lastLoadedCompanyRef = useRef<string | null>(null);
 
   // New Tabs State
   const [activeTab, setActiveTab] = useState<Tab>('store');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [registrations, setRegistrations] = useState<ObCompany[]>([]);
   const [customers, setCustomers] = useState<ObCompany[]>([]);
+  const [selectedCompanyForDeadlines, setSelectedCompanyForDeadlines] = useState<ObCompany | null>(null);
   
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [productPrices, setProductPrices] = useState<ObProductPrice[]>([]);
@@ -143,14 +149,58 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
   useEffect(() => {
     if (dbProducts.length > 0 && selectedPriceProduct) {
-      const prod = dbProducts.find(p => p.name === selectedPriceProduct);
-      if (prod && prod.variant_surcharges) {
-        setVariantSurcharges(prod.variant_surcharges);
+      const cleanSelected = selectedPriceProduct.trim().toLowerCase();
+      const currentCompanyKey = selectedPriceCompany || null;
+      const productChanged = lastLoadedProductRef.current !== cleanSelected || lastLoadedCompanyRef.current !== currentCompanyKey;
+
+      const prod = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanSelected);
+      if (prod) {
+        const surcharges = prod.variant_surcharges || {};
+        setVariantSurcharges(surcharges);
+
+        if (productChanged || Object.keys(variantFullPrices).length === 0) {
+          lastLoadedProductRef.current = cleanSelected;
+          lastLoadedCompanyRef.current = currentCompanyKey;
+
+          const initialFullPrices: Record<string, number | string> = {};
+          const portionsToUse = prod.portions && prod.portions.length > 0 ? prod.portions : PORTIONS;
+          (prod.variants || []).forEach((v: string) => {
+            portionsToUse.forEach((size: number) => {
+              const key = `${v}_${size}`;
+              
+              let basePrice = 0;
+              const compP = selectedPriceCompany ? productPrices.find(p => 
+                (p.product_name || '').trim().toLowerCase() === cleanSelected && 
+                p.company_id === selectedPriceCompany && 
+                Number(p.portion_size) === Number(size)
+              ) : null;
+              if (compP && compP.price > 0) {
+                basePrice = Number(compP.price);
+              } else {
+                const defP = productPrices.find(p => 
+                  (p.product_name || '').trim().toLowerCase() === cleanSelected && 
+                  !p.company_id && 
+                  Number(p.portion_size) === Number(size)
+                );
+                if (defP && defP.price > 0) basePrice = Number(defP.price);
+              }
+
+              const surchargeVal = surcharges[key] !== undefined ? surcharges[key] : (surcharges[v] !== undefined ? surcharges[v] : undefined);
+              if (surchargeVal !== undefined && surchargeVal !== null && !isNaN(Number(surchargeVal))) {
+                initialFullPrices[key] = (Math.round((basePrice + Number(surchargeVal)) * 100) / 100).toFixed(2);
+              } else if (basePrice > 0) {
+                initialFullPrices[key] = basePrice.toFixed(2);
+              }
+            });
+          });
+          setVariantFullPrices(initialFullPrices);
+        }
       } else {
         setVariantSurcharges({});
+        setVariantFullPrices({});
       }
     }
-  }, [dbProducts, selectedPriceProduct]);
+  }, [dbProducts, selectedPriceProduct, selectedPriceCompany, productPrices]);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -228,7 +278,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       if (regData) setRegistrations(regData);
 
       const { data: custData } = await supabase.from('ob_companies').select('*').eq('is_approved', true).order('name', { ascending: true });
-      if (custData) setCustomers(custData);
+      if (custData) {
+        const compDeadlines = localStoreSettings?.page_content?.company_deadlines || {};
+        const enriched = custData.map((c: any) => ({
+          ...c,
+          custom_deadlines: c.custom_deadlines || compDeadlines[c.id] || null
+        }));
+        setCustomers(enriched);
+      }
 
       
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
@@ -321,6 +378,85 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     }
   };
 
+  const handleSaveGlobalDeadlines = async (rules: ModificationRulesConfig) => {
+    if (!localStoreSettings) return;
+    const updatedPC = {
+      ...localStoreSettings.page_content,
+      modification_rules: rules,
+      min_order_modify_hours: rules.tiers?.[0]?.deadlines?.cancel ?? localStoreSettings.page_content?.min_order_modify_hours ?? 2
+    };
+
+    const updatedSettings: StoreSettings = {
+      ...localStoreSettings,
+      page_content: updatedPC
+    };
+
+    setLocalStoreSettings(updatedSettings);
+
+    if (supabase) {
+      await supabase
+        .from('store_settings')
+        .update({ page_content: updatedPC })
+        .eq('id', 1);
+    }
+
+    if (onStoreSettingsUpdated) {
+      onStoreSettingsUpdated(updatedSettings);
+    }
+  };
+
+  const handleSaveCompanyDeadlines = async (companyId: string, customDeadlines: CompanyCustomDeadlines) => {
+    // 1. Update company in database if column exists
+    if (supabase) {
+      try {
+        const { error: compError } = await supabase
+          .from('ob_companies')
+          .update({ custom_deadlines: customDeadlines })
+          .eq('id', companyId);
+
+        if (compError) {
+          console.warn("Could not save to ob_companies.custom_deadlines (table column may need SQL migration):", compError);
+        }
+      } catch (err) {
+        console.warn("Error updating custom_deadlines on ob_companies:", err);
+      }
+    }
+
+    // 2. Also save to store_settings.page_content.company_deadlines as 100% resilient fallback
+    if (localStoreSettings) {
+      const existingCompDeadlines = localStoreSettings.page_content?.company_deadlines || {};
+      const updatedPC = {
+        ...localStoreSettings.page_content,
+        company_deadlines: {
+          ...existingCompDeadlines,
+          [companyId]: customDeadlines
+        }
+      };
+      const updatedSettings: StoreSettings = {
+        ...localStoreSettings,
+        page_content: updatedPC
+      };
+      setLocalStoreSettings(updatedSettings);
+
+      if (supabase) {
+        await supabase
+          .from('store_settings')
+          .update({ page_content: updatedPC })
+          .eq('id', 1);
+      }
+
+      if (onStoreSettingsUpdated) {
+        onStoreSettingsUpdated(updatedSettings);
+      }
+    }
+
+    // 3. Update local customers state
+    setCustomers(prev => prev.map(c => c.id === companyId ? { ...c, custom_deadlines: customDeadlines } : c));
+    if (selectedCompanyForDeadlines && selectedCompanyForDeadlines.id === companyId) {
+      setSelectedCompanyForDeadlines(prev => prev ? { ...prev, custom_deadlines: customDeadlines } : null);
+    }
+  };
+
   const handleScheduleChange = (dayId: string, field: 'open' | 'close' | 'closed', value: string | boolean) => {
     if (!localStoreSettings) return;
     setLocalStoreSettings(prev => {
@@ -410,10 +546,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
         const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
 
         // 1. Delete existing prices for this product and company deal to avoid duplicates
+        const productNamesToDelete = [cleanProductName];
+        if (selectedProdObj?.name && selectedProdObj.name !== cleanProductName) {
+          productNamesToDelete.push(selectedProdObj.name);
+        }
+
         let delQuery = supabase
           .from('ob_product_prices')
           .delete()
-          .ilike('product_name', cleanProductName);
+          .in('product_name', productNamesToDelete);
           
         if (selectedPriceCompany) {
           delQuery = delQuery.eq('company_id', selectedPriceCompany);
@@ -444,20 +585,57 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           if (insErr) throw insErr;
         }
 
-        // 3. Save variant surcharges to ob_products
-        const cleanSurcharges: Record<string, number> = {};
-        for (const [k, v] of Object.entries(variantSurcharges)) {
-          if (v !== undefined && v !== null && !isNaN(v as any)) {
-            cleanSurcharges[k] = Number(v);
+        // 3. Save variant surcharges to ob_products (omgerekend vanuit de ingevulde hele prijs per portie)
+        if (selectedProdObj) {
+          const cleanSurcharges: Record<string, number> = {};
+
+          if (selectedProdObj.variants && selectedProdObj.variants.length > 0) {
+            selectedProdObj.variants.forEach((v: string) => {
+              portionsToUse.forEach((portion: number) => {
+                const key = `${v}_${portion}`;
+
+                // Base price that was saved for this portion
+                const matchingRow = rowsToInsert.find((r: any) => Number(r.portion_size) === Number(portion));
+                let savedBasePrice = matchingRow ? Number(matchingRow.price) : 0;
+                if (!savedBasePrice) {
+                  const defP = productPrices.find(p => 
+                    (p.product_name || '').trim().toLowerCase() === cleanProductName.toLowerCase() && 
+                    !p.company_id && 
+                    Number(p.portion_size) === Number(portion)
+                  );
+                  if (defP && defP.price > 0) savedBasePrice = Number(defP.price);
+                }
+
+                const enteredVal = variantFullPrices[key];
+                if (enteredVal !== undefined && enteredVal !== '' && !isNaN(Number(enteredVal))) {
+                  const fullPriceNum = Number(enteredVal);
+                  // Extra kosten (toeslag) is het verschil tussen de ingevulde hele prijs en de basisprijs
+                  const surcharge = Math.round((fullPriceNum - savedBasePrice) * 100) / 100;
+                  cleanSurcharges[key] = surcharge;
+                } else if (variantSurcharges[key] !== undefined && !isNaN(Number(variantSurcharges[key]))) {
+                  cleanSurcharges[key] = Number(variantSurcharges[key]);
+                }
+              });
+            });
           }
+
+          // Save by ID to ensure it updates the exact row regardless of whitespace in name
+          const { error: updErr } = await supabase.from('ob_products')
+            .update({ variant_surcharges: cleanSurcharges })
+            .eq('id', selectedProdObj.id);
+
+          if (updErr) {
+            console.error('Error updating variant_surcharges by id:', updErr);
+            // Fallback by name
+            await supabase.from('ob_products')
+              .update({ variant_surcharges: cleanSurcharges })
+              .eq('name', selectedProdObj.name);
+          }
+
+          // Update local dbProducts state
+          setDbProducts(prev => prev.map(p => (p.id === selectedProdObj.id || (p.name || '').trim().toLowerCase() === cleanProductName.toLowerCase()) ? { ...p, variant_surcharges: cleanSurcharges } : p));
+          setVariantSurcharges(cleanSurcharges);
         }
-        await supabase.from('ob_products')
-          .update({ variant_surcharges: cleanSurcharges })
-          .ilike('name', cleanProductName);
-          
-        // Update local dbProducts state
-        setDbProducts(prev => prev.map(p => (p.name || '').trim().toLowerCase() === cleanProductName.toLowerCase() ? { ...p, variant_surcharges: cleanSurcharges } : p));
-        setVariantSurcharges(cleanSurcharges);
 
         // 4. Refresh local productPrices from database
         const { data: refreshedPrices } = await supabase.from('ob_product_prices').select('*');
@@ -576,10 +754,16 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                   <div className={`w-full ${isSidebarCollapsed ? "md:w-20" : "md:w-64"} bg-gray-50 border-r border-gray-200 p-4 shrink-0 overflow-y-auto transition-all duration-300`}>
                     <nav className="space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 items-start">
                       <button 
-                        onClick={() => { setActiveTab('store'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'store' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        onClick={() => { setActiveTab('store'); setImpersonating(null); setSelectedCompanyForDeadlines(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'store' && !impersonating && !selectedCompanyForDeadlines ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
                         <Store size={18} /> {!isSidebarCollapsed && <span>Winkel Status</span>}
+                      </button>
+                      <button 
+                        onClick={() => { setActiveTab('deadlines'); setImpersonating(null); setSelectedCompanyForDeadlines(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'deadlines' && !impersonating && !selectedCompanyForDeadlines ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <Clock size={18} /> {!isSidebarCollapsed && <span>Wijzigingstermijnen</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('content'); setImpersonating(null); }}
@@ -649,7 +833,22 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                   {/* Main Content Area */}
                   <div className="flex-1 overflow-y-auto bg-white p-6 md:p-8">
                     
-                    {impersonating ? (
+                    {selectedCompanyForDeadlines ? (
+                      <div className="space-y-6">
+                        <button 
+                          onClick={() => setSelectedCompanyForDeadlines(null)} 
+                          className="flex items-center gap-2 text-sm text-gray-500 hover:text-[#151f33] transition-colors mb-2 cursor-pointer"
+                        >
+                          <ArrowLeft size={16} /> Terug naar klantenoverzicht
+                        </button>
+                        <DeadlinesManager
+                          company={selectedCompanyForDeadlines}
+                          globalRules={localStoreSettings?.page_content?.modification_rules}
+                          onSaveCompanyRules={handleSaveCompanyDeadlines}
+                          onCloseCompanyModal={() => setSelectedCompanyForDeadlines(null)}
+                        />
+                      </div>
+                    ) : impersonating ? (
                       <div className="space-y-6">
                         <button onClick={() => setImpersonating(null)} className="flex items-center gap-2 text-sm text-gray-500 hover:text-[#151f33] transition-colors mb-4">
                           <ArrowLeft size={16} /> Terug naar klantenlijst
@@ -1892,6 +2091,12 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         </section>
                       </div>
 
+                    ) : activeTab === 'deadlines' ? (
+                      <DeadlinesManager
+                        globalRules={localStoreSettings?.page_content?.modification_rules}
+                        onSaveGlobalRules={handleSaveGlobalDeadlines}
+                      />
+
                     ) : activeTab === 'store' && localStoreSettings ? (
                       <div className="space-y-10 max-w-2xl">
                         {/* Status Section */}
@@ -1980,6 +2185,31 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             })}
                           </div>
                         </section>
+
+                        {/* Order Modification Cutoff / Wijzigingstermijnen Snelle Toegang */}
+                        <section className="bg-gradient-to-br from-blue-50/80 to-indigo-50/50 p-6 rounded-2xl border border-blue-200/80 shadow-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <h3 className="text-lg font-serif font-bold text-[#05053D] flex items-center gap-2">
+                                <Clock className="text-ob-blue" size={20} /> Bestelling Wijzigingstermijnen & Deadlines
+                              </h3>
+                              <p className="text-xs text-gray-600 mt-1 max-w-xl">
+                                U kunt nu voor <strong>5 verschillende bestellingsgroottes</strong> (tot €100, tot €250, tot €500, tot €1.000 en &gt;€1.000) afzonderlijk de termijnen instellen voor annuleren, locatie wijzigen, tijdstip wijzigen, producten toevoegen of verwijderen.
+                              </p>
+                            </div>
+                            <button 
+                              type="button"
+                              onClick={() => { setActiveTab('deadlines'); setImpersonating(null); setSelectedCompanyForDeadlines(null); }}
+                              className="bg-[#05053D] text-white px-4 py-2.5 rounded-lg text-xs font-bold hover:bg-[#15233c] transition-colors shrink-0 flex items-center gap-2 cursor-pointer shadow-xs"
+                            >
+                              <Clock size={15} /> Naar Wijzigingstermijnen Tab
+                            </button>
+                          </div>
+                          
+                          <div className="mt-4 pt-3 border-t border-blue-200/60 flex items-center gap-2 text-xs text-blue-900">
+                            <span>💡 Tip: U kunt deze regels ook <strong>per bedrijf individueel aanpassen</strong> in het tabblad "Klanten (Kantoren)".</span>
+                          </div>
+                        </section>
                       </div>
                     ) : activeTab === 'registrations' ? (
                       <div className="space-y-6 w-full max-w-7xl">
@@ -2035,12 +2265,27 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                   </div>
                                   <p className="text-sm text-gray-500">{cust.address}</p>
                                 </div>
-                                <button 
-                                  onClick={() => setImpersonating(cust)}
-                                  className="w-full bg-gray-100 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium group-hover:bg-[#151f33] group-hover:text-white transition-colors flex items-center justify-center gap-2 mt-2"
-                                >
-                                  Beheren <ChevronRight size={16} />
-                                </button>
+                                <div className="flex items-center gap-2 mt-2">
+                                  <button 
+                                    onClick={() => setImpersonating(cust)}
+                                    className="flex-1 bg-gray-100 text-gray-700 px-3.5 py-2.5 rounded-lg text-xs font-semibold group-hover:bg-[#151f33] group-hover:text-white transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                  >
+                                    Beheren <ChevronRight size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedCompanyForDeadlines(cust)}
+                                    className={`px-3 py-2.5 rounded-lg text-xs font-semibold border transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                                      cust.custom_deadlines?.use_custom
+                                        ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                                    }`}
+                                    title="Wijzigingstermijnen & deadlines voor dit bedrijf aanpassen"
+                                  >
+                                    <Clock size={13} className={cust.custom_deadlines?.use_custom ? "text-amber-600" : "text-gray-400"} />
+                                    <span>{cust.custom_deadlines?.use_custom ? 'Aangepast' : 'Termijnen'}</span>
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -2150,6 +2395,11 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                       </td>
                                       <td className="p-4 text-sm text-gray-800">
                                         <div className="font-medium text-[#05053D]">{group.company_name}</div>
+                                        {group.items?.some((i: any) => i.status === 'cancelled') && (
+                                          <span className="inline-block px-2 py-0.5 mt-1 rounded text-[11px] font-bold bg-red-100 text-red-700">
+                                            Geannuleerd
+                                          </span>
+                                        )}
                                         {group.phone && <div className="text-gray-500 mt-1">{group.phone}</div>}
                                       </td>
                                       <td className="p-4 text-sm text-gray-700">
@@ -2314,43 +2564,70 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                            const cleanSelected = selectedPriceProduct.trim().toLowerCase();
                            const prod = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanSelected);
                            if (prod && prod.variants && prod.variants.length > 0) {
+                             const portionsToUse = prod.portions && prod.portions.length > 0 ? prod.portions : PORTIONS;
                              return (
                                <div className="mt-8">
-                                 <h4 className="text-sm font-semibold text-gray-700 mb-3">Extra kosten per variant (Optioneel)</h4>
-                                 <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                                   <div>
+                                     <h4 className="text-sm font-semibold text-gray-700">Prijzen per variant (Totaalbedrag per portie)</h4>
+                                     <p className="text-xs text-gray-500">Vul hier per variant de complete portieprijs in. De eventuele meerprijs t.o.v. de basisprijs wordt automatisch berekend en bewaard.</p>
+                                   </div>
+                                 </div>
+                                 <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto shadow-sm">
                                    <table className="w-full text-left text-sm">
                                      <thead className="bg-gray-50 border-b border-gray-200">
                                        <tr>
                                          <th className="px-4 py-3 font-semibold text-gray-700">Variant</th>
-                                         {(prod.portions || []).map((size: number) => (
-                                            <th key={size} className="px-4 py-3 font-semibold text-gray-700 text-right w-32">{size} st.</th>
-                                         ))}
+                                         {portionsToUse.map((size: number) => {
+                                            const baseP = getDisplayPrice(size);
+                                            return (
+                                              <th key={size} className="px-4 py-3 font-semibold text-gray-700 text-right min-w-[140px]">
+                                                <div>{size} st.</div>
+                                                <div className="text-[11px] font-normal text-gray-500">
+                                                  Basisprijs: {baseP !== '' ? `€${Number(baseP).toFixed(2)}` : 'N.v.t.'}
+                                                </div>
+                                              </th>
+                                            );
+                                         })}
                                        </tr>
                                      </thead>
                                      <tbody className="divide-y divide-gray-100">
                                        {prod.variants.map((v: string) => (
-                                         <tr key={v}>
-                                           <td className="px-4 py-3 text-gray-700">{v}</td>
-                                           {(prod.portions || []).map((size: number) => {
+                                         <tr key={v} className="hover:bg-gray-50/50 transition-colors">
+                                           <td className="px-4 py-3 text-gray-800 font-medium">{v}</td>
+                                           {portionsToUse.map((size: number) => {
                                               const key = `${v}_${size}`;
+                                              const baseP = Number(getDisplayPrice(size)) || 0;
+                                              const currentVal = variantFullPrices[key] !== undefined ? variantFullPrices[key] : '';
+                                              const numVal = typeof currentVal === 'number' ? currentVal : parseFloat(String(currentVal));
+                                              const diff = (!isNaN(numVal) && baseP > 0) ? Math.round((numVal - baseP) * 100) / 100 : null;
+
                                               return (
-                                                <td key={size} className="px-4 py-2">
-                                                  <div className="flex items-center gap-1 justify-end">
-                                                    <span className="text-gray-500">€</span>
-                                                    <input
-                                                      type="number"
-                                                      step="0.01"
-                                                      min="0"
-                                                      className="w-16 px-2 py-1 border border-gray-300 rounded text-right focus:outline-none focus:border-[#151f33]"
-                                                      value={variantSurcharges[key] !== undefined ? variantSurcharges[key] : (variantSurcharges[v] !== undefined ? variantSurcharges[v] : '')}
-                                                      onChange={(e) => {
-                                                        const val = e.target.value;
-                                                        setVariantSurcharges(prev => ({
-                                                          ...prev,
-                                                          [key]: val === '' ? undefined : parseFloat(val)
-                                                        } as Record<string, number>));
-                                                      }}
-                                                    />
+                                                <td key={size} className="px-4 py-2.5 text-right">
+                                                  <div className="flex flex-col items-end gap-1">
+                                                    <div className="flex items-center gap-1 justify-end">
+                                                      <span className="text-gray-500 text-xs">€</span>
+                                                      <input
+                                                        type="number"
+                                                        step="0.01"
+                                                        min="0"
+                                                        placeholder={baseP > 0 ? baseP.toFixed(2) : '0.00'}
+                                                        className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-right focus:outline-none focus:border-[#151f33] focus:ring-1 focus:ring-[#151f33] text-sm font-semibold"
+                                                        value={currentVal}
+                                                        onChange={(e) => {
+                                                          const val = e.target.value;
+                                                          setVariantFullPrices(prev => ({
+                                                            ...prev,
+                                                            [key]: val
+                                                          }));
+                                                        }}
+                                                      />
+                                                    </div>
+                                                    {diff !== null && (
+                                                      <span className={`text-[11px] font-medium ${diff > 0 ? 'text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded' : diff < 0 ? 'text-green-700 bg-green-50 px-1.5 py-0.5 rounded' : 'text-gray-400'}`}>
+                                                        {diff > 0 ? `+€${diff.toFixed(2)} toeslag` : diff < 0 ? `-€${Math.abs(diff).toFixed(2)} korting` : 'Gelijk aan basis'}
+                                                      </span>
+                                                    )}
                                                   </div>
                                                 </td>
                                               );

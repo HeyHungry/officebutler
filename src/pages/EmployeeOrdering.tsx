@@ -196,10 +196,12 @@ export function EmployeeOrdering() {
           supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle()
         ]);
         const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
+        const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || {};
         if (prodsRes.data) {
           prods = prodsRes.data.map((p: any) => ({
             ...p,
-            brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || ''
+            brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
+            hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()])
           }));
         }
       } catch (e) {
@@ -371,6 +373,14 @@ export function EmployeeOrdering() {
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
             delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
           }));
+
+          orderLines.push({
+            product_name: 'Bezorging: ' + selectedDeliveryMethod.name,
+            portion_size: 1,
+            price: Number(selectedDeliveryMethod.price),
+            qty: 1,
+            lineTotal: Number(selectedDeliveryMethod.price)
+          });
         }
 
         
@@ -378,25 +388,32 @@ export function EmployeeOrdering() {
         const errors = results.filter(r => r.error);
         if (errors.length > 0) throw errors[0].error;
 
+        const calculatedFinalTotal = totalOrderPrice + (Number(selectedDeliveryMethod?.price) || 0);
+
         // Try to send the invoice email
         try {
+          const selectedAddressObj = addresses.find(a => a.id === selectedAddress);
           const res = await fetch('/api/send-invoice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             
             body: JSON.stringify({
               companyId,
+              companyName: companyName,
+              customerName: companyName,
+              rawAddress: selectedAddressObj?.address_line || selectedAddressObj?.label,
+              addressLabel: selectedAddressObj?.label,
               selections,
               prices,
               orderLines,
               addressId: selectedAddress,
               phone,
               notes,
-              totalOrderPrice,
+              totalOrderPrice: calculatedFinalTotal,
               deliveryDate: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
               deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
               deliveryMethod: selectedDeliveryMethod?.name || 'Standaard Bezorging',
-              deliveryMethodPrice: selectedDeliveryMethod?.price || 0
+              deliveryMethodPrice: Number(selectedDeliveryMethod?.price) || 0
             })
 
           });
@@ -434,20 +451,34 @@ export function EmployeeOrdering() {
             <CheckCircle2 size={40} />
           </div>
           <h2 className="text-3xl font-bold text-ob-text mb-4">Bestelling Geplaatst!</h2>
-          <p className="text-gray-600 mb-8 leading-relaxed">
+          <p className="text-gray-600 mb-6 leading-relaxed">
             Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.
             {emailFailed && <span className="block mt-4 text-orange-600 text-sm">Opmerking: Wegens een technische vertraging bij onze e-mailprovider duren bevestigingsmails momenteel iets langer dan gebruikelijk.</span>}
           </p>
-          <button 
-            onClick={() => {
-              setOrderSuccess(false);
-              setSelections({});
-              setNotes('');
-            }}
-            className="w-full bg-ob-blue text-white py-3 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors"
-          >
-            Nieuwe Bestelling
-          </button>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 mb-6 text-xs text-blue-900 text-left">
+            💡 <strong>Bestelling wijzigen of annuleren?</strong><br />
+            U kunt deze bestelling te allen tijde inzien, aanpassen of annuleren via uw <strong>Bedrijfsdashboard</strong>.
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="w-full bg-[#05053D] text-white py-3 rounded-lg font-semibold hover:bg-[#1a2a47] transition-colors"
+            >
+              Ga naar Bedrijfsdashboard
+            </button>
+            <button 
+              onClick={() => {
+                setOrderSuccess(false);
+                setSelections({});
+                setNotes('');
+              }}
+              className="w-full bg-gray-100 text-gray-700 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-sm"
+            >
+              Nieuwe Bestelling Plaatsen
+            </button>
+          </div>
         </motion.div>
       </div>
     );
@@ -578,6 +609,7 @@ export function EmployeeOrdering() {
                           const productSizes = (item.portions && item.portions.length > 0) ? item.portions : PORTION_SIZES;
                           const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase());
                           const hasSelections = Object.keys(prodSelections).length > 0;
+                          const hasImage = !item.hide_image && Boolean(item.image_url || PRODUCT_IMAGES[product] || item.image);
                           
                           return (
                             <div 
@@ -589,74 +621,76 @@ export function EmployeeOrdering() {
                               } ${isSoldOut ? 'opacity-70' : ''}`}
                             >
                               {/* Top info section */}
-                              <div className="p-4 flex gap-4">
-                                <div 
-                                  className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group cursor-pointer" 
-                                  onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
-                                >
-                                  {item.image_url || PRODUCT_IMAGES[product] || item.image ? (
-                                    <img 
-                                      src={item.image_url || PRODUCT_IMAGES[product] || item.image} 
-                                      alt={product} 
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                                    />
-                                  ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                      <PackageOpen size={24} />
-                                    </div>
-                                  )}
-                                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <span className="text-white text-xs font-semibold">Extra informatie</span>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex-1 min-w-0 flex flex-col">
-                                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                                    <h4 className="font-bold text-[15px] text-[#05053D] leading-tight">{product}</h4>
-                                    {hasSelections && (
-                                      <button 
-                                        type="button" 
-                                        onClick={() => setSelections(prev => { const c = {...prev}; delete c[product]; return c; })} 
-                                        className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded hover:bg-red-100 uppercase font-bold shrink-0"
-                                      >
-                                        Wissen
-                                      </button>
-                                    )}
-                                  </div>
-                                  
-                                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                                    {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
-                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${isSoldOut ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
-                                        {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
-                                      </span>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
-                                      className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
-                                    >
-                                      <Info size={12} />
-                                      Extra informatie
-                                    </button>
-                                  </div>
+                              <div className={`p-4 flex ${hasImage ? 'gap-4' : 'flex-col gap-2'}`}>
+                                      {hasImage && (
+                                        <div 
+                                          className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group cursor-pointer" 
+                                          onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                        >
+                                          <img 
+                                            src={item.image_url || PRODUCT_IMAGES[product] || item.image} 
+                                            alt={product} 
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
+                                          />
+                                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-white text-xs font-semibold">Extra informatie</span>
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      <div className="flex-1 min-w-0 flex flex-col">
+                                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                                          <div className="flex items-center gap-2 flex-wrap">
+                                            <h4 className="font-bold text-[15px] text-[#05053D] leading-tight">{product}</h4>
+                                          </div>
+                                          {hasSelections && (
+                                            <button 
+                                              type="button" 
+                                              onClick={() => setSelections(prev => { const c = {...prev}; delete c[product]; return c; })} 
+                                              className="text-[10px] bg-red-50 text-red-600 px-2 py-0.5 rounded hover:bg-red-100 uppercase font-bold shrink-0"
+                                            >
+                                              Wissen
+                                            </button>
+                                          )}
+                                        </div>
+                                        
+                                        {((item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase())) || !hasImage) && (
+                                          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                                            {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+                                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${isSoldOut ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                                {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
+                                              </span>
+                                            )}
+                                            {!hasImage && (
+                                              <button
+                                                type="button"
+                                                onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                                className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                              >
+                                                <Info size={12} />
+                                                Extra informatie
+                                              </button>
+                                            )}
+                                          </div>
+                                        )}
 
-                                  {(item.variants && item.variants.length > 0) && (
-                                    <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                                      <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
-                                    </p>
-                                  )}
+                                        {(item.variants && item.variants.length > 1) && (
+                                          <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                                            <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
+                                          </p>
+                                        )}
 
-                                  {item.sauces && item.sauces.length > 0 && (
-                                    <div className="mt-auto inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit">
-                                      <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
-                                      <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{item.sauces.join(', ')}</span></span>
+                                        {item.sauces && item.sauces.length > 0 && (
+                                          <div className="mt-auto inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit">
+                                            <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
+                                            <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{item.sauces.join(', ')}</span></span>
+                                          </div>
+                                        )}
+                                      </div>
                                     </div>
-                                  )}
-                                </div>
-                              </div>
-                              
-                              {/* Action section pushed to bottom */}
-                              <div className="p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col gap-3">
+                                    
+                                    {/* Action section pushed to bottom */}
+                                    <div className={`p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col ${hasImage ? 'gap-3' : 'gap-2.5'}`}>
                                 {(() => {
                                   const sortedVariants = (item.variants && item.variants.length > 0)
                                     ? sortVariantsByCategory(item.variants, category.title)
@@ -667,7 +701,7 @@ export function EmployeeOrdering() {
                                   
                                   return (
                                     <>
-                                      {sortedVariants.length > 0 && (
+                                      {sortedVariants.length > 1 ? (
                                         <div className="flex flex-col gap-1.5 w-full">
                                           <div className="flex items-center text-xs">
                                             <span className="font-semibold text-gray-700">Kies variant:</span>
@@ -692,7 +726,14 @@ export function EmployeeOrdering() {
                                             })}
                                           </div>
                                         </div>
-                                      )}
+                                      ) : sortedVariants.length === 1 ? (
+                                        <div className="flex items-center gap-1.5 text-xs text-gray-600 py-0.5">
+                                          <span className="font-semibold text-gray-700">Variant:</span>
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                                            {sortedVariants[0]}
+                                          </span>
+                                        </div>
+                                      ) : null}
                                       <div className="grid grid-cols-2 gap-2 w-full">
                                         {productSizes.map((size: number) => {
                                           const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
@@ -918,6 +959,31 @@ export function EmployeeOrdering() {
             </div>
           </section>
 
+          {/* Overzicht en Totaalbedrag inclusief Bezorging */}
+          {Object.keys(selections).length > 0 && (
+            <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm space-y-3">
+              <h3 className="font-bold text-ob-text text-base border-b border-gray-100 pb-2">Overzicht Bestelling</h3>
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Subtotaal snacks:</span>
+                <span className="font-semibold text-gray-900">€{totalOrderPrice.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Bezorgmethode ({selectedDeliveryMethod?.name || 'Standaard Bezorging'}):</span>
+                <span className="font-semibold text-gray-900">
+                  {selectedDeliveryMethod?.price && selectedDeliveryMethod.price > 0 
+                    ? `€${Number(selectedDeliveryMethod.price).toFixed(2)}` 
+                    : 'Gratis'}
+                </span>
+              </div>
+              <div className="pt-3 border-t border-gray-200 flex justify-between items-center">
+                <span className="font-bold text-base text-gray-900">Totaalbedrag:</span>
+                <span className="text-2xl font-bold text-ob-blue">
+                  €{(totalOrderPrice + (Number(selectedDeliveryMethod?.price) || 0)).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Submit */}
           <div className="pt-4">
             <button 
@@ -971,7 +1037,7 @@ export function EmployeeOrdering() {
                     <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
                   </div>
                 )}
-                {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
+                {(infoModalProduct.variants && infoModalProduct.variants.length > 1) && (
                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
                     <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}
                   </p>
@@ -1001,7 +1067,7 @@ export function EmployeeOrdering() {
                   
                   return (
                     <>
-                      {sortedModalVariants.length > 0 && (
+                      {sortedModalVariants.length > 1 ? (
                         <div className="flex flex-col gap-1.5 w-full mb-3">
                           <div className="flex items-center text-xs">
                             <span className="font-semibold text-gray-700">Kies variant:</span>
@@ -1026,7 +1092,14 @@ export function EmployeeOrdering() {
                             })}
                           </div>
                         </div>
-                      )}
+                      ) : sortedModalVariants.length === 1 ? (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-3">
+                          <span className="font-semibold text-gray-700">Variant:</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                            {sortedModalVariants[0]}
+                          </span>
+                        </div>
+                      ) : null}
                       
                       <div className="grid grid-cols-2 gap-2 w-full">
                         {modalPortions.map((size: number) => {

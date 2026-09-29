@@ -76,12 +76,14 @@ export function GuestOrdering() {
           ]);
           globalPrices = pricesRes.data;
           const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
+          const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || {};
           const loadedCodes: DiscountCode[] = storeRes?.data?.page_content?.discount_codes || [];
           setDiscountCodes(loadedCodes);
           if (prodsRes.data) {
             prods = prodsRes.data.map((p: any) => ({
               ...p,
-              brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || ''
+              brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
+              hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()])
             }));
           }
           if (pricesRes.data) {
@@ -395,6 +397,14 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
             delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
           }));
+
+          orderLines.push({
+            product_name: 'Bezorging: ' + selectedDeliveryMethod.name,
+            portion_size: 1,
+            price: Number(selectedDeliveryMethod.price),
+            qty: 1,
+            lineTotal: Number(selectedDeliveryMethod.price)
+          });
         }
 
         const results = await Promise.all(orderPromises);
@@ -574,40 +584,49 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                         const product = item.name;
                         const prodSelections = selections[product] || {};
                         const productSizes = item.portions || [];
+                        const hasImage = !item.hide_image && Boolean(item.image_url || item.image);
                         return (
                           <div key={product} className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${Object.keys(prodSelections).length > 0 ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' : 'border-gray-200 bg-white hover:border-ob-blue/40 hover:shadow-sm'}`}>
                             {/* Top info section */}
-                            <div className="p-4 flex gap-4">
-                              <div 
-                                className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group cursor-pointer" 
-                                onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
-                              >
-                                <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                                  <span className="text-white text-xs font-semibold">Extra informatie</span>
+                            <div className={`p-4 flex ${hasImage ? 'gap-4' : 'flex-col gap-2'}`}>
+                              {hasImage && (
+                                <div 
+                                  className="w-24 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100 relative group cursor-pointer" 
+                                  onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                >
+                                  <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                    <span className="text-white text-xs font-semibold">Extra informatie</span>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                               
                               <div className="flex-1 min-w-0 flex flex-col">
-                                <h4 className="font-bold text-[15px] text-[#05053D] leading-tight mb-1.5">{product}</h4>
-                                
-                                <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                                  {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
-                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
-                                      {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
-                                    </span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
-                                    className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
-                                  >
-                                    <Info size={12} />
-                                    Extra informatie
-                                  </button>
+                                <div className="flex items-start justify-between gap-2 mb-1.5">
+                                  <h4 className="font-bold text-[15px] text-[#05053D] leading-tight">{product}</h4>
                                 </div>
+                                
+                                {((item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase())) || !hasImage) && (
+                                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                                    {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
+                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider uppercase ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                        {item.status === 'new' ? 'Nieuw' : item.status === 'popular' ? 'Meest Gekozen' : item.status === 'sold_out' ? 'Uitverkocht' : item.status === 'coming_soon' ? 'Binnenkort' : item.status}
+                                      </span>
+                                    )}
+                                    {!hasImage && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setInfoModalProduct({ ...item, _openedFromCategory: category.title })}
+                                        className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                                      >
+                                        <Info size={12} />
+                                        Extra informatie
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
 
-                                {(item.variants && item.variants.length > 0) && (
+                                {(item.variants && item.variants.length > 1) && (
                                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
                                     <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
                                   </p>
@@ -623,7 +642,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                             </div>
                             
                             {/* Action section pushed to bottom */}
-                            <div className="p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col gap-3">
+                            <div className={`p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col ${hasImage ? 'gap-3' : 'gap-2.5'}`}>
                               {(() => {
                                 const sortedVariants = (item.variants && item.variants.length > 0)
                                   ? sortVariantsByCategory(item.variants, category.title)
@@ -633,7 +652,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                 const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
                                 return (
                                   <>
-                                    {sortedVariants.length > 0 && (
+                                    {sortedVariants.length > 1 ? (
                                       <div className="flex flex-col gap-1.5 w-full">
                                         <div className="flex items-center text-xs">
                                           <span className="font-semibold text-gray-700">Kies variant:</span>
@@ -658,7 +677,14 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                           })}
                                         </div>
                                       </div>
-                                    )}
+                                    ) : sortedVariants.length === 1 ? (
+                                      <div className="flex items-center gap-1.5 text-xs text-gray-600 py-0.5">
+                                        <span className="font-semibold text-gray-700">Variant:</span>
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                                          {sortedVariants[0]}
+                                        </span>
+                                      </div>
+                                    ) : null}
                                     <div className="grid grid-cols-2 gap-2 w-full">
                                       {productSizes.length > 0 ? (
                                         productSizes.map(size => {
@@ -1057,7 +1083,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                     <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
                   </div>
                 )}
-                {(infoModalProduct.variants && infoModalProduct.variants.length > 0) && (
+                {(infoModalProduct.variants && infoModalProduct.variants.length > 1) && (
                   <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
                     <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}
                   </p>
@@ -1084,7 +1110,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                   
                   return (
                     <>
-                      {sortedModalVariants.length > 0 && (
+                      {sortedModalVariants.length > 1 ? (
                         <div className="flex flex-col gap-1.5 w-full mb-3">
                           <div className="flex items-center text-xs">
                             <span className="font-semibold text-gray-700">Kies variant:</span>
@@ -1109,7 +1135,14 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                             })}
                           </div>
                         </div>
-                      )}
+                      ) : sortedModalVariants.length === 1 ? (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-600 mb-3">
+                          <span className="font-semibold text-gray-700">Variant:</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                            {sortedModalVariants[0]}
+                          </span>
+                        </div>
+                      ) : null}
                       
                       <div className="grid grid-cols-2 gap-2 w-full">
                         {infoModalProduct.portions && [...infoModalProduct.portions].sort((a: number, b: number) => a - b).map((size: number) => {

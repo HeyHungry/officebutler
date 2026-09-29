@@ -2,10 +2,10 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="font-serif bg-[#111827] text-white relative">
+    <footer className="font-serif bg-[#111827] text-white relative w-full min-w-full overflow-hidden">
       {/* Checkered top border */}
       <div 
-        className="h-6 w-full"
+        className="h-6 w-full min-w-full"
         style={{
           backgroundImage: `
             linear-gradient(45deg, #F4F6F9 25%, transparent 25%, transparent 75%, #F4F6F9 75%, #F4F6F9),
@@ -19,7 +19,7 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
 
       <div className="max-w-7xl mx-auto px-6 lg:px-8 pt-12 pb-8">
         
-        <div className="flex flex-col md:flex-row justify-between items-center mb-12 border-b border-white/10 pb-12 gap-8 md:gap-0">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-10 border-b border-white/10 pb-10 gap-8 md:gap-0">
           
           {/* Left: Logo & Info */}
           <div className="flex items-center gap-4">
@@ -78,9 +78,31 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
 
         </div>
 
+        {/* Butler Partner Links */}
+        <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-sm font-sans mb-8 text-white/70">
+          <span className="text-white/40 text-xs uppercase tracking-wider font-semibold">Ontdek ook onze andere concepten:</span>
+          <a 
+            href="https://snackbutler.nl" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-white/90 hover:underline underline-offset-4"
+          >
+            Snack Butler ↗
+          </a>
+          <span className="text-white/30">•</span>
+          <a 
+            href="https://canalbutler.nl" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-white/90 hover:underline underline-offset-4"
+          >
+            Canal Butler ↗
+          </a>
+        </div>
+
         {/* Bottom info */}
-        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/40 font-sans mt-8">
-          <span>&copy; {new Date().getFullYear()} Office Butler</span>
+        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/40 font-sans">
+          <span>&copy; {currentYear} Office Butler</span>
         </div>
 
       </div>

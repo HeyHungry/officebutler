@@ -20,15 +20,17 @@ export type ObProduct = {
   variants?: string[];
   variant_surcharges?: Record<string, number>;
   brand?: string;
+  hide_image?: boolean;
 };
 
 export type EditFormState = Partial<ObProduct> & {
   sauces_str?: string;
   variants_str?: string;
   additional_categories_str?: string;
+  hide_image?: boolean;
 };
 
-function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: any) {
+function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete, handleToggleHideImage }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: p.id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -69,6 +71,22 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: 
               <span className="text-[10px] text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded w-fit mt-0.5 border border-amber-200 font-medium">
                 Merk: {p.brand}
               </span>
+            )}
+            {p.image_url ? (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); handleToggleHideImage?.(p); }}
+                title={p.hide_image ? "Afbeelding is momenteel uitgeschakeld op pagina. Klik om in te schakelen." : "Afbeelding is momenteel zichtbaar. Klik om uit te schakelen."}
+                className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors border w-fit mt-1 flex items-center gap-1 cursor-pointer select-none ${
+                  p.hide_image
+                    ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                }`}
+              >
+                {p.hide_image ? '🚫 Afbeelding uit' : '🖼️ Afbeelding aan'}
+              </button>
+            ) : (
+              <span className="text-[10px] text-gray-400 italic mt-0.5">Geen afbeelding</span>
             )}
             {p.variants && p.variants.length > 0 && <span className="text-[10px] text-gray-500">Varianten: {p.variants.join(', ')}</span>}
             {p.sauces && p.sauces.length > 0 && <span className="text-[10px] text-gray-500">Sauzen: {p.sauces.join(', ')}</span>}
@@ -159,10 +177,12 @@ export function MenuManager() {
       ]);
 
       const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
+      const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || {};
       if (productsRes.data) {
         const enriched = productsRes.data.map((p: any) => ({
           ...p,
-          brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || ''
+          brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
+          hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()])
         }));
         setProducts(enriched);
       }
@@ -241,6 +261,46 @@ export function MenuManager() {
     setIsCreatingStatus(false);
   };
 
+  const handleToggleHideImage = async (product: ObProduct) => {
+    const newHide = !product.hide_image;
+    setProducts(prev => prev.map(p => p.id === product.id ? { ...p, hide_image: newHide } : p));
+    if (editingId === product.id) {
+      setEditForm(prev => ({ ...prev, hide_image: newHide }));
+    }
+
+    try {
+      await supabase.from('ob_products').update({ hide_image: newHide }).eq('id', product.id);
+    } catch (e) {
+      // ignore if column doesn't exist
+    }
+
+    try {
+      const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+      const currentContent = storeData?.page_content || {};
+      const currentHideImages = { ...(currentContent.hide_image_products || {}) };
+      const cleanName = (product.name || '').trim();
+
+      if (newHide) {
+        if (product.id) currentHideImages[product.id] = true;
+        currentHideImages[product.name] = true;
+        currentHideImages[cleanName] = true;
+      } else {
+        if (product.id) delete currentHideImages[product.id];
+        delete currentHideImages[product.name];
+        delete currentHideImages[cleanName];
+      }
+
+      await supabase.from('store_settings').update({
+        page_content: {
+          ...currentContent,
+          hide_image_products: currentHideImages
+        }
+      }).eq('id', 1);
+    } catch (syncErr) {
+      console.warn('Could not sync hide_image to store_settings:', syncErr);
+    }
+  };
+
   const handleSave = async () => {
     if (!supabase || !editForm.name || (!editForm.category && !newCategory)) return;
     setIsSaving(true);
@@ -253,6 +313,7 @@ export function MenuManager() {
     const variantsToSave = editForm.variants || [];
     const saucesToSave = editForm.sauces || [];
     const brandToSave = editForm.brand?.trim() || null;
+    const hideImageToSave = Boolean(editForm.hide_image);
 
     try {
       let savedProduct: any = null;
@@ -267,15 +328,17 @@ export function MenuManager() {
           extra_info: editForm.extra_info || null,
           additional_categories: editForm.additional_categories || [],
           sauces: saucesToSave,
-          sort_order: products.length
+          sort_order: products.length,
+          hide_image: hideImageToSave
         };
         if (brandToSave) insertPayload.brand = brandToSave;
 
         let { data, error } = await supabase.from('ob_products').insert(insertPayload).select();
 
-        // If column 'brand' does not exist in ob_products table yet, retry without brand column
-        if (error && error.message?.toLowerCase().includes('brand')) {
-          delete insertPayload.brand;
+        // If columns do not exist in ob_products table yet, retry without them
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image'))) {
+          if (error.message?.toLowerCase().includes('brand')) delete insertPayload.brand;
+          if (error.message?.toLowerCase().includes('hide_image')) delete insertPayload.hide_image;
           const retry = await supabase.from('ob_products').insert(insertPayload).select();
           data = retry.data;
           error = retry.error;
@@ -283,7 +346,7 @@ export function MenuManager() {
 
         if (error) { alert('Error: ' + error.message); }
         if (data && data[0]) {
-          savedProduct = { ...data[0], brand: brandToSave || '' };
+          savedProduct = { ...data[0], brand: brandToSave || '', hide_image: hideImageToSave };
           setProducts([...products, savedProduct]);
         }
       } else {
@@ -299,15 +362,17 @@ export function MenuManager() {
           variants: variantsToSave,
           extra_info: editForm.extra_info || null,
           additional_categories: editForm.additional_categories || [],
-          sauces: saucesToSave
+          sauces: saucesToSave,
+          hide_image: hideImageToSave
         };
         if (brandToSave !== undefined) updatePayload.brand = brandToSave;
 
         let { data, error } = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
 
-        // If column 'brand' does not exist in ob_products table yet, retry without brand column
-        if (error && error.message?.toLowerCase().includes('brand')) {
-          delete updatePayload.brand;
+        // If columns do not exist in ob_products table yet, retry without them
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image'))) {
+          if (error.message?.toLowerCase().includes('brand')) delete updatePayload.brand;
+          if (error.message?.toLowerCase().includes('hide_image')) delete updatePayload.hide_image;
           const retry = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
           data = retry.data;
           error = retry.error;
@@ -315,7 +380,7 @@ export function MenuManager() {
 
         if (error) { alert('Error: ' + error.message); }
         if (data && data[0]) {
-          savedProduct = { ...data[0], brand: brandToSave || '' };
+          savedProduct = { ...data[0], brand: brandToSave || '', hide_image: hideImageToSave };
           const cleanOldName = (oldName || '').trim();
           if (cleanOldName && cleanOldName !== trimmedName) {
              await supabase.from('ob_product_prices').update({ product_name: trimmedName }).ilike('product_name', cleanOldName);
@@ -325,11 +390,12 @@ export function MenuManager() {
         }
       }
 
-      // Sync brand in store_settings.page_content.product_brands for reliable persistence
+      // Sync brand & hide_image in store_settings.page_content for reliable persistence
       try {
         const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
         const currentContent = storeData?.page_content || {};
         const currentBrands = { ...(currentContent.product_brands || {}) };
+        const currentHideImages = { ...(currentContent.hide_image_products || {}) };
         const prodId = editingId === 'new' ? savedProduct?.id : editingId;
 
         if (brandToSave) {
@@ -340,14 +406,25 @@ export function MenuManager() {
           delete currentBrands[editForm.name];
         }
 
+        if (hideImageToSave) {
+          if (prodId) currentHideImages[prodId] = true;
+          currentHideImages[editForm.name] = true;
+          currentHideImages[trimmedName] = true;
+        } else {
+          if (prodId) delete currentHideImages[prodId];
+          delete currentHideImages[editForm.name];
+          delete currentHideImages[trimmedName];
+        }
+
         await supabase.from('store_settings').update({
           page_content: {
             ...currentContent,
-            product_brands: currentBrands
+            product_brands: currentBrands,
+            hide_image_products: currentHideImages
           }
         }).eq('id', 1);
-      } catch (brandErr) {
-        console.warn('Could not sync brand to store_settings:', brandErr);
+      } catch (syncErr) {
+        console.warn('Could not sync brand/hide_image to store_settings:', syncErr);
       }
 
       setEditingId(null);
@@ -409,6 +486,16 @@ export function MenuManager() {
             <input type="text" placeholder="Naam" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.name || ''} onChange={e => setEditForm({...editForm, name: e.target.value})} />
             <input type="text" placeholder="Merk (optioneel, bijv. Mora of Van Dobben)" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.brand || ''} onChange={e => setEditForm({...editForm, brand: e.target.value})} />
             <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
+            <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer select-none py-1">
+              <input 
+                type="checkbox" 
+                checked={Boolean(editForm.hide_image)} 
+                onChange={e => setEditForm({...editForm, hide_image: e.target.checked})} 
+                className="rounded border-gray-300 text-[#151f33] focus:ring-[#151f33] cursor-pointer" 
+              />
+              <span className="font-semibold text-gray-800">Afbeelding uitzetten op bestel- en assortimentpagina</span>
+              <span className="text-[11px] text-gray-500">(wordt alleen getoond bij 'Extra informatie' popup)</span>
+            </label>
             <textarea placeholder="Extra informatie (bijv. allergenen)..." className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none min-h-[60px]" value={editForm.extra_info || ''} onChange={e => setEditForm({...editForm, extra_info: e.target.value})} />
             
             <div className="flex flex-col gap-1 mt-2">
@@ -646,7 +733,7 @@ export function MenuManager() {
                       </tr>
                     )}
                     {cat.items.map((p: any) => (
-                      <SortableRow key={p.id} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} />
+                      <SortableRow key={p.id} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} handleToggleHideImage={handleToggleHideImage} />
                     ))}
                     {cat.items.length === 0 && (
                       <tr><td colSpan={5} className="p-4 text-center text-gray-500 italic">Geen producten in deze categorie.</td></tr>

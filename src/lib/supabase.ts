@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import type { ModificationRulesConfig, CompanyCustomDeadlines } from './orderDeadlines';
+export type { ModificationRulesConfig, CompanyCustomDeadlines };
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -69,7 +71,11 @@ export type StoreSettings = {
   delivery_url: string;
   page_content?: {
     section_order?: string[];
+    min_order_modify_hours?: number;
+    modification_rules?: ModificationRulesConfig;
+    company_deadlines?: Record<string, CompanyCustomDeadlines>;
     product_brands?: Record<string, string>;
+    hide_image_products?: Record<string, boolean>;
     discount_codes?: DiscountCode[];
 
     // HERO
@@ -280,6 +286,7 @@ export type ObCompany = {
   billing_email: string;
   billing_info?: string;
   allowed_email_domain?: string;
+  custom_deadlines?: CompanyCustomDeadlines;
   is_approved: boolean;
   created_at: string;
 };
