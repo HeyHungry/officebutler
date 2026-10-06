@@ -6,6 +6,7 @@ import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
 import { checkActionAllowed, DEFAULT_MODIFICATION_RULES } from "./src/lib/orderDeadlines";
+import sendInvoiceDirectHandler from "./api/send-invoice-direct";
 
 async function startServer() {
   const app = express();
@@ -261,6 +262,7 @@ ${JSON.stringify(toTranslate, null, 2)}
 
     return {
       scheduled_order: isFuture,
+      is_future: isFuture,
       estimated_finished_at: finishedAt.toISOString(),
       estimated_ready_at: readyAt.toISOString()
     };
@@ -289,9 +291,41 @@ ${JSON.stringify(toTranslate, null, 2)}
     isTest?: boolean;
   }) {
     try {
-      const apiKey = process.env.BITEBERRY_API_KEY?.trim() || "ob_live_8f3a9e2b7c4d1f5e0a6b";
-      // Storefront ID for Office Butler API connection:
-      const storefrontId = process.env.BITEBERRY_STOREFRONT_ID?.trim() || "7b306068-28af-4c7d-a170-0f2cc3192e11";
+      let apiKey = process.env.BITEBERRY_API_KEY?.trim() || "ob_live_8f3a9e2b7c4d1f5e0a6b";
+      // Storefront ID for Office Butler Store (Brand: Office Butler, Store 1FF7, connected to POS & DMS):
+      let storefrontId = process.env.BITEBERRY_STOREFRONT_ID?.trim() || "322e275f-c3d3-44bd-876c-f30ecf713227";
+      if (storefrontId === "4f6adec7-55d6-4bdb-b719-a37f44a3fc19") {
+        storefrontId = "322e275f-c3d3-44bd-876c-f30ecf713227";
+      }
+
+      let kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string }> = {};
+      let dbProducts: { id: string; name: string }[] = [];
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      if (serviceKey && supabaseUrl) {
+        try {
+          const supabaseAdmin = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+          const [storeRes, prodRes] = await Promise.all([
+            supabaseAdmin.from('store_settings').select('page_content').eq('id', 1).maybeSingle(),
+            supabaseAdmin.from('ob_products').select('id, name')
+          ]);
+          const storeRow = storeRes.data;
+          if (prodRes?.data) {
+            dbProducts = prodRes.data;
+          }
+          if (storeRow?.page_content?.biteberry_storefront_id?.trim() && storeRow.page_content.biteberry_storefront_id.trim() !== "4f6adec7-55d6-4bdb-b719-a37f44a3fc19") {
+            storefrontId = storeRow.page_content.biteberry_storefront_id.trim();
+          }
+          if (storeRow?.page_content?.biteberry_api_key?.trim()) {
+            apiKey = storeRow.page_content.biteberry_api_key.trim();
+          }
+          if (storeRow?.page_content?.product_kitchen_info) {
+            kitchenInfoMap = storeRow.page_content.product_kitchen_info;
+          }
+        } catch (e) {
+          // Fallback to env / default
+        }
+      }
 
       if (!apiKey) {
         console.warn("[BiteBerry] Geen API key gevonden, bestelling wordt overgeslagen.");
@@ -354,14 +388,18 @@ ${JSON.stringify(toTranslate, null, 2)}
         });
       }
 
-      const items = parsedLines.map((line, idx) => ({
-        name: line.name,
-        quantity: line.qty,
-        price: Math.round(line.price * 100), // In cents
-        tax_rate: line.taxRate || 9, // Delivery service VAT 21%, Food 9%
-        order_item_type: "standalone" as const,
-        external_id: `OB-ITEM-${idx + 1}`
-      }));
+      // IMPORTANT: Customer packaging stickers/labels in Biteberry are printed directly from items.
+      // Therefore, do NOT place kitchen notes on items, so the customer sticker only shows product name and portion size.
+      const items = parsedLines.map((line, idx) => {
+        return {
+          name: line.name,
+          quantity: line.qty,
+          price: Math.round(line.price * 100), // In cents
+          tax_rate: line.taxRate || 9, // Delivery service VAT 21%, Food 9%
+          order_item_type: "standalone" as const,
+          external_id: `OB-ITEM-${idx + 1}`
+        };
+      });
 
       // Charges: empty because delivery fee is cleanly included in items for full tablet & ticket visibility
       const charges: any[] = [];
@@ -423,21 +461,77 @@ ${JSON.stringify(toTranslate, null, 2)}
       const address = parseDutchAddress(params.rawAddress, params.addressLabel, params.notes);
       const scheduleInfo = parseDeliverySchedule(params.deliveryDate, params.deliveryTime);
 
-      // 5. Notes
-      const kitchenNoteParts = [
-        isTestOrder ? "🚨 FAKE TEST BESTELLING - NIET MAKEN OF BEZORGEN! 🚨" : "🏢 KANAAL: OFFICE BUTLER",
-        `📅 Bezorging: ${params.deliveryDate || 'Z.s.m.'} om ${params.deliveryTime || 'Z.s.m.'}`,
-        params.deliveryMethod ? `🚚 Methode: ${params.deliveryMethod}` : null,
-        params.notes ? `📝 Notitie: ${params.notes}` : null,
-        params.discountCode ? `🎟️ Code: ${params.discountCode}` : null
-      ].filter(Boolean);
+      // 5. English Kitchen Notes for Order Ticket / Display (Opmerking voor de keuken)
+      // Build English product instructions & ingredients for the kitchen staff:
+      const kitchenProductLines: string[] = [];
+      for (const line of parsedLines) {
+        if (line.name.startsWith("Bezorging:") || line.name.startsWith("GRATIS:")) continue;
+        const rawName = line.name || "";
+        const cleanName = rawName.replace(/\s*\(\d+\s*stuks\)/i, "").replace(/\s*\[\+.*?\]/g, "").trim();
+
+        const prod = dbProducts.find((p: any) =>
+          p.name?.trim().toLowerCase() === cleanName.toLowerCase() ||
+          p.name?.trim().toLowerCase().includes(cleanName.toLowerCase()) ||
+          cleanName.toLowerCase().includes(p.name?.trim().toLowerCase())
+        );
+
+        const match = (prod && kitchenInfoMap[prod.id]) ||
+                      kitchenInfoMap[cleanName] ||
+                      kitchenInfoMap[rawName] ||
+                      Object.entries(kitchenInfoMap).find(([key]) => {
+                        const kClean = key.trim().toLowerCase();
+                        return rawName.toLowerCase().includes(kClean) || cleanName.toLowerCase() === kClean;
+                      })?.[1];
+
+        const portionMatch = rawName.match(/\((\d+\s*stuks)\)/i);
+        const portionStr = portionMatch ? ` (${portionMatch[1]})` : "";
+        const enTitle = match?.kitchen_name ? `${match.kitchen_name} [${cleanName}]` : cleanName;
+
+        const parts: string[] = [`• ${line.qty}x ${enTitle}${portionStr}`];
+        if (match?.prep_instructions) parts.push(`  Prep: ${match.prep_instructions}`);
+        if (match?.ingredients) parts.push(`  Ingredients: ${match.ingredients}`);
+        kitchenProductLines.push(parts.join("\n"));
+      }
+
+      // Delivery time & method translated to English for English-speaking kitchen staff:
+      let engDeliveryTime = (params.deliveryTime || 'ASAP').trim();
+      engDeliveryTime = engDeliveryTime
+        .replace(/zo snel mogelijk/gi, 'ASAP')
+        .replace(/z\.s\.m\./gi, 'ASAP');
+
+      let engDeliveryMethod = params.deliveryMethod ? params.deliveryMethod.trim() : null;
+      if (engDeliveryMethod) {
+        if (/uitpakken/i.test(engDeliveryMethod)) {
+          engDeliveryMethod = "Unpack & Setup (Delivered warm)";
+        } else if (/drempel/i.test(engDeliveryMethod)) {
+          engDeliveryMethod = "Doorstep / Threshold delivery";
+        } else if (/warm/i.test(engDeliveryMethod)) {
+          engDeliveryMethod = "Delivered warm";
+        } else if (/koud/i.test(engDeliveryMethod)) {
+          engDeliveryMethod = "Delivered cold";
+        }
+      }
+
+      const metaKitchenParts = [
+        isTestOrder ? "🚨 FAKE TEST ORDER - DO NOT PREPARE OR DELIVER! 🚨" : "🏢 CHANNEL: OFFICE BUTLER",
+        `📅 Delivery: ${params.deliveryDate || 'ASAP'} at ${engDeliveryTime}`,
+        engDeliveryMethod ? `🚚 Method: ${engDeliveryMethod}` : null,
+        params.notes ? `📝 Customer note: ${params.notes}` : null,
+        params.discountCode ? `🎟️ Promo code: ${params.discountCode}` : null
+      ].filter(Boolean) as string[];
+
+      const kitchenSections: string[] = [metaKitchenParts.join(" | ")];
+      if (kitchenProductLines.length > 0) {
+        kitchenSections.push(`🍳 KITCHEN PRODUCT INSTRUCTIONS & INGREDIENTS:\n${kitchenProductLines.join("\n\n")}`);
+      }
+      const finalKitchenNote = kitchenSections.join("\n\n");
 
       const operatorNoteParts = [
-        isTestOrder ? "🚨 FAKE TEST - GEEN ACTIE VEREIST 🚨" : "🏢 KANAAL: OFFICE BUTLER",
-        params.companyName ? `Bedrijf: ${params.companyName}` : `Particulier: ${params.customerName}`,
+        isTestOrder ? "🚨 FAKE TEST - NO ACTION REQUIRED 🚨" : "🏢 CHANNEL: OFFICE BUTLER",
+        params.companyName ? `Company: ${params.companyName}` : `Customer: ${params.customerName}`,
         params.email ? `Email: ${params.email}` : null,
         `Tel: ${cleanPhone}`,
-        params.billingInfo ? `Factuurinfo: ${params.billingInfo.replace(/\n/g, ' ')}` : null
+        params.billingInfo ? `Billing info: ${params.billingInfo.replace(/\n/g, ' ')}` : null
       ].filter(Boolean);
 
       const orderPayload = {
@@ -450,7 +544,7 @@ ${JSON.stringify(toTranslate, null, 2)}
           estimated_finished_at: scheduleInfo.estimated_finished_at,
           estimated_ready_at: scheduleInfo.estimated_ready_at,
           external_id: `OB-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-          kitchen_note: kitchenNoteParts.join(" | "),
+          kitchen_note: finalKitchenNote,
           operator_note: operatorNoteParts.join(" | "),
           sub_total: subTotalCents,
           grand_total: grandTotalCents,
@@ -462,7 +556,7 @@ ${JSON.stringify(toTranslate, null, 2)}
               number: cleanPhone,
               country_code: "+31"
             },
-            courier_note: `Office Butler levering voor ${params.companyName || params.customerName}`,
+            courier_note: `Office Butler delivery for ${params.companyName || params.customerName}`,
             address: {
               line1: address.line1 || "Keizersgracht 123",
               city: address.city || "Amsterdam",
@@ -928,6 +1022,8 @@ ${JSON.stringify(toTranslate, null, 2)}
   });
 
   
+  app.post("/api/send-invoice-direct", (req, res) => sendInvoiceDirectHandler(req, res));
+
   app.post("/api/resend-invoice", async (req, res) => {
     try {
       const { customerName, items, totalPrice, deliveryDate, deliveryTime, address, phone, notes } = req.body;
@@ -1532,7 +1628,7 @@ ${JSON.stringify(toTranslate, null, 2)}
         const bbApiKey = process.env.BITEBERRY_API_KEY || "ob_live_8f3a9e2b7c4d1f5e0a6b";
 
         try {
-          if (scheduleInfo.scheduled_order && scheduleInfo.estimated_finished_at) {
+          if (scheduleInfo.estimated_finished_at) {
             const reschRes = await fetch(`https://api-core.biteberry.com/api/v1/orders/${targetBiteberryId}/reschedule`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "X-API-Key": bbApiKey },
