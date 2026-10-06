@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ShoppingBag, Info } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getTypographyStyle } from '../lib/typography';
 
 type MenuItem = {
   id?: string;
@@ -27,6 +28,7 @@ export function Menu({ content }: { content?: any }) {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [categories, setCategories] = useState<MenuCategory[]>([]);
+  const [categoryDescriptions, setCategoryDescriptions] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
 
@@ -62,10 +64,16 @@ export function Menu({ content }: { content?: any }) {
 
         const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || content?.product_brands || {};
         const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || content?.hide_image_products || {};
+        const catDescMap: Record<string, string> = storeRes?.data?.page_content?.category_descriptions || content?.category_descriptions || {};
+        const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || content?.company_restricted_products || {};
+        const categoryRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || content?.category_restricted_companies || {};
+        setCategoryDescriptions(catDescMap);
+
         const itemsWithBrands = (data || []).map((item: any) => ({
           ...item,
           brand: item.brand || brandsMap[item.id] || brandsMap[item.name] || '',
-          hide_image: item.hide_image != null ? Boolean(item.hide_image) : Boolean(hideImagesMap[item.id] || hideImagesMap[item.name] || hideImagesMap[(item.name || '').trim()])
+          hide_image: item.hide_image != null ? Boolean(item.hide_image) : Boolean(hideImagesMap[item.id] || hideImagesMap[item.name] || hideImagesMap[(item.name || '').trim()]),
+          allowed_company_ids: item.allowed_company_ids || companyRestrictionsMap[item.id] || companyRestrictionsMap[item.name] || companyRestrictionsMap[(item.name || '').trim()] || []
         }));
 
         // Group by category
@@ -73,8 +81,17 @@ export function Menu({ content }: { content?: any }) {
           // You might only want 'actief' and 'meest gekozen' etc. Let's just group them.
           if (['verborgen', 'inactief', 'hidden', 'inactive'].includes((item.status || '').toLowerCase())) return acc;
           
+          // Exclude products restricted to specific companies from the public menu
+          if (item.allowed_company_ids && Array.isArray(item.allowed_company_ids) && item.allowed_company_ids.length > 0) {
+            return acc;
+          }
+
           const itemCats = item.additional_categories && item.additional_categories.length > 0 ? Array.from(new Set([item.category, ...item.additional_categories])) : [item.category || 'Overig'];
           itemCats.forEach(cat => {
+            // Exclude categories restricted to specific companies
+            if (categoryRestrictionsMap[cat] && Array.isArray(categoryRestrictionsMap[cat]) && categoryRestrictionsMap[cat].length > 0) {
+              return;
+            }
             if (!acc[cat]) {
               acc[cat] = [];
             }
@@ -84,7 +101,9 @@ export function Menu({ content }: { content?: any }) {
         }, {});
 
         
-        const categoriesArray = Object.keys(grouped).map(key => {
+        const categoriesArray = Object.keys(grouped)
+          .filter(key => !(categoryRestrictionsMap[key] && Array.isArray(categoryRestrictionsMap[key]) && categoryRestrictionsMap[key].length > 0))
+          .map(key => {
           const primaryItems = (data || []).filter(
             (i: any) => (i.category || 'Overig').trim().toLowerCase() === key.trim().toLowerCase()
           );
@@ -114,22 +133,22 @@ export function Menu({ content }: { content?: any }) {
   }, []);
 
   return (
-    <section id="menu" className="font-serif py-24 bg-ob-cream">
-      <div className="font-serif max-w-7xl mx-auto px-6 lg:px-8">
-        <div className="font-serif text-center mb-20">
+    <section id="menu" className="py-24 bg-ob-cream">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8">
+        <div className="text-center mb-20">
           <h2 
-            className="font-serif text-3xl md:text-5xl text-ob-text mb-4"
-            style={{ fontSize: content?.menu_title_size ? `calc(${String(content.menu_title_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}
+            className="text-3xl md:text-5xl text-ob-text mb-4 font-title-default"
+            style={getTypographyStyle('title', content?.menu_title_font, content?.menu_title_size)}
           >
             {content?.menu_title || "Onze Selectie"}
           </h2>
           <p 
-            className="font-serif text-ob-text-light max-w-2xl mx-auto font-serif"
-            style={{ fontSize: content?.menu_subtitle_size ? `calc(${String(content.menu_subtitle_size).replace(/[^0-9]/g,'')} / 100 * 1em)` : undefined }}
+            className="text-ob-text-light max-w-2xl mx-auto font-subtitle-default"
+            style={getTypographyStyle('subtitle', content?.menu_subtitle_font, content?.menu_subtitle_size)}
           >
             {content?.menu_subtitle || "Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen."}
           </p>
-          <div className="font-serif w-16 h-[1px] bg-ob-accent mx-auto mt-6"></div>
+          <div className="w-16 h-[1px] bg-ob-accent mx-auto mt-6"></div>
         </div>
 
         {isLoading ? (
@@ -137,55 +156,71 @@ export function Menu({ content }: { content?: any }) {
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ob-accent"></div>
           </div>
         ) : categories.length === 0 ? (
-          <div className="text-center py-20 text-gray-500 font-serif">
+          <div className="text-center py-20 text-gray-500 font-paragraph-default">
             {t('Op dit moment zijn er geen producten beschikbaar.', 'Currently there are no products available.')}
           </div>
         ) : (
-          <div className="font-serif flex flex-wrap gap-12 lg:gap-16 justify-center">
+          <div className="flex flex-wrap gap-12 lg:gap-16 justify-center">
             {categories.map((category, catIndex) => {
               const itemChunks = chunkArray(category.items, 5);
               
               return (
                 <motion.div
-                  key={category.title}
+                  key={`menu-cat-${category.title || catIndex}-${catIndex}`}
                   initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ duration: 0.6, delay: catIndex * 0.15 }}
-                  className={`font-serif flex flex-col w-full ${itemChunks.length > 1 ? 'md:w-[calc(100%-1.5rem)] lg:w-[calc(66.666%-2rem)]' : 'md:w-[calc(50%-1.5rem)] lg:w-[calc(33.333%-2rem)]'}`}
+                  className={`flex flex-col w-full ${itemChunks.length > 1 ? 'md:w-[calc(100%-1.5rem)] lg:w-[calc(66.666%-2rem)]' : 'md:w-[calc(50%-1.5rem)] lg:w-[calc(33.333%-2rem)]'}`}
                 >
-                  <div className="font-serif border-b-2 border-ob-accent pb-4 mb-8">
-                    <h3 className="font-serif text-2xl lg:text-3xl text-ob-blue uppercase tracking-widest text-center">{t(category.title)}</h3>
+                  <div className="border-b-2 border-ob-accent pb-4 mb-8 text-center">
+                    <h3 
+                      className="text-2xl lg:text-3xl text-ob-blue uppercase tracking-widest font-title-default"
+                      style={getTypographyStyle('title', content?.menu_category_title_font, content?.menu_category_title_size)}
+                    >
+                      {t(category.title)}
+                    </h3>
+                    {categoryDescriptions[category.title] && (
+                      <p 
+                        className="text-sm text-ob-text-light max-w-2xl mx-auto mt-2 italic font-paragraph-default"
+                        style={getTypographyStyle('paragraph', content?.menu_category_desc_font, content?.menu_category_desc_size)}
+                      >
+                        {t(categoryDescriptions[category.title])}
+                      </p>
+                    )}
                   </div>
                   
                   <div className="flex flex-col md:flex-row gap-8">
                     {itemChunks.map((chunk, chunkIndex) => (
-                      <div key={chunkIndex} className="font-serif flex flex-col gap-6 flex-1 min-w-[250px]">
-                        {chunk.map((item: any) => {
+                      <div key={`menu-chunk-${chunkIndex}`} className="flex flex-col gap-6 flex-1 min-w-[250px]">
+                        {chunk.map((item: any, itemIdx: number) => {
                           const hasVisibleImage = !item.hide_image && Boolean(item.image_url);
                           return (
-                            <div key={item.name} className={`font-serif flex items-center ${hasVisibleImage ? 'gap-4 pb-4' : 'gap-3 pb-2.5'} group cursor-pointer border-b border-black/5 last:border-0 last:pb-0`} onClick={() => setInfoModalProduct(item)}>
+                            <div key={`menu-item-${item.id || item.name}-${chunkIndex}-${itemIdx}`} className={`flex items-center ${hasVisibleImage ? 'gap-4 pb-4' : 'gap-3 pb-2.5'} group cursor-pointer border-b border-black/5 last:border-0 last:pb-0`} onClick={() => setInfoModalProduct(item)}>
                               {hasVisibleImage && (
-                                <div className="font-serif w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
+                                <div className="w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
                                   <img 
                                     src={item.image_url} 
                                     alt={t(item.name)}
-                                    className="font-serif w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                                     loading="lazy"
                                     referrerPolicy="no-referrer"
                                   />
                                 </div>
                               )}
-                              <div className="font-serif flex-1 flex flex-col justify-center">
-                                <h4 className="font-serif text-lg text-ob-text group-hover:text-ob-accent transition-colors duration-300 font-medium font-serif flex flex-wrap items-center gap-2">
+                              <div className="flex-1 flex flex-col justify-center">
+                                <h4 
+                                  className="text-lg text-ob-text group-hover:text-ob-accent transition-colors duration-300 font-normal flex flex-wrap items-center gap-2"
+                                  style={{ fontWeight: 400, ...getTypographyStyle('paragraph', content?.menu_item_title_font || 'agrandir_regular', content?.menu_item_title_size) }}
+                                >
                                   {t(item.name)}
                                   {item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase()) && (
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? t('Nieuw', 'New') : item.status === 'popular' ? t('Meest Gekozen', 'Most Popular') : item.status === 'sold_out' ? t('Uitverkocht', 'Sold Out') : item.status === 'coming_soon' ? t('Binnenkort', 'Coming Soon') : item.status}</span>
                                   )}
                                 </h4>
                                 {(item.extra_info || item.brand) && (
-                                  <span className="text-[10px] uppercase tracking-wider text-ob-blue/80 bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-ob-blue/10 transition-colors flex items-center gap-1 font-medium">
-                                    <Info size={11} />
+                                  <span className="text-[10px] uppercase tracking-wider text-[#5170ff] bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-[#5170ff]/10 transition-colors flex items-center gap-1 font-medium">
+                                    <Info size={11} className="text-[#5170ff]" />
                                     {t('Extra informatie', 'Extra info')}
                                   </span>
                                 )}
@@ -235,7 +270,7 @@ export function Menu({ content }: { content?: any }) {
             )}
             
             <div className="p-6 overflow-y-auto">
-              <h3 className="text-2xl font-serif font-bold text-ob-blue mb-2 pr-6">{t(infoModalProduct.name)}</h3>
+              <h3 className="text-2xl font-serif font-normal text-ob-blue mb-2 pr-6">{t(infoModalProduct.name)}</h3>
               {infoModalProduct.brand && (
                 <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
                   <span className="text-ob-blue/70 font-semibold">{t('Merk', 'Brand')}:</span>
@@ -262,7 +297,7 @@ export function Menu({ content }: { content?: any }) {
                     setInfoModalProduct(null);
                     navigate('/guest-order');
                   }}
-                  className="w-full bg-[#05053D] hover:bg-ob-blue text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-sans"
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-sans"
                 >
                   <ShoppingBag size={18} />
                   {t('Bestellen', 'Order')}

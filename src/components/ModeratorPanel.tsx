@@ -1,14 +1,21 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule, DEFAULT_SECTION_ORDER, SECTION_METADATA, HomepageSectionKey } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
 import { DeliveryOptionsManager } from './DeliveryOptionsManager';
 import { DiscountCodesManager } from './DiscountCodesManager';
 import { DeadlinesManager } from './DeadlinesManager';
+import { InvoiceModal, MonthlyInvoiceData } from './InvoiceModal';
 import { ModificationRulesConfig, CompanyCustomDeadlines, DEFAULT_DEADLINE_TIERS } from '../lib/orderDeadlines';
 import { useLanguage } from '../contexts/LanguageContext';
+import { FONT_OPTIONS } from '../lib/typography';
+
+const MONTH_NAMES = [
+  'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni',
+  'Juli', 'Augustus', 'September', 'Oktober', 'November', 'December'
+];
 
 type ModeratorPanelProps = {
   isOpen: boolean;
@@ -79,6 +86,17 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
   const [impersonating, setImpersonating] = useState<ObCompany | null>(null);
   const [resendingInvoice, setResendingInvoice] = useState<string | null>(null);
+  const [orderCompanyFilter, setOrderCompanyFilter] = useState<string>('ALL');
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('ALL');
+  const [updatingDeliveryStatus, setUpdatingDeliveryStatus] = useState<string | null>(null);
+  const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<any | null>(null);
+  const [selectedMonthlyInvoiceData, setSelectedMonthlyInvoiceData] = useState<MonthlyInvoiceData | null>(null);
+  const [invoiceModalInitialShowEmail, setInvoiceModalInitialShowEmail] = useState<boolean>(false);
+  const [isMonthlySelectorOpen, setIsMonthlySelectorOpen] = useState(false);
+  const [monthlySelectedCompanyId, setMonthlySelectedCompanyId] = useState<string>('');
+  const [monthlySelectedMonth, setMonthlySelectedMonth] = useState<number>(new Date().getMonth() + 1);
+  const [monthlySelectedYear, setMonthlySelectedYear] = useState<number>(new Date().getFullYear());
+  const [monthlyOnlyDelivered, setMonthlyOnlyDelivered] = useState<boolean>(true);
 
   const { t } = useLanguage();
   const [contentEditLang, setContentEditLang] = useState<'nl' | 'en'>('nl');
@@ -141,6 +159,34 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     }
     return fallbackDefault;
   };
+
+  const getFontValue = (key: string): string => {
+    return (localStoreSettings?.page_content as any)?.[`${key}_font`] || 'auto';
+  };
+
+  const setFontValue = (key: string, fontKey: string) => {
+    if (!localStoreSettings) return;
+    setLocalStoreSettings({
+      ...localStoreSettings,
+      page_content: {
+        ...localStoreSettings.page_content,
+        [`${key}_font`]: fontKey
+      }
+    });
+  };
+
+  const renderFontSelect = (key: string) => (
+    <select
+      className="w-28 sm:w-40 h-fit px-2 py-2 border border-gray-300 rounded-md text-xs bg-white text-gray-700 focus:outline-none focus:border-ob-blue shrink-0 cursor-pointer shadow-2xs"
+      title="Lettertype & stijl"
+      value={getFontValue(key)}
+      onChange={e => setFontValue(key, e.target.value)}
+    >
+      {FONT_OPTIONS.map(opt => (
+        <option key={opt.id} value={opt.id}>{opt.label}</option>
+      ))}
+    </select>
+  );
 
   useEffect(() => {
     setLocalSettings(settings);
@@ -260,6 +306,80 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       alert('Fout bij herverzenden: ' + err.message);
     } finally {
       setResendingInvoice(null);
+    }
+  };
+
+  const handleToggleDeliveryStatus = async (group: any, newStatus: 'delivered' | 'pending') => {
+    if (!supabase) return;
+    setUpdatingDeliveryStatus(group.id);
+    const itemIds = (group.items || []).map((i: any) => i.id).filter(Boolean);
+    const deliveredAt = newStatus === 'delivered' ? new Date().toISOString() : null;
+
+    try {
+      // 1. Update in ob_orders in Supabase
+      if (itemIds.length > 0) {
+        try {
+          const { error: dbErr } = await supabase
+            .from('ob_orders')
+            .update({ 
+              delivery_status: newStatus,
+              delivered_at: deliveredAt
+            })
+            .in('id', itemIds);
+          if (dbErr) {
+            console.warn("Notice: ob_orders delivery_status update:", dbErr.message);
+          }
+        } catch (dbErr) {
+          console.warn("Could not update ob_orders.delivery_status directly:", dbErr);
+        }
+      }
+
+      // 2. Fallback in store_settings.page_content.delivered_orders for 100% resilience
+      try {
+        const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+        const currentContent = storeData?.page_content || {};
+        const deliveredOrdersMap = { ...(currentContent.delivered_orders || {}) };
+        if (newStatus === 'delivered') {
+          deliveredOrdersMap[group.id] = { delivered_at: deliveredAt, status: 'delivered' };
+        } else {
+          delete deliveredOrdersMap[group.id];
+        }
+        await supabase.from('store_settings').update({
+          page_content: {
+            ...currentContent,
+            delivered_orders: deliveredOrdersMap
+          }
+        }).eq('id', 1);
+
+        if (localStoreSettings) {
+          setLocalStoreSettings({
+            ...localStoreSettings,
+            page_content: {
+              ...localStoreSettings.page_content,
+              delivered_orders: deliveredOrdersMap
+            }
+          });
+        }
+      } catch (storeErr) {
+        console.warn("Could not sync delivered status to store_settings fallback:", storeErr);
+      }
+
+      // 3. Update local state
+      setOrders(prevOrders => prevOrders.map(o => {
+        if (itemIds.includes(o.id)) {
+          return {
+            ...o,
+            delivery_status: newStatus,
+            delivered_at: deliveredAt
+          };
+        }
+        return o;
+      }));
+    } catch (err: any) {
+      console.error("Fout bij bijwerken leveringsstatus:", err);
+      alert("Fout bij bijwerken status: " + err.message);
+    } finally {
+      setUpdatingDeliveryStatus(null);
     }
   };
 
@@ -478,8 +598,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     const saved = localStoreSettings?.page_content?.section_order;
     if (Array.isArray(saved) && saved.length > 0) {
       const valid = saved.filter(k => DEFAULT_SECTION_ORDER.includes(k as HomepageSectionKey)) as HomepageSectionKey[];
-      const missing = DEFAULT_SECTION_ORDER.filter(k => !valid.includes(k));
-      return [...valid, ...missing];
+      return Array.from(new Set([...valid, ...DEFAULT_SECTION_ORDER]));
     }
     return [...DEFAULT_SECTION_ORDER];
   })();
@@ -755,28 +874,28 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                     <nav className="space-y-2 flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 items-start">
                       <button 
                         onClick={() => { setActiveTab('store'); setImpersonating(null); setSelectedCompanyForDeadlines(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'store' && !impersonating && !selectedCompanyForDeadlines ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'store' && !impersonating && !selectedCompanyForDeadlines ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Store size={18} /> {!isSidebarCollapsed && <span>Winkel Status</span>}
+                        <Store size={18} className={activeTab === 'store' && !impersonating && !selectedCompanyForDeadlines ? 'text-white' : 'text-[#5170ff]'} /> {!isSidebarCollapsed && <span>Winkel Status</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('deadlines'); setImpersonating(null); setSelectedCompanyForDeadlines(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'deadlines' && !impersonating && !selectedCompanyForDeadlines ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'deadlines' && !impersonating && !selectedCompanyForDeadlines ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Clock size={18} /> {!isSidebarCollapsed && <span>Wijzigingstermijnen</span>}
+                        <Clock size={18} className={activeTab === 'deadlines' && !impersonating && !selectedCompanyForDeadlines ? 'text-white' : 'text-[#5170ff]'} /> {!isSidebarCollapsed && <span>Wijzigingstermijnen</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('content'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'content' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'content' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Type size={18} /> {!isSidebarCollapsed && <span>Website Teksten</span>}
+                        <Type size={18} className={activeTab === 'content' && !impersonating ? 'text-white' : 'text-[#5170ff]'} /> {!isSidebarCollapsed && <span>Website Teksten</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('registrations'); setImpersonating(null); }}
-                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'registrations' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'registrations' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
                         <div className="flex items-center gap-3">
-                          <Building2 size={18} /> {!isSidebarCollapsed && <span>Aanmeldingen</span>}
+                          <Building2 size={18} className={activeTab === 'registrations' && !impersonating ? 'text-white' : 'text-[#5170ff]'} /> {!isSidebarCollapsed && <span>Aanmeldingen</span>}
                         </div>
                         {registrations.length > 0 && (
                           <span className="bg-red-500 text-white text-xs py-0.5 px-2 rounded-full font-bold">{registrations.length}</span>
@@ -784,47 +903,47 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       </button>
                       <button 
                         onClick={() => { setActiveTab('customers'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'customers' || impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'customers' || impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Users size={18} /> {!isSidebarCollapsed && <span>Klanten (Kantoren)</span>}
+                        <Users size={18} className={activeTab === 'customers' || impersonating ? 'text-white' : 'text-[#5170ff]'} /> {!isSidebarCollapsed && <span>Klanten (Kantoren)</span>}
                       </button>
                       <button onClick={() => { setActiveTab('orders'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'orders' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
-                        <ShoppingBag size={18} />
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'orders' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}>
+                        <ShoppingBag size={18} className={activeTab === 'orders' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
                         <span>{!isSidebarCollapsed && <span>Bestellingen</span>}</span>
                       </button>
                       <button 
                         onClick={() => { setActiveTab('prices'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'prices' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'prices' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <DollarSign size={18} /> {!isSidebarCollapsed && <span>Portie Prijzen</span>}
+                        <DollarSign size={18} className={activeTab === 'prices' && !impersonating ? 'text-white' : 'text-[#5170ff]'} /> {!isSidebarCollapsed && <span>Portie Prijzen</span>}
                       </button>
                       <button 
                         onClick={() => { setActiveTab('menu'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'menu' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'menu' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
+                        <svg className={activeTab === 'menu' && !impersonating ? 'text-white' : 'text-[#5170ff]'} xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M12 12v9"/><path d="m8 17 4 4 4-4"/></svg>
                         <span>{!isSidebarCollapsed && <span>Menu & Producten</span>}</span>
                       </button>
                       <button
                         onClick={() => { setActiveTab('delivery'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'delivery' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'delivery' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Truck size={18} />
+                        <Truck size={18} className={activeTab === 'delivery' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
                         <span>{!isSidebarCollapsed && <span>Bezorgopties</span>}</span>
                       </button>
                       <button
                         onClick={() => { setActiveTab('discounts'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'discounts' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'discounts' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Tag size={18} />
+                        <Tag size={18} className={activeTab === 'discounts' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
                         <span>{!isSidebarCollapsed && <span>Kortingscodes</span>}</span>
                       </button>
                       <button
                         onClick={() => { setActiveTab('translations'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'translations' && !impersonating ? 'bg-[#151f33] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'translations' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
                       >
-                        <Languages size={18} />
+                        <Languages size={18} className={activeTab === 'translations' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
                         <span>{!isSidebarCollapsed && <span>Vertalingen (EN)</span>}</span>
                       </button>
                     </nav>
@@ -855,7 +974,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         </button>
                         
                         <div className="bg-[#f0f4f8] border border-[#d1e0ec] rounded-xl p-8 text-center space-y-4">
-                          <div className="w-16 h-16 bg-[#151f33] text-white rounded-full flex items-center justify-center mx-auto mb-4">
+                          <div className="w-16 h-16 bg-[#5170ff] text-white rounded-full flex items-center justify-center mx-auto mb-4">
                             <Users size={32} />
                           </div>
                           <h3 className="text-2xl font-serif text-[#05053D]">Impersonatie: {impersonating.name}</h3>
@@ -868,7 +987,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 navigate(`/dashboard?companyId=${impersonating.id}`);
                                 onClose();
                               }}
-                              className="inline-flex items-center gap-2 px-6 py-3 bg-ob-blue text-white rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors"
+                              className="inline-flex items-center gap-2 px-6 py-3 bg-[#5170ff] text-white rounded-lg font-semibold hover:bg-[#4060ee] transition-colors shadow-sm"
                             >
                               Open Beheer Dashboard
                             </button>
@@ -899,7 +1018,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <button
                                 type="button"
                                 onClick={() => setContentEditLang('en')}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${contentEditLang === 'en' ? 'bg-[#05053D] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${contentEditLang === 'en' ? 'bg-[#5170ff] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
                               >
                                 <span className="text-base">🇬🇧</span> Engels (English)
                               </button>
@@ -980,7 +1099,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
                                 return (
                                   <div
-                                    key={sectionKey}
+                                    key={`section-item-${sectionKey}-${index}`}
                                     className="flex items-center justify-between p-3.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
                                   >
                                     <div className="flex items-center gap-3">
@@ -1026,6 +1145,132 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             </div>
                           </div>
                           
+                          {/* HEADER & NAVIGATIE */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Header & Navigatieknoppen</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Knop 'BESTEL NU' (Header)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
+                                </label>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm font-medium"
+                                    placeholder={getContentPlaceholder('nav_btn_order', 'BESTEL NU')}
+                                    value={getContentValue('nav_btn_order')}
+                                    onChange={e => setContentValue('nav_btn_order', e.target.value)} />
+                                  {renderFontSelect('nav_btn_order')}
+                                  <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.nav_btn_order_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_btn_order_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Knop 'Inloggen' (Header)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
+                                </label>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm font-medium"
+                                    placeholder={getContentPlaceholder('nav_btn_login', 'Inloggen')}
+                                    value={getContentValue('nav_btn_login')}
+                                    onChange={e => setContentValue('nav_btn_login', e.target.value)} />
+                                  {renderFontSelect('nav_btn_login')}
+                                  <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.nav_btn_login_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_btn_login_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+
+                              <div className="md:col-span-2 border-t pt-3">
+                                <label className="block text-xs font-semibold text-gray-700 mb-2 flex justify-between">
+                                  <span>Navigatiemenu Links (Standaardstijl voor alle menu links)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Standaard Lettertype & Schaal</span>
+                                </label>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2 mb-4">
+                                  <div className="flex-1 px-3 py-2 bg-gray-50 border rounded-md text-xs text-gray-500 flex items-center">
+                                    Overkoepelende stijl voor alle links in de header
+                                  </div>
+                                  {renderFontSelect('nav_links')}
+                                  <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
+                                    value={localStoreSettings.page_content?.nav_links_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_links_size: e.target.value}} as any)} />
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-gray-50/70 p-3 rounded-lg border">
+                                  <div>
+                                    <label className="block text-[11px] font-medium text-gray-600 mb-1 flex justify-between">
+                                      <span>Link 1 Tekst</span>
+                                      <span className="text-[10px] text-gray-400">Lettertype & Schaal</span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <input type="text" className="flex-1 px-3 py-1.5 border rounded-md text-xs bg-white"
+                                        placeholder={getContentPlaceholder('nav_link_how', 'Hoe het werkt')}
+                                        value={getContentValue('nav_link_how')}
+                                        onChange={e => setContentValue('nav_link_how', e.target.value)} />
+                                      {renderFontSelect('nav_link_how')}
+                                      <input type="text" placeholder="%" className="w-16 px-2 py-1.5 border rounded-md text-xs bg-white"
+                                        value={localStoreSettings.page_content?.nav_link_how_size || ''}
+                                        onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_link_how_size: e.target.value}} as any)} />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[11px] font-medium text-gray-600 mb-1 flex justify-between">
+                                      <span>Link 2 Tekst</span>
+                                      <span className="text-[10px] text-gray-400">Lettertype & Schaal</span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <input type="text" className="flex-1 px-3 py-1.5 border rounded-md text-xs bg-white"
+                                        placeholder={getContentPlaceholder('nav_link_menu', 'Assortiment')}
+                                        value={getContentValue('nav_link_menu')}
+                                        onChange={e => setContentValue('nav_link_menu', e.target.value)} />
+                                      {renderFontSelect('nav_link_menu')}
+                                      <input type="text" placeholder="%" className="w-16 px-2 py-1.5 border rounded-md text-xs bg-white"
+                                        value={localStoreSettings.page_content?.nav_link_menu_size || ''}
+                                        onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_link_menu_size: e.target.value}} as any)} />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[11px] font-medium text-gray-600 mb-1 flex justify-between">
+                                      <span>Link 3 Tekst</span>
+                                      <span className="text-[10px] text-gray-400">Lettertype & Schaal</span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <input type="text" className="flex-1 px-3 py-1.5 border rounded-md text-xs bg-white"
+                                        placeholder={getContentPlaceholder('nav_link_business', 'Voor Bedrijven')}
+                                        value={getContentValue('nav_link_business')}
+                                        onChange={e => setContentValue('nav_link_business', e.target.value)} />
+                                      {renderFontSelect('nav_link_business')}
+                                      <input type="text" placeholder="%" className="w-16 px-2 py-1.5 border rounded-md text-xs bg-white"
+                                        value={localStoreSettings.page_content?.nav_link_business_size || ''}
+                                        onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_link_business_size: e.target.value}} as any)} />
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[11px] font-medium text-gray-600 mb-1 flex justify-between">
+                                      <span>Link 4 Tekst</span>
+                                      <span className="text-[10px] text-gray-400">Lettertype & Schaal</span>
+                                    </label>
+                                    <div className="flex gap-2">
+                                      <input type="text" className="flex-1 px-3 py-1.5 border rounded-md text-xs bg-white"
+                                        placeholder={getContentPlaceholder('nav_link_contact', 'Contact')}
+                                        value={getContentValue('nav_link_contact')}
+                                        onChange={e => setContentValue('nav_link_contact', e.target.value)} />
+                                      {renderFontSelect('nav_link_contact')}
+                                      <input type="text" placeholder="%" className="w-16 px-2 py-1.5 border rounded-md text-xs bg-white"
+                                        value={localStoreSettings.page_content?.nav_link_contact_size || ''}
+                                        onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, nav_link_contact_size: e.target.value}} as any)} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
                           {/* HERO */}
                           <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 1: Hoofdscherm (Hero)</h4>
@@ -1033,14 +1278,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Pre-titel (kleine tekst bovenaan)</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('hero_pre_title', 'Exclusief in Amsterdam')}
                                     value={getContentValue('hero_pre_title')}
                                     onChange={e => setContentValue('hero_pre_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('hero_pre_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.hero_pre_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_pre_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1048,14 +1294,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Hoofdtitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('hero_title', 'De Zakelijke Borrelservice van Mokum')}
                                     value={getContentValue('hero_title')}
                                     onChange={e => setContentValue('hero_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('hero_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.hero_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1063,14 +1310,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <textarea rows={2} className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('hero_subtitle', 'Onze butlers leveren de lekkerste snacks voor jouw kantoorborrel.')}
                                     value={getContentValue('hero_subtitle')}
                                     onChange={e => setContentValue('hero_subtitle', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('hero_subtitle')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.hero_subtitle_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_subtitle_size: e.target.value}} as any)} />
                                 </div>
@@ -1079,14 +1327,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Knop Bestel Nu</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('hero_btn_order', 'Direct Bestellen')}
                                       value={getContentValue('hero_btn_order')}
                                       onChange={e => setContentValue('hero_btn_order', e.target.value)} />
-                                    <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    {renderFontSelect('hero_btn_order')}
+                                    <input type="text" className="w-20 px-3 py-2 border rounded-md text-sm" placeholder="%"
                                       value={localStoreSettings.page_content?.hero_btn_order_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_order_size: e.target.value}} as any)} />
                                   </div>
@@ -1094,14 +1343,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Knop Bekijk Aanbod</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('hero_btn_offer', 'Offerte Aanvragen')}
                                       value={getContentValue('hero_btn_offer')}
                                       onChange={e => setContentValue('hero_btn_offer', e.target.value)} />
-                                    <input type="text" className="w-24 px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    {renderFontSelect('hero_btn_offer')}
+                                    <input type="text" className="w-20 px-3 py-2 border rounded-md text-sm" placeholder="%"
                                       value={localStoreSettings.page_content?.hero_btn_offer_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, hero_btn_offer_size: e.target.value}} as any)} />
                                   </div>
@@ -1117,14 +1367,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Titel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('how_title', 'Hoe werkt de Office Butler?')}
                                     value={getContentValue('how_title')}
                                     onChange={e => setContentValue('how_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('how_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.how_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1132,14 +1383,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('how_subtitle', 'In 3 simpele stappen jouw kantoorborrel geregeld.')}
                                     value={getContentValue('how_subtitle')}
                                     onChange={e => setContentValue('how_subtitle', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('how_subtitle')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.how_subtitle_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, how_subtitle_size: e.target.value}} as any)} />
                                 </div>
@@ -1147,36 +1399,54 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 1: Titel</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-700">Stap 1: Titel</label>
+                                  {renderFontSelect('how_step1_title')}
+                                </div>
                                 <input type="text" className="w-full px-3 py-2 border rounded-md text-sm mb-2"
                                   placeholder={getContentPlaceholder('how_step1_title', 'Selecteer gewenste snacks')}
                                   value={getContentValue('how_step1_title')}
                                   onChange={e => setContentValue('how_step1_title', e.target.value)} />
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 1: Beschrijving</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-700">Stap 1: Beschrijving</label>
+                                  {renderFontSelect('how_step1_desc')}
+                                </div>
                                 <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
                                   placeholder={getContentPlaceholder('how_step1_desc', 'Stel de ideale bittergarnituur samen voor het team.')}
                                   value={getContentValue('how_step1_desc')}
                                   onChange={e => setContentValue('how_step1_desc', e.target.value)} />
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 2: Titel</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-700">Stap 2: Titel</label>
+                                  {renderFontSelect('how_step2_title')}
+                                </div>
                                 <input type="text" className="w-full px-3 py-2 border rounded-md text-sm mb-2"
                                   placeholder={getContentPlaceholder('how_step2_title', 'Perfecte bezorgmoment')}
                                   value={getContentValue('how_step2_title')}
                                   onChange={e => setContentValue('how_step2_title', e.target.value)} />
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 2: Beschrijving</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-700">Stap 2: Beschrijving</label>
+                                  {renderFontSelect('how_step2_desc')}
+                                </div>
                                 <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
                                   placeholder={getContentPlaceholder('how_step2_desc', 'Bestel voor directe levering of plan vooruit.')}
                                   value={getContentValue('how_step2_desc')}
                                   onChange={e => setContentValue('how_step2_desc', e.target.value)} />
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 3: Titel</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-700">Stap 3: Titel</label>
+                                  {renderFontSelect('how_step3_title')}
+                                </div>
                                 <input type="text" className="w-full px-3 py-2 border rounded-md text-sm mb-2"
                                   placeholder={getContentPlaceholder('how_step3_title', 'Uitpakken en uitserveren')}
                                   value={getContentValue('how_step3_title')}
                                   onChange={e => setContentValue('how_step3_title', e.target.value)} />
-                                <label className="block text-xs font-medium text-gray-700 mb-1">Stap 3: Beschrijving</label>
+                                <div className="flex items-center justify-between mb-1">
+                                  <label className="block text-xs font-medium text-gray-700">Stap 3: Beschrijving</label>
+                                  {renderFontSelect('how_step3_desc')}
+                                </div>
                                 <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm"
                                   placeholder={getContentPlaceholder('how_step3_desc', 'Warm en direct serveerklaar bezorgd.')}
                                   value={getContentValue('how_step3_desc')}
@@ -1194,13 +1464,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Sectie Titel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('assortments_title', 'Onze Butler Service')}
                                     value={getContentValue('assortments_title')}
                                     onChange={e => setContentValue('assortments_title', e.target.value)} />
+                                  {renderFontSelect('assortments_title')}
                                   <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.assortments_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_title_size: e.target.value}} as any)} />
@@ -1209,13 +1480,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Sectie Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('assortments_subtitle', 'Kies de service die het beste bij de kantoorborrel past.')}
                                     value={getContentValue('assortments_subtitle')}
                                     onChange={e => setContentValue('assortments_subtitle', e.target.value)} />
+                                  {renderFontSelect('assortments_subtitle')}
                                   <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.assortments_subtitle_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assortments_subtitle_size: e.target.value}} as any)} />
@@ -1231,13 +1503,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Titel (bijv. Bezorgen)</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_snacks_title', 'Titel Pakket 1')}
                                       value={getContentValue('assort_snacks_title')}
                                       onChange={e => setContentValue('assort_snacks_title', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_title')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_title_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_title_size: e.target.value}} as any)} />
@@ -1247,13 +1520,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Ondertitel</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_snacks_subtitle', 'Ondertitel Pakket 1')}
                                       value={getContentValue('assort_snacks_subtitle')}
                                       onChange={e => setContentValue('assort_snacks_subtitle', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_subtitle')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_subtitle_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_subtitle_size: e.target.value}} as any)} />
@@ -1263,13 +1537,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 1</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_snacks_item1', 'Bullet 1')}
                                       value={getContentValue('assort_snacks_item1')}
                                       onChange={e => setContentValue('assort_snacks_item1', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_item1')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_item1_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item1_size: e.target.value}} as any)} />
@@ -1279,13 +1554,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 2</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_snacks_item2', 'Bullet 2')}
                                       value={getContentValue('assort_snacks_item2')}
                                       onChange={e => setContentValue('assort_snacks_item2', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_item2')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_item2_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item2_size: e.target.value}} as any)} />
@@ -1295,13 +1571,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 3</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_snacks_item3', 'Bullet 3')}
                                       value={getContentValue('assort_snacks_item3')}
                                       onChange={e => setContentValue('assort_snacks_item3', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_item3')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_item3_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item3_size: e.target.value}} as any)} />
@@ -1311,13 +1588,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 4</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_snacks_item4', 'Bullet 4')}
                                       value={getContentValue('assort_snacks_item4')}
                                       onChange={e => setContentValue('assort_snacks_item4', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_item4')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_item4_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_item4_size: e.target.value}} as any)} />
@@ -1327,13 +1605,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Knop Tekst</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm font-medium"
                                       placeholder={getContentPlaceholder('assort_snacks_btn', 'Knop Tekst')}
                                       value={getContentValue('assort_snacks_btn')}
                                       onChange={e => setContentValue('assort_snacks_btn', e.target.value)} />
+                                    {renderFontSelect('assort_snacks_btn')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_snacks_btn_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_snacks_btn_size: e.target.value}} as any)} />
@@ -1348,13 +1627,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Badge / Label (bovenkant rechts)</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_badge', 'bijv. Meest Gekozen')}
                                       value={getContentValue('assort_complete_badge')}
                                       onChange={e => setContentValue('assort_complete_badge', e.target.value)} />
+                                    {renderFontSelect('assort_complete_badge')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_badge_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_badge_size: e.target.value}} as any)} />
@@ -1364,13 +1644,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Titel (bijv. Uitpakken & uitserveren)</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_title', 'Titel Pakket 2')}
                                       value={getContentValue('assort_complete_title')}
                                       onChange={e => setContentValue('assort_complete_title', e.target.value)} />
+                                    {renderFontSelect('assort_complete_title')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_title_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_title_size: e.target.value}} as any)} />
@@ -1380,13 +1661,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Ondertitel</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_subtitle', 'Ondertitel Pakket 2')}
                                       value={getContentValue('assort_complete_subtitle')}
                                       onChange={e => setContentValue('assort_complete_subtitle', e.target.value)} />
+                                    {renderFontSelect('assort_complete_subtitle')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_subtitle_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_subtitle_size: e.target.value}} as any)} />
@@ -1396,13 +1678,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 1</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_item1', 'Bullet 1')}
                                       value={getContentValue('assort_complete_item1')}
                                       onChange={e => setContentValue('assort_complete_item1', e.target.value)} />
+                                    {renderFontSelect('assort_complete_item1')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_item1_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item1_size: e.target.value}} as any)} />
@@ -1412,13 +1695,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 2</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_item2', 'Bullet 2')}
                                       value={getContentValue('assort_complete_item2')}
                                       onChange={e => setContentValue('assort_complete_item2', e.target.value)} />
+                                    {renderFontSelect('assort_complete_item2')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_item2_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item2_size: e.target.value}} as any)} />
@@ -1428,13 +1712,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 3</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_item3', 'Bullet 3')}
                                       value={getContentValue('assort_complete_item3')}
                                       onChange={e => setContentValue('assort_complete_item3', e.target.value)} />
+                                    {renderFontSelect('assort_complete_item3')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_item3_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item3_size: e.target.value}} as any)} />
@@ -1444,13 +1729,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Bullet 4</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                       placeholder={getContentPlaceholder('assort_complete_item4', 'Bullet 4')}
                                       value={getContentValue('assort_complete_item4')}
                                       onChange={e => setContentValue('assort_complete_item4', e.target.value)} />
+                                    {renderFontSelect('assort_complete_item4')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_item4_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_item4_size: e.target.value}} as any)} />
@@ -1460,13 +1746,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Knop Tekst</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm font-medium"
                                       placeholder={getContentPlaceholder('assort_complete_btn', 'Knop Tekst')}
                                       value={getContentValue('assort_complete_btn')}
                                       onChange={e => setContentValue('assort_complete_btn', e.target.value)} />
+                                    {renderFontSelect('assort_complete_btn')}
                                     <input type="text" placeholder="%" className="w-20 px-3 py-2 border rounded-md text-sm"
                                       value={localStoreSettings.page_content?.assort_complete_btn_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, assort_complete_btn_size: e.target.value}} as any)} />
@@ -1483,14 +1770,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Titel (bijv. Onze Selectie)</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('menu_title', 'Onze Selectie')}
                                     value={getContentValue('menu_title')}
                                     onChange={e => setContentValue('menu_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('menu_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.menu_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1498,14 +1786,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Knop (Volledig menu)</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('menu_btn', 'Bekijk volledig menu')}
                                     value={getContentValue('menu_btn')}
                                     onChange={e => setContentValue('menu_btn', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('menu_btn')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.menu_btn_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_btn_size: e.target.value}} as any)} />
                                 </div>
@@ -1513,16 +1802,65 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div className="md:col-span-2">
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('menu_subtitle', 'Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen.')}
                                     value={getContentValue('menu_subtitle')}
                                     onChange={e => setContentValue('menu_subtitle', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('menu_subtitle')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.menu_subtitle_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_subtitle_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+
+                              <div className="border-t pt-3">
+                                <label className="block text-xs font-semibold text-gray-700 mb-1 flex justify-between">
+                                  <span>Categorie Titels (bijv. Bittergarnituur, Platters, Sauzen)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
+                                </label>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <div className="flex-1 px-3 py-2 bg-gray-50 border rounded-md text-xs text-gray-600 flex items-center">
+                                    Lettertype voor alle menucategorie koppen
+                                  </div>
+                                  {renderFontSelect('menu_category_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.menu_category_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_category_title_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+
+                              <div className="border-t pt-3">
+                                <label className="block text-xs font-semibold text-gray-700 mb-1 flex justify-between">
+                                  <span>Product / Gerecht Titels (bijv. Bitterballen, Mini Kroket)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
+                                </label>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <div className="flex-1 px-3 py-2 bg-gray-50 border rounded-md text-xs text-gray-600 flex items-center">
+                                    Lettertype voor alle individuele items
+                                  </div>
+                                  {renderFontSelect('menu_item_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.menu_item_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_item_title_size: e.target.value}} as any)} />
+                                </div>
+                              </div>
+
+                              <div className="md:col-span-2 border-t pt-3">
+                                <label className="block text-xs font-semibold text-gray-700 mb-1 flex justify-between">
+                                  <span>Categorie Beschrijvingen (subtekst onder categorie titel)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
+                                </label>
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <div className="flex-1 px-3 py-2 bg-gray-50 border rounded-md text-xs text-gray-600 flex items-center">
+                                    Lettertype voor beschrijvingen onder categoriekoppen
+                                  </div>
+                                  {renderFontSelect('menu_category_desc')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.menu_category_desc_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, menu_category_desc_size: e.target.value}} as any)} />
                                 </div>
                               </div>
                             </div>
@@ -1535,14 +1873,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Titel (bijv. Vaste Klant Worden)</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_title', 'Vaste Klant Worden')}
                                     value={getContentValue('business_title')}
                                     onChange={e => setContentValue('business_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1550,14 +1889,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Knop Tekst (bijv. Kantoor Inschrijven)</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_btn', 'Kantoor Inschrijven')}
                                     value={getContentValue('business_btn')}
                                     onChange={e => setContentValue('business_btn', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_btn')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_btn_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_btn_size: e.target.value}} as any)} />
                                 </div>
@@ -1565,14 +1905,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div className="md:col-span-2">
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Ondertitel</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_subtitle', 'Een vaste partner voor uw kantoor.')}
                                     value={getContentValue('business_subtitle')}
                                     onChange={e => setContentValue('business_subtitle', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_subtitle')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_subtitle_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_subtitle_size: e.target.value}} as any)} />
                                 </div>
@@ -1580,40 +1921,49 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div className="md:col-span-2">
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Beschrijvingstekst</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <textarea rows={3} className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_desc', 'Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers.')}
                                     value={getContentValue('business_desc')}
                                     onChange={e => setContentValue('business_desc', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_desc')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_desc_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_desc_size: e.target.value}} as any)} />
                                 </div>
                               </div>
                               <div className="md:col-span-2">
-                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Titel Aanmeldformulier</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm"
-                                  placeholder={getContentPlaceholder('business_form_title', 'Bedrijf Aanmelden')}
-                                  value={getContentValue('business_form_title')}
-                                  onChange={e => setContentValue('business_form_title', e.target.value)} />
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                    placeholder={getContentPlaceholder('business_form_title', 'Bedrijf Aanmelden')}
+                                    value={getContentValue('business_form_title')}
+                                    onChange={e => setContentValue('business_form_title', e.target.value)} />
+                                  {renderFontSelect('business_form_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                    value={localStoreSettings.page_content?.business_form_title_size || ''}
+                                    onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_form_title_size: e.target.value}} as any)} />
+                                </div>
                               </div>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 gap-4 pt-3 border-t">
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Bullet 1</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <input type="text" className="flex-1 min-w-0 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_point1', 'Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)')}
                                     value={getContentValue('business_point1')}
                                     onChange={e => setContentValue('business_point1', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_point1')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_point1_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point1_size: e.target.value}} as any)} />
                                 </div>
@@ -1621,14 +1971,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Bullet 2</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <input type="text" className="flex-1 min-w-0 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_point2', 'Gepersonaliseerd assortiment naar wens')}
                                     value={getContentValue('business_point2')}
                                     onChange={e => setContentValue('business_point2', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_point2')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_point2_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point2_size: e.target.value}} as any)} />
                                 </div>
@@ -1636,14 +1987,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Bullet 3</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
-                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                                  <input type="text" className="flex-1 min-w-0 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('business_point3', 'Optie tot betalen op factuur')}
                                     value={getContentValue('business_point3')}
                                     onChange={e => setContentValue('business_point3', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('business_point3')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.business_point3_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, business_point3_size: e.target.value}} as any)} />
                                 </div>
@@ -1658,14 +2010,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Titel Contact Sectie</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('contact_title', 'Contact & Informatie')}
                                     value={getContentValue('contact_title')}
                                     onChange={e => setContentValue('contact_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('contact_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.contact_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, contact_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1673,14 +2026,15 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Titel FAQ Sectie</span>
-                                  <span className="text-[10px] text-gray-400 font-normal">Schaal (bijv. 120%)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                 </label>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                   <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
                                     placeholder={getContentPlaceholder('faq_title', 'Veelgestelde Vragen')}
                                     value={getContentValue('faq_title')}
                                     onChange={e => setContentValue('faq_title', e.target.value)} />
-                                  <input type="text" className="w-24 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
+                                  {renderFontSelect('faq_title')}
+                                  <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm" placeholder="%"
                                     value={localStoreSettings.page_content?.faq_title_size || ''}
                                     onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_title_size: e.target.value}} as any)} />
                                 </div>
@@ -1695,13 +2049,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Vraag 1</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_q1', 'Bezorgen jullie ook buiten Amsterdam?')}
                                       value={getContentValue('faq_q1')}
                                       onChange={e => setContentValue('faq_q1', e.target.value)} />
+                                    {renderFontSelect('faq_q1')}
                                     <input type="text" className="w-20 px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_q1_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_q1_size: e.target.value}} as any)} />
@@ -1710,13 +2065,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Antwoord 1</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <textarea rows={2} className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_a1', 'Momenteel bezorgen wij met Office Butler uitsluitend op kantoren binnen de ring van Amsterdam om de kwaliteit en temperatuur van onze snacks te garanderen.')}
                                       value={getContentValue('faq_a1')}
                                       onChange={e => setContentValue('faq_a1', e.target.value)} />
+                                    {renderFontSelect('faq_a1')}
                                     <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_a1_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_a1_size: e.target.value}} as any)} />
@@ -1729,13 +2085,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Vraag 2</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_q2', 'Wat is het verschil met Canal Butler?')}
                                       value={getContentValue('faq_q2')}
                                       onChange={e => setContentValue('faq_q2', e.target.value)} />
+                                    {renderFontSelect('faq_q2')}
                                     <input type="text" className="w-20 px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_q2_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_q2_size: e.target.value}} as any)} />
@@ -1744,13 +2101,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Antwoord 2</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <textarea rows={2} className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_a2', 'Office Butler is het B2B zusterbedrijf van Canal Butler. We maken gebruik van dezelfde keuken (Mokum Local Kitchen) en bieden dezelfde premium kwaliteit, maar dan specifiek afgestemd op levering op kantoor in plaats van op de grachten.')}
                                       value={getContentValue('faq_a2')}
                                       onChange={e => setContentValue('faq_a2', e.target.value)} />
+                                    {renderFontSelect('faq_a2')}
                                     <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_a2_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_a2_size: e.target.value}} as any)} />
@@ -1763,13 +2121,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Vraag 3</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_q3', 'Hoe ver van tevoren moet ik bestellen?')}
                                       value={getContentValue('faq_q3')}
                                       onChange={e => setContentValue('faq_q3', e.target.value)} />
+                                    {renderFontSelect('faq_q3')}
                                     <input type="text" className="w-20 px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_q3_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_q3_size: e.target.value}} as any)} />
@@ -1778,13 +2137,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Antwoord 3</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <textarea rows={2} className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_a3', 'Voor reguliere bestellingen vragen wij u minimaal 2 uur van tevoren te bestellen. Voor grote groepen (>30 personen) of een compleet assortiment horen wij dit graag minimaal 24 uur van tevoren.')}
                                       value={getContentValue('faq_a3')}
                                       onChange={e => setContentValue('faq_a3', e.target.value)} />
+                                    {renderFontSelect('faq_a3')}
                                     <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_a3_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_a3_size: e.target.value}} as any)} />
@@ -1797,13 +2157,14 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Vraag 4 (Optioneel)</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_q4', 'Extra vraag toevoegen...')}
                                       value={getContentValue('faq_q4')}
                                       onChange={e => setContentValue('faq_q4', e.target.value)} />
+                                    {renderFontSelect('faq_q4')}
                                     <input type="text" className="w-20 px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_q4_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_q4_size: e.target.value}} as any)} />
@@ -1812,16 +2173,762 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 <div>
                                   <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                     <span>Antwoord 4 (Optioneel)</span>
-                                    <span className="text-[10px] text-gray-400 font-normal">Schaal %</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Lettertype & Schaal</span>
                                   </label>
-                                  <div className="flex gap-2">
+                                  <div className="flex flex-wrap sm:flex-nowrap gap-2">
                                     <textarea rows={2} className="flex-1 px-3 py-2 border rounded-md text-sm bg-white"
                                       placeholder={getContentPlaceholder('faq_a4', 'Antwoord op vraag 4...')}
                                       value={getContentValue('faq_a4')}
                                       onChange={e => setContentValue('faq_a4', e.target.value)} />
+                                    {renderFontSelect('faq_a4')}
                                     <input type="text" className="w-20 h-fit px-3 py-2 border rounded-md text-sm bg-white" placeholder="%"
                                       value={localStoreSettings.page_content?.faq_a4_size || ''}
                                       onChange={e => setLocalStoreSettings({...localStoreSettings, page_content: {...localStoreSettings.page_content, faq_a4_size: e.target.value}} as any)} />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* BESTELKEUZE POP-UP (MODAL) */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
+                            <div className="border-b pb-3">
+                              <h4 className="font-bold text-ob-blue text-base flex items-center gap-2">
+                                <span>🛒 Bestelkeuze Pop-up (Hoe wilt u bestellen modal)</span>
+                              </h4>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Pas de titels, knoppen en toelichtingen aan van de pop-up die verschijnt wanneer bezoekers op 'Bestellen' klikken.
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel Stap 1 (Keuze modal)</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_step1_title', 'Hoe wilt u bestellen?')}
+                                  value={getContentValue('modal_step1_title')}
+                                  onChange={e => setContentValue('modal_step1_title', e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Titel Stap 2 (Keuze account / gast)</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_step2_title', 'Maak uw keuze')}
+                                  value={getContentValue('modal_step2_title')}
+                                  onChange={e => setContentValue('modal_step2_title', e.target.value)} />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Word vaste klant' Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_business_title', 'Word vaste klant')}
+                                  value={getContentValue('modal_business_title')}
+                                  onChange={e => setContentValue('modal_business_title', e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Word vaste klant' Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_business_subtitle', 'Meld uw bedrijf aan voor een vaste bestelomgeving')}
+                                  value={getContentValue('modal_business_subtitle')}
+                                  onChange={e => setContentValue('modal_business_subtitle', e.target.value)} />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Bestel vooraf' Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_preorder_title', 'Bestel vooraf')}
+                                  value={getContentValue('modal_preorder_title')}
+                                  onChange={e => setContentValue('modal_preorder_title', e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Bestel vooraf' Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_preorder_subtitle', 'Plan uw bestelling voor een later moment')}
+                                  value={getContentValue('modal_preorder_subtitle')}
+                                  onChange={e => setContentValue('modal_preorder_subtitle', e.target.value)} />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Bestel direct' Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_direct_title', 'Bestel direct')}
+                                  value={getContentValue('modal_direct_title')}
+                                  onChange={e => setContentValue('modal_direct_title', e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Bestel direct' Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_direct_subtitle', 'Ontvang uw bestelling zo snel mogelijk')}
+                                  value={getContentValue('modal_direct_subtitle')}
+                                  onChange={e => setContentValue('modal_direct_subtitle', e.target.value)} />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Inloggen' Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_login_title', 'Inloggen')}
+                                  value={getContentValue('modal_login_title')}
+                                  onChange={e => setContentValue('modal_login_title', e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Inloggen' Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_login_subtitle', 'Voor bestaande zakelijke klanten en medewerkers')}
+                                  value={getContentValue('modal_login_subtitle')}
+                                  onChange={e => setContentValue('modal_login_subtitle', e.target.value)} />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Eenmalig / Particulier' Titel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_guest_title', 'Eenmalig / Particulier bestellen')}
+                                  value={getContentValue('modal_guest_title')}
+                                  onChange={e => setContentValue('modal_guest_title', e.target.value)} />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Eenmalig / Particulier' Ondertitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('modal_guest_subtitle', 'Snel bestellen zonder account')}
+                                  value={getContentValue('modal_guest_subtitle')}
+                                  onChange={e => setContentValue('modal_guest_subtitle', e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* BESTELPROCES, MELDINGEN & BEVESTIGINGEN */}
+                          <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-6">
+                            <div className="border-b pb-3">
+                              <h4 className="font-bold text-ob-blue text-base flex items-center gap-2">
+                                <span>✉️ Bestelproces, Meldingen & Bevestigingsschermen</span>
+                              </h4>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Beheer alle teksten, successchermen, foutmeldingen en knoppen van zowel de eenmalige (gast) als de zakelijke bestelomgeving.
+                              </p>
+                            </div>
+
+                            {/* EENMALIG / GAST BESTELLEN */}
+                            <div className="space-y-4">
+                              <h5 className="font-bold text-xs uppercase tracking-wider text-ob-blue bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                                🛍️ Eenmalig Bestellen (Gast)
+                              </h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Paginatitel (Header)</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('guest_order_title', 'Eenmalig Bestellen')}
+                                    value={getContentValue('guest_order_title')}
+                                    onChange={e => setContentValue('guest_order_title', e.target.value)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Bestelknop tekst</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('guest_btn_submit', 'Bestelling Plaatsen')}
+                                    value={getContentValue('guest_btn_submit')}
+                                    onChange={e => setContentValue('guest_btn_submit', e.target.value)} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Paginatoespraak / Subtitel</label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('guest_order_subtitle', 'Selecteer uw favoriete snacks en vul uw factuur- en bezorggegevens in.')}
+                                  value={getContentValue('guest_order_subtitle')}
+                                  onChange={e => setContentValue('guest_order_subtitle', e.target.value)} />
+                              </div>
+
+                              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                                <span className="font-semibold text-xs text-gray-800 block">✅ Successcherm na afronden (Gast)</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Succes Titel</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('guest_success_title', 'Bestelling Ontvangen!')}
+                                      value={getContentValue('guest_success_title')}
+                                      onChange={e => setContentValue('guest_success_title', e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Knop 'Terug naar home'</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('guest_success_button', 'Terug naar home')}
+                                      value={getContentValue('guest_success_button')}
+                                      onChange={e => setContentValue('guest_success_button', e.target.value)} />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                                    Succes Bericht <span className="text-[11px] text-gray-400 font-normal">(tip: gebruik {'{guestName}'} om de naam van de klant in te voegen)</span>
+                                  </label>
+                                  <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('guest_success_message', 'Bedankt voor uw bestelling, {guestName}. We hebben uw aanvraag goed ontvangen.')}
+                                    value={getContentValue('guest_success_message')}
+                                    onChange={e => setContentValue('guest_success_message', e.target.value)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Factuurmededeling</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('guest_invoice_notice', 'De factuur is verstuurd naar uw e-mail.')}
+                                    value={getContentValue('guest_invoice_notice')}
+                                    onChange={e => setContentValue('guest_invoice_notice', e.target.value)} />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* ZAKELIJK / MEDEWERKER BESTELLEN */}
+                            <div className="space-y-4 pt-4 border-t">
+                              <h5 className="font-bold text-xs uppercase tracking-wider text-ob-blue bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                                🏢 Zakelijke Bestelomgeving (Medewerkers)
+                              </h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Paginatitel (Header)</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('emp_order_title', 'Nieuwe Bestelling')}
+                                    value={getContentValue('emp_order_title')}
+                                    onChange={e => setContentValue('emp_order_title', e.target.value)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Bestelknop tekst</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('emp_btn_submit', 'Bestelling Plaatsen')}
+                                    value={getContentValue('emp_btn_submit')}
+                                    onChange={e => setContentValue('emp_btn_submit', e.target.value)} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Paginatoespraak / Subtitel <span className="text-[11px] text-gray-400 font-normal">(tip: gebruik {'{companyName}'} voor de bedrijfsnaam)</span>
+                                </label>
+                                <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('emp_order_subtitle', 'Bestel via het account van {companyName}')}
+                                  value={getContentValue('emp_order_subtitle')}
+                                  onChange={e => setContentValue('emp_order_subtitle', e.target.value)} />
+                              </div>
+
+                              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                                <span className="font-semibold text-xs text-gray-800 block">✅ Successcherm na afronden (Zakelijk)</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Succes Titel</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('emp_success_title', 'Bestelling Geplaatst!')}
+                                      value={getContentValue('emp_success_title')}
+                                      onChange={e => setContentValue('emp_success_title', e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Knop naar Dashboard</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('emp_btn_dashboard', 'Ga naar Bedrijfsdashboard')}
+                                      value={getContentValue('emp_btn_dashboard')}
+                                      onChange={e => setContentValue('emp_btn_dashboard', e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Knop Nieuwe Bestelling</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('emp_btn_new', 'Nieuwe Bestelling Plaatsen')}
+                                      value={getContentValue('emp_btn_new')}
+                                      onChange={e => setContentValue('emp_btn_new', e.target.value)} />
+                                  </div>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Succes Bericht</label>
+                                  <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('emp_success_message', 'Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.')}
+                                    value={getContentValue('emp_success_message')}
+                                    onChange={e => setContentValue('emp_success_message', e.target.value)} />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Wijzigen / Annuleren tip Titel</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('emp_modify_title', 'Bestelling wijzigen of annuleren?')}
+                                      value={getContentValue('emp_modify_title')}
+                                      onChange={e => setContentValue('emp_modify_title', e.target.value)} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">Wijzigen / Annuleren tip Tekst</label>
+                                    <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('emp_success_notice', 'U kunt deze bestelling te allen tijde inzien, aanpassen of annuleren via uw Bedrijfsdashboard.')}
+                                      value={getContentValue('emp_success_notice')}
+                                      onChange={e => setContentValue('emp_success_notice', e.target.value)} />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* SYSTEEMMELDINGEN & FOUTBERICHTEN */}
+                            <div className="space-y-4 pt-4 border-t">
+                              <h5 className="font-bold text-xs uppercase tracking-wider text-ob-blue bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100">
+                                ⚠️ Foutmeldingen & Systeemberichten
+                              </h5>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Fout: Verplichte velden niet ingevuld (Gast)</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('guest_error_required', 'Vul a.u.b. alle verplichte velden in en selecteer minimaal één product.')}
+                                    value={getContentValue('guest_error_required')}
+                                    onChange={e => setContentValue('guest_error_required', e.target.value)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Fout: Verplichte velden niet ingevuld (Zakelijk)</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('emp_error_required', 'Selecteer a.u.b. minimaal één product en vul uw contactgegevens in.')}
+                                    value={getContentValue('emp_error_required')}
+                                    onChange={e => setContentValue('emp_error_required', e.target.value)} />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Algemene foutmelding bij plaatsen</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('guest_error_general', 'Er ging iets mis bij het plaatsen van de bestelling.')}
+                                    value={getContentValue('guest_error_general')}
+                                    onChange={e => setContentValue('guest_error_general', e.target.value)} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Knopstatus tijdens verzenden</label>
+                                  <input type="text" className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                    placeholder={getContentPlaceholder('btn_submitting', 'Bezig met plaatsen...')}
+                                    value={getContentValue('btn_submitting')}
+                                    onChange={e => setContentValue('btn_submitting', e.target.value)} />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">
+                                  Melding bij vertraging in e-mailsysteem
+                                </label>
+                                <textarea rows={2} className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('delivery_delay_notice', 'Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later.')}
+                                  value={getContentValue('delivery_delay_notice')}
+                                  onChange={e => setContentValue('delivery_delay_notice', e.target.value)} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* FACTUURINSTELLINGEN (Mokum Local Kitchen) */}
+                          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs mt-6">
+                            <h4 className="font-bold text-base text-[#05053D] mb-2 flex items-center gap-2">
+                              <Building2 className="text-[#b58b4c]" size={20} />
+                              <span>Factuurgegevens & Bedrijfsinformatie (Mokum Local Kitchen)</span>
+                            </h4>
+                            <p className="text-xs text-gray-500 mb-6">
+                              Deze officiële gegevens verschijnen op alle gegenereerde facturen en PDF downloads voor bestellingen.
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  Merknaam op factuur (prominent)
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white font-bold text-[#05053D]"
+                                  placeholder={getContentPlaceholder('invoice_brand_name', 'Office Butler')}
+                                  value={getContentValue('invoice_brand_name')}
+                                  onChange={e => setContentValue('invoice_brand_name', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  Juridische Bedrijfsnaam / Keuken
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('invoice_company_name', 'Mokum Local Kitchen')}
+                                  value={getContentValue('invoice_company_name')}
+                                  onChange={e => setContentValue('invoice_company_name', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  KVK nummer
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('invoice_kvk', '99852667')}
+                                  value={getContentValue('invoice_kvk')}
+                                  onChange={e => setContentValue('invoice_kvk', e.target.value)}
+                                />
+                              </div>
+
+                              {/* Factuur Logo Aanpassen & Live Preview */}
+                              <div className="sm:col-span-2 md:col-span-3 bg-gray-50/80 p-4 rounded-xl border border-gray-200 mt-1">
+                                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                  <div className="flex items-center gap-4">
+                                    {/* Live Preview Box with matching contour */}
+                                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 border-slate-200 shadow-xs bg-[#151f33] flex items-center justify-center shrink-0">
+                                      <img
+                                        src={getContentValue('invoice_logo_url') || 'https://i.imgur.com/ymXR7tL.png'}
+                                        alt="Factuur Logo Preview"
+                                        className="w-full h-full object-cover"
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = 'https://i.imgur.com/ymXR7tL.png';
+                                        }}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-bold text-gray-900 mb-0.5 flex items-center gap-1.5">
+                                        <ImageIcon size={14} className="text-[#b58b4c]" />
+                                        <span>Factuur Logo Afbeelding</span>
+                                      </label>
+                                      <p className="text-[11px] text-gray-500 mb-2">
+                                        Dit logo wordt weergegeven op alle facturen, verzamelfacturen en factuur e-mails.
+                                      </p>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        {/* File upload from device */}
+                                        <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 hover:border-gray-400 text-gray-700 text-xs font-medium rounded-lg shadow-2xs hover:bg-gray-50 transition-colors">
+                                          <Upload size={14} className="text-[#b58b4c]" />
+                                          <span>Upload vanaf computer</span>
+                                          <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                              const file = e.target.files?.[0];
+                                              if (file) {
+                                                const reader = new FileReader();
+                                                reader.onload = (event) => {
+                                                  const result = event.target?.result as string;
+                                                  if (result) {
+                                                    setContentValue('invoice_logo_url', result);
+                                                  }
+                                                };
+                                                reader.readAsDataURL(file);
+                                              }
+                                            }}
+                                          />
+                                        </label>
+
+                                        {/* Quick Reset to Default Office Butler Logo */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setContentValue('invoice_logo_url', 'https://i.imgur.com/ymXR7tL.png')}
+                                          className="px-2.5 py-1.5 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-200/60 rounded-lg border border-gray-200 transition-colors"
+                                          title="Herstel naar standaard Office Butler logo"
+                                        >
+                                          Standaard Office Butler
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Direct URL input */}
+                                  <div className="w-full md:w-80">
+                                    <label className="block text-[11px] font-semibold text-gray-600 mb-1">
+                                      Of voer een directe Afbeeldings-URL in:
+                                    </label>
+                                    <input
+                                      type="text"
+                                      className="w-full px-3 py-1.5 border rounded-md text-xs bg-white font-mono"
+                                      placeholder="https://i.imgur.com/ymXR7tL.png"
+                                      value={getContentValue('invoice_logo_url')}
+                                      onChange={e => setContentValue('invoice_logo_url', e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  BTW-identificatienummer
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('invoice_vat_number', 'NL868877037B01')}
+                                  value={getContentValue('invoice_vat_number')}
+                                  onChange={e => setContentValue('invoice_vat_number', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  IBAN Rekeningnummer
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white font-mono"
+                                  placeholder={getContentPlaceholder('invoice_iban', 'NL16ABNA0153600063')}
+                                  value={getContentValue('invoice_iban')}
+                                  onChange={e => setContentValue('invoice_iban', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  BIC / SWIFT
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white font-mono"
+                                  placeholder={getContentPlaceholder('invoice_bic', 'ABNANL2A')}
+                                  value={getContentValue('invoice_bic')}
+                                  onChange={e => setContentValue('invoice_bic', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  E-mailadres voor facturen
+                                </label>
+                                <input
+                                  type="email"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('invoice_email', 'info@office-butler.com')}
+                                  value={getContentValue('invoice_email')}
+                                  onChange={e => setContentValue('invoice_email', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  Vestigingsadres
+                                </label>
+                                <input
+                                  type="text"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('invoice_address', 'Muiderstraat 18-s, 1011 RB Amsterdam')}
+                                  value={getContentValue('invoice_address')}
+                                  onChange={e => setContentValue('invoice_address', e.target.value)}
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                                  Standaard Betaaltermijn (dagen)
+                                </label>
+                                <input
+                                  type="number"
+                                  className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                  placeholder={getContentPlaceholder('invoice_payment_terms_days', '14')}
+                                  value={getContentValue('invoice_payment_terms_days')}
+                                  onChange={e => setContentValue('invoice_payment_terms_days', e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* GEAUTOMATISEERDE E-MAILS & SJABLONEN */}
+                          <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-xs mb-8 space-y-6">
+                            <div className="border-b pb-4">
+                              <h4 className="font-bold text-[#05053D] text-base flex items-center gap-2">
+                                <Mail className="text-[#b58b4c]" size={20} />
+                                <span>Geautomatiseerde E-mails & Sjablonen (Onderwerpen & Teksten)</span>
+                              </h4>
+                              <p className="text-xs text-gray-500 mt-1">
+                                Pas hier de onderwerpen en teksten aan van alle geautomatiseerde e-mails die verstuurd worden via Resend (zoals facturen, maandfacturen, orderbevestigingen en wijzigingen).
+                              </p>
+                              
+                              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex flex-wrap items-center gap-2">
+                                <span className="font-bold">Beschikbare dynamische tags:</span>
+                                <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[11px] text-blue-800">{'{klantnaam}'}</code>
+                                <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[11px] text-blue-800">{'{bedrijfsnaam}'}</code>
+                                <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[11px] text-blue-800">{'{factuurnummer}'}</code>
+                                <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[11px] text-blue-800">{'{maand}'}</code>
+                                <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[11px] text-blue-800">{'{betaaltermijn}'}</code>
+                                <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono text-[11px] text-blue-800">{'{email}'}</code>
+                              </div>
+                            </div>
+
+                            <div className="space-y-6 divide-y divide-gray-100">
+                              {/* 1. Factuur e-mail (Losse bestelling) */}
+                              <div className="space-y-3 pt-2">
+                                <h5 className="font-semibold text-sm text-[#05053D] flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+                                  1. Factuur e-mail (Losse bestelling - verstuurd vanuit Dashboard)
+                                </h5>
+                                <div className="grid grid-cols-1 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                      Onderwerp Factuur e-mail
+                                    </label>
+                                    <input
+                                      type="text"
+                                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('email_invoice_subject', 'Factuur {factuurnummer} - {klantnaam} (Mokum Local Kitchen)')}
+                                      value={getContentValue('email_invoice_subject')}
+                                      onChange={e => setContentValue('email_invoice_subject', e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Inleidende tekst (bovenaan factuur e-mail)
+                                      </label>
+                                      <textarea
+                                        rows={3}
+                                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                        placeholder={getContentPlaceholder('email_invoice_intro', 'Beste {klantnaam},\n\nHartelijk dank voor uw bestelling. Hieronder vindt u de factuurspecificatie met alle details en betaalgegevens.')}
+                                        value={getContentValue('email_invoice_intro')}
+                                        onChange={e => setContentValue('email_invoice_intro', e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Afsluitende tekst / Betaalinstructie
+                                      </label>
+                                      <textarea
+                                        rows={3}
+                                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                        placeholder={getContentPlaceholder('email_invoice_outro', 'Wij verzoeken u vriendelijk het totaalbedrag binnen {betaaltermijn} dagen over te maken naar ons rekeningnummer onder vermelding van factuurnummer {factuurnummer}.\n\nHeeft u vragen over deze factuur? Neem gerust contact met ons op via {email}.')}
+                                        value={getContentValue('email_invoice_outro')}
+                                        onChange={e => setContentValue('email_invoice_outro', e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 2. Maand- / Verzamelfactuur e-mail */}
+                              <div className="space-y-3 pt-6">
+                                <h5 className="font-semibold text-sm text-[#05053D] flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-[#b58b4c]"></span>
+                                  2. Maand- / Verzamelfactuur e-mail (Verstuurd vanuit Dashboard)
+                                </h5>
+                                <div className="grid grid-cols-1 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                      Onderwerp Maandfactuur e-mail
+                                    </label>
+                                    <input
+                                      type="text"
+                                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('email_monthly_invoice_subject', 'Verzamelfactuur {maand} - {factuurnummer} - {bedrijfsnaam}')}
+                                      value={getContentValue('email_monthly_invoice_subject')}
+                                      onChange={e => setContentValue('email_monthly_invoice_subject', e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Inleidende tekst Verzamelfactuur
+                                      </label>
+                                      <textarea
+                                        rows={3}
+                                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                        placeholder={getContentPlaceholder('email_monthly_intro', 'Beste {klantnaam},\n\nHierbij ontvangt u de officiële verzamelfactuur voor alle geleverde cateringopdrachten in {maand}. In onderstaand overzicht vindt u de specificatie per leverdatum.')}
+                                        value={getContentValue('email_monthly_intro')}
+                                        onChange={e => setContentValue('email_monthly_intro', e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Afsluitende tekst Verzamelfactuur
+                                      </label>
+                                      <textarea
+                                        rows={3}
+                                        className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                        placeholder={getContentPlaceholder('email_monthly_outro', 'Wij verzoeken u vriendelijk het openstaande bedrag binnen {betaaltermijn} dagen over te maken.\n\nHartelijk dank voor de fijne samenwerking deze maand!')}
+                                        value={getContentValue('email_monthly_outro')}
+                                        onChange={e => setContentValue('email_monthly_outro', e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 3. Automatische Orderbevestiging Klant */}
+                              <div className="space-y-3 pt-6">
+                                <h5 className="font-semibold text-sm text-[#05053D] flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                                  3. Automatische Orderbevestiging Klant (Bij plaatsen van een order op de website)
+                                </h5>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                      Onderwerp Orderbevestiging
+                                    </label>
+                                    <input
+                                      type="text"
+                                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('email_order_confirm_subject', 'Bevestiging Bestelling & Factuur - {bedrijfsnaam}')}
+                                      value={getContentValue('email_order_confirm_subject')}
+                                      onChange={e => setContentValue('email_order_confirm_subject', e.target.value)}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                      Inleidende tekst Orderbevestiging
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      className="w-full px-3 py-2 border rounded-md text-sm bg-white"
+                                      placeholder={getContentPlaceholder('email_order_confirm_intro', 'Beste {klantnaam},\n\nBedankt voor uw bestelling via Office Butler. Hieronder vindt u het overzicht van uw bestelling en afleverdetails.')}
+                                      value={getContentValue('email_order_confirm_intro')}
+                                      onChange={e => setContentValue('email_order_confirm_intro', e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 4. Bestelling Gewijzigd & Geannuleerd */}
+                              <div className="space-y-3 pt-6">
+                                <h5 className="font-semibold text-sm text-[#05053D] flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                                  4. Wijziging- & Annuleringse-mails (Orderbeheer)
+                                </h5>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                  <div className="space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                    <div className="font-semibold text-xs text-gray-800">Bestelling Gewijzigd e-mail</div>
+                                    <div>
+                                      <label className="block text-[11px] font-medium text-gray-600 mb-1">Onderwerp</label>
+                                      <input
+                                        type="text"
+                                        className="w-full px-2.5 py-1.5 border rounded text-xs bg-white"
+                                        placeholder={getContentPlaceholder('email_order_modify_subject', '✏️ Bestelling Gewijzigd - {bedrijfsnaam}')}
+                                        value={getContentValue('email_order_modify_subject')}
+                                        onChange={e => setContentValue('email_order_modify_subject', e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] font-medium text-gray-600 mb-1">Inleidende tekst</label>
+                                      <textarea
+                                        rows={2}
+                                        className="w-full px-2.5 py-1.5 border rounded text-xs bg-white"
+                                        placeholder={getContentPlaceholder('email_order_modify_intro', 'Beste {klantnaam},\n\nUw bestelling is succesvol gewijzigd. Hieronder vindt u het actuele overzicht van de gewijzigde producten.')}
+                                        value={getContentValue('email_order_modify_intro')}
+                                        onChange={e => setContentValue('email_order_modify_intro', e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                                    <div className="font-semibold text-xs text-gray-800">Bestelling Geannuleerd e-mail</div>
+                                    <div>
+                                      <label className="block text-[11px] font-medium text-gray-600 mb-1">Onderwerp</label>
+                                      <input
+                                        type="text"
+                                        className="w-full px-2.5 py-1.5 border rounded text-xs bg-white"
+                                        placeholder={getContentPlaceholder('email_order_cancel_subject', '❌ Bestelling Geannuleerd - {bedrijfsnaam}')}
+                                        value={getContentValue('email_order_cancel_subject')}
+                                        onChange={e => setContentValue('email_order_cancel_subject', e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] font-medium text-gray-600 mb-1">Inleidende tekst</label>
+                                      <textarea
+                                        rows={2}
+                                        className="w-full px-2.5 py-1.5 border rounded text-xs bg-white"
+                                        placeholder={getContentPlaceholder('email_order_cancel_intro', 'Beste {klantnaam},\n\nDe onderstaande bestelling is succesvol geannuleerd. Er wordt geen bereiding of bezorging meer uitgevoerd.')}
+                                        value={getContentValue('email_order_cancel_intro')}
+                                        onChange={e => setContentValue('email_order_cancel_intro', e.target.value)}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1921,9 +3028,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               {/* Suggesties */}
                               <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
                                 <span className="font-semibold text-[11px] text-gray-400">Suggesties:</span>
-                                {SUGGESTED_TRANSLATION_TERMS.slice(0, 4).map(s => (
+                                {SUGGESTED_TRANSLATION_TERMS.slice(0, 4).map((s, idx) => (
                                   <button
-                                    key={s.term}
+                                    key={`sug-top-${s.term}-${idx}`}
                                     type="button"
                                     onClick={() => {
                                       setNewTransTerm(s.term);
@@ -1984,9 +3091,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                     </p>
                                     {!translationSearch && (
                                       <div className="mt-4 flex flex-wrap justify-center gap-2">
-                                        {SUGGESTED_TRANSLATION_TERMS.map(s => (
+                                        {SUGGESTED_TRANSLATION_TERMS.map((s, idx) => (
                                           <button
-                                            key={s.term}
+                                            key={`sug-empty-${s.term}-${idx}`}
                                             type="button"
                                             onClick={() => {
                                               const current = { ...(localStoreSettings.page_content?.custom_translations || {}) };
@@ -2012,9 +3119,9 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
                               return (
                                 <div className="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
-                                  {entries.map(([dutchTerm, engVal]) => (
+                                  {entries.map(([dutchTerm, engVal], idx) => (
                                     <div
-                                      key={dutchTerm}
+                                      key={`custom-trans-${dutchTerm}-${idx}`}
                                       className="p-3 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-amber-50/30 transition-colors"
                                     >
                                       <div className="flex-1 min-w-0 pr-4">
@@ -2162,10 +3269,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           </div>
                           
                           <div className="space-y-3">
-                            {DAYS_OF_WEEK.map((day) => {
+                            {DAYS_OF_WEEK.map((day, idx) => {
                               const daySchedule = localStoreSettings.schedule[day.id] || { open: '00:00', close: '00:00', closed: false };
                               return (
-                                <div key={day.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50/50 rounded-xl border border-gray-100 gap-4">
+                                <div key={`day-sched-${day.id || idx}-${idx}`} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50/50 rounded-xl border border-gray-100 gap-4">
                                   <div className="w-32 font-medium text-gray-700">{day.name}</div>
                                   <div className="flex items-center gap-3 flex-1">
                                     <div className="relative flex-1 max-w-[140px]">
@@ -2200,7 +3307,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             <button 
                               type="button"
                               onClick={() => { setActiveTab('deadlines'); setImpersonating(null); setSelectedCompanyForDeadlines(null); }}
-                              className="bg-[#05053D] text-white px-4 py-2.5 rounded-lg text-xs font-bold hover:bg-[#15233c] transition-colors shrink-0 flex items-center gap-2 cursor-pointer shadow-xs"
+                              className="bg-[#5170ff] text-white px-4 py-2.5 rounded-lg text-xs font-bold hover:bg-blue-600 transition-colors shrink-0 flex items-center gap-2 cursor-pointer shadow-xs"
                             >
                               <Clock size={15} /> Naar Wijzigingstermijnen Tab
                             </button>
@@ -2223,8 +3330,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           </div>
                         ) : (
                           <div className="space-y-4">
-                            {registrations.map(reg => (
-                              <div key={reg.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            {registrations.map((reg, regIdx) => (
+                              <div key={`reg-${reg.id || regIdx}-${regIdx}`} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                                 <div className="space-y-1">
                                   <h4 className="font-semibold text-lg text-ob-text">{reg.name}</h4>
                                   <p className="text-sm text-gray-600 flex items-center gap-2">{reg.address}</p>
@@ -2256,8 +3363,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           </div>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {customers.map(cust => (
-                              <div key={cust.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between gap-4 group hover:border-[#151f33] transition-colors">
+                            {customers.map((cust, custIdx) => (
+                              <div key={`cust-${cust.id || custIdx}-${custIdx}`} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between gap-4 group hover:border-[#151f33] transition-colors">
                                 <div>
                                   <div className="flex items-start justify-between mb-2">
                                     <h4 className="font-semibold text-lg text-ob-text">{cust.name}</h4>
@@ -2294,7 +3401,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                     
                     ) : activeTab === 'orders' ? (
                       <div className="space-y-6">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                           <div>
                             <h3 className="text-xl font-bold text-[#05053D]">Alle {!isSidebarCollapsed && <span>Bestellingen</span>}</h3>
                             <p className="text-sm text-gray-500">Overzicht van alle geplaatste bestellingen (inclusief gasten).</p>
@@ -2303,6 +3410,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         </div>
 
                         {(() => {
+                          const deliveredOrdersMap = localStoreSettings?.page_content?.delivered_orders || {};
+
                           const groupedOrders = Object.values(orders.reduce((acc, order) => {
                             const dateKey = new Date(order.created_at).toISOString().slice(0, 16);
                             const key = `${order.company_id || 'gast'}_${dateKey}_${order.delivery_date}_${order.delivery_time}`;
@@ -2347,6 +3456,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
                               acc[key] = {
                                 id: key,
+                                company_id: order.company_id || null,
                                 created_at: order.created_at,
                                 company_name: contactName,
                                 phone: phone,
@@ -2363,116 +3473,541 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             return acc;
                           }, {} as Record<string, any>)).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-                          if (groupedOrders.length === 0) {
-                            return (
-                              <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
-                                <ShoppingBag className="mx-auto h-10 w-10 text-gray-400 mb-3" />
-                                <p className="text-gray-500">Geen bestellingen gevonden.</p>
-                              </div>
-                            );
-                          }
+                          // Extract unique companies for dropdown filter
+                          const companyMap = new Map<string, string>();
+                          (customers || []).forEach((c: any) => {
+                            if (c.id && c.name) companyMap.set(c.id, c.name);
+                          });
+                          (orders || []).forEach((o: any) => {
+                            if (o.company_id && o.ob_companies?.name) {
+                              companyMap.set(o.company_id, o.ob_companies.name);
+                            }
+                          });
+                          const filterCompanyList = Array.from(companyMap.entries())
+                            .map(([id, name]) => ({ id, name }))
+                            .sort((a, b) => a.name.localeCompare(b.name));
+
+                          // Apply company and status filters
+                          const filteredOrders = groupedOrders.filter((group: any) => {
+                            // Filter by company
+                            if (orderCompanyFilter === 'GUEST') {
+                              if (group.company_id) return false;
+                            } else if (orderCompanyFilter !== 'ALL') {
+                              if (group.company_id !== orderCompanyFilter) return false;
+                            }
+
+                            // Filter by delivery status
+                            const isDelivered = group.items.some((i: any) => i.delivery_status === 'delivered') || Boolean(deliveredOrdersMap[group.id]);
+                            if (orderStatusFilter === 'delivered' && !isDelivered) return false;
+                            if (orderStatusFilter === 'pending' && isDelivered) return false;
+
+                            return true;
+                          });
 
                           return (
-                            <div className="w-full max-w-full overflow-auto custom-scrollbar bg-white border border-gray-200 rounded-xl max-h-[65vh]">
-                              <table className="w-full text-left border-collapse min-w-[1000px]">
-                                <thead>
-                                  <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-                                    <th className="p-4 font-semibold whitespace-nowrap">Datum (Besteld)</th>
-                                    <th className="p-4 font-semibold">Klant & Contact</th>
-                                    <th className="p-4 font-semibold min-w-[200px]">Afleveradres</th>
-                                    <th className="p-4 font-semibold min-w-[200px]">Bestelling (Producten)</th>
-                                    <th className="p-4 font-semibold text-right">Totaalprijs</th>
-                                    <th className="p-4 font-semibold whitespace-nowrap">Gewenste Levering</th>
-                                    <th className="p-4 font-semibold text-right">Acties</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                  {groupedOrders.map((group: any) => {
-                                    return (
-                                    <tr key={group.id} className="hover:bg-gray-50/50 align-top">
-                                      <td className="p-4 text-sm text-gray-800 whitespace-nowrap">
-                                        {new Date(group.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                      </td>
-                                      <td className="p-4 text-sm text-gray-800">
-                                        <div className="font-medium text-[#05053D]">{group.company_name}</div>
-                                        {group.items?.some((i: any) => i.status === 'cancelled') && (
-                                          <span className="inline-block px-2 py-0.5 mt-1 rounded text-[11px] font-bold bg-red-100 text-red-700">
-                                            Geannuleerd
-                                          </span>
-                                        )}
-                                        {group.phone && <div className="text-gray-500 mt-1">{group.phone}</div>}
-                                      </td>
-                                      <td className="p-4 text-sm text-gray-700">
-                                        {group.address ? (
-                                          <div className="max-w-xs">{group.address}</div>
-                                        ) : (
-                                          <span className="text-gray-400 italic">Niet opgegeven</span>
-                                        )}
-                                      </td>
-                                      <td className="p-4">
-                                        <div className="space-y-2">
-                                          {group.items.map((item: any, i: number) => (
-                                            <div key={item.id || i} className="text-sm">
-                                              <span className="font-semibold text-gray-800">{item.product_name}</span>{' '}
-                                              <span className="text-gray-500">({item.portion_size} stuks)</span>
-                                              <div className="text-xs text-gray-400">€{Number(item.price || 0).toFixed(2)} per stuk</div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </td>
-                                      <td className="p-4 text-sm text-right align-bottom">
-                                        {group.discount && group.discount.amount > 0 ? (
-                                          <div>
-                                            <span className="text-xs text-gray-400 line-through block">
-                                              €{group.total_order_price.toFixed(2)}
-                                            </span>
-                                            <div className="text-sm font-bold text-emerald-700">
-                                              €{Math.max(0, group.total_order_price - group.discount.amount).toFixed(2)}
-                                            </div>
-                                            <span className="inline-block text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mt-0.5">
-                                              {group.discount.code} (-€{group.discount.amount.toFixed(2)})
-                                            </span>
-                                          </div>
-                                        ) : group.discount && group.discount.code ? (
-                                          <div>
-                                            <div className="text-sm font-bold text-gray-900">
-                                              €{group.total_order_price.toFixed(2)}
-                                            </div>
-                                            <span className="inline-block text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mt-0.5">
-                                              🎁 {group.discount.code} (Gratis product)
-                                            </span>
-                                          </div>
-                                        ) : (
-                                          <div className="font-bold text-gray-900">
-                                            €{group.total_order_price.toFixed(2)}
-                                          </div>
-                                        )}
-                                      </td>
-                                      <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
-                                        {group.delivery_date ? new Date(group.delivery_date).toLocaleDateString('nl-NL') : 'Onbekend'}
-                                        <br/>
-                                        {group.delivery_time ? <span className="font-medium">{group.delivery_time}</span> : ''}
-                                      </td>
-                                      <td className="p-4 align-middle text-right">
-                                        <button 
-                                          onClick={() => handleResendInvoice(group)}
-                                          disabled={resendingInvoice === group.id}
-                                          className="text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
-                                          title="Stuur factuur/bevestiging opnieuw naar ons toe"
+                            <div className="space-y-4">
+                              {/* Bedrijf & Status Filter balk */}
+                              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
+                                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-700 whitespace-nowrap">
+                                    <Building2 className="w-4 h-4 text-[#05053D]" />
+                                    <span>Filter op bedrijf:</span>
+                                  </div>
+                                  <select
+                                    value={orderCompanyFilter}
+                                    onChange={(e) => setOrderCompanyFilter(e.target.value)}
+                                    className="w-full sm:max-w-xs px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 font-medium focus:ring-2 focus:ring-[#05053D] focus:border-[#05053D] outline-none"
+                                  >
+                                    <option value="ALL">🏢 Alle bedrijven & Gasten ({groupedOrders.length})</option>
+                                    <option value="GUEST">👤 Alleen Gastbestellingen</option>
+                                    {filterCompanyList.length > 0 && (
+                                      <optgroup label="Geregistreerde bedrijven">
+                                        {filterCompanyList.map((c, idx) => (
+                                          <option key={`company-filter-${c.id || idx}-${idx}`} value={c.id}>
+                                            {c.name}
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                  </select>
+
+                                  <div className="flex items-center gap-1.5 pt-1 sm:pt-0">
+                                    <span className="text-xs text-gray-500 font-medium whitespace-nowrap">Status:</span>
+                                    <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs">
+                                      <button
+                                        type="button"
+                                        onClick={() => setOrderStatusFilter('ALL')}
+                                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                          orderStatusFilter === 'ALL' ? 'bg-white text-gray-900 shadow-sm font-semibold' : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                      >
+                                        Alle
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setOrderStatusFilter('pending')}
+                                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                          orderStatusFilter === 'pending' ? 'bg-amber-100 text-amber-900 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                      >
+                                        Openstaand
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setOrderStatusFilter('delivered')}
+                                        className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                                          orderStatusFilter === 'delivered' ? 'bg-emerald-100 text-emerald-900 font-semibold shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                                        }`}
+                                      >
+                                        Voltooid
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                 <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5 text-xs text-gray-500">
+                                  {/* Maandfactuur Genereren Knop */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (orderCompanyFilter !== 'ALL' && orderCompanyFilter !== 'GUEST') {
+                                        setMonthlySelectedCompanyId(orderCompanyFilter);
+                                      } else if (filterCompanyList.length > 0) {
+                                        setMonthlySelectedCompanyId(filterCompanyList[0].id);
+                                      }
+                                      setIsMonthlySelectorOpen(true);
+                                    }}
+                                    className="px-3.5 py-1.5 bg-[#5170ff] hover:bg-blue-600 text-white font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                                    title="Genereer een verzamelfactuur / maandfactuur over alle afgeronde bestellingen van een gekozen maand"
+                                  >
+                                    <Calendar className="w-3.5 h-3.5 text-[#b58b4c]" />
+                                    <span>Maandfactuur Maken</span>
+                                  </button>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <span>Weergave: <strong className="text-gray-800">{filteredOrders.length}</strong> van {groupedOrders.length}</span>
+                                    {(orderCompanyFilter !== 'ALL' || orderStatusFilter !== 'ALL') && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOrderCompanyFilter('ALL');
+                                          setOrderStatusFilter('ALL');
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800 font-medium underline"
+                                      >
+                                        Wissen
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {filteredOrders.length === 0 ? (
+                                <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+                                  <ShoppingBag className="mx-auto h-10 w-10 text-gray-400 mb-3" />
+                                  <p className="text-gray-500 font-medium">Geen bestellingen gevonden voor de geselecteerde filters.</p>
+                                  {(orderCompanyFilter !== 'ALL' || orderStatusFilter !== 'ALL') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setOrderCompanyFilter('ALL');
+                                        setOrderStatusFilter('ALL');
+                                      }}
+                                      className="mt-3 text-xs font-semibold text-[#05053D] hover:underline"
+                                    >
+                                      Alle filters wissen
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="w-full max-w-full overflow-auto custom-scrollbar bg-white border border-gray-200 rounded-xl max-h-[65vh] shadow-sm">
+                                  <table className="w-full text-left border-collapse min-w-[1050px]">
+                                    <thead>
+                                      <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wider border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                                        <th className="p-4 font-semibold whitespace-nowrap">Datum (Besteld)</th>
+                                        <th className="p-4 font-semibold">Klant & Contact</th>
+                                        <th className="p-4 font-semibold min-w-[180px]">Afleveradres</th>
+                                        <th className="p-4 font-semibold min-w-[200px]">Bestelling (Producten)</th>
+                                        <th className="p-4 font-semibold text-right">Totaalprijs</th>
+                                        <th className="p-4 font-semibold whitespace-nowrap">Gewenste Levering</th>
+                                        <th className="p-4 font-semibold text-center whitespace-nowrap">Status</th>
+                                        <th className="p-4 font-semibold text-right whitespace-nowrap">Acties</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {filteredOrders.map((group: any, groupIndex: number) => {
+                                        const isDelivered = group.items.some((i: any) => i.delivery_status === 'delivered') || Boolean(deliveredOrdersMap[group.id]);
+                                        const deliveredAt = group.items.find((i: any) => i.delivered_at)?.delivered_at || deliveredOrdersMap[group.id]?.delivered_at;
+
+                                        return (
+                                          <tr key={`order-row-${group.id || groupIndex}-${groupIndex}`} className={`hover:bg-gray-50/60 align-top transition-colors ${isDelivered ? 'bg-emerald-50/15' : ''}`}>
+                                            <td className="p-4 text-sm text-gray-800 whitespace-nowrap">
+                                              {new Date(group.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-800">
+                                              <div className="font-semibold text-[#05053D]">{group.company_name}</div>
+                                              {group.items?.some((i: any) => i.status === 'cancelled') && (
+                                                <span className="inline-block px-2 py-0.5 mt-1 rounded text-[11px] font-bold bg-red-100 text-red-700">
+                                                  Geannuleerd
+                                                </span>
+                                              )}
+                                              {group.phone && <div className="text-gray-500 mt-1">{group.phone}</div>}
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-700">
+                                              {group.address ? (
+                                                <div className="max-w-xs">{group.address}</div>
+                                              ) : (
+                                                <span className="text-gray-400 italic">Niet opgegeven</span>
+                                              )}
+                                            </td>
+                                            <td className="p-4">
+                                              <div className="space-y-2">
+                                                {group.items.map((item: any, i: number) => (
+                                                  <div key={`order-item-${group.id || groupIndex}-${item.id || i}-${i}`} className="text-sm">
+                                                    <span className="font-semibold text-gray-800">{item.product_name}</span>{' '}
+                                                    <span className="text-gray-500">({item.portion_size} stuks)</span>
+                                                    <div className="text-xs text-gray-400">€{Number(item.price || 0).toFixed(2)} per stuk</div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </td>
+                                            <td className="p-4 text-sm text-right align-bottom">
+                                              {group.discount && group.discount.amount > 0 ? (
+                                                <div>
+                                                  <span className="text-xs text-gray-400 line-through block">
+                                                    €{group.total_order_price.toFixed(2)}
+                                                  </span>
+                                                  <div className="text-sm font-bold text-emerald-700">
+                                                    €{Math.max(0, group.total_order_price - group.discount.amount).toFixed(2)}
+                                                  </div>
+                                                  <span className="inline-block text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mt-0.5">
+                                                    {group.discount.code} (-€{group.discount.amount.toFixed(2)})
+                                                  </span>
+                                                </div>
+                                              ) : group.discount && group.discount.code ? (
+                                                <div>
+                                                  <div className="text-sm font-bold text-gray-900">
+                                                    €{group.total_order_price.toFixed(2)}
+                                                  </div>
+                                                  <span className="inline-block text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded mt-0.5">
+                                                    🎁 {group.discount.code} (Gratis product)
+                                                  </span>
+                                                </div>
+                                              ) : (
+                                                <div className="font-bold text-gray-900">
+                                                  €{group.total_order_price.toFixed(2)}
+                                                </div>
+                                              )}
+                                            </td>
+                                            <td className="p-4 text-sm text-gray-600 whitespace-nowrap">
+                                              {group.delivery_date ? new Date(group.delivery_date).toLocaleDateString('nl-NL') : 'Onbekend'}
+                                              <br/>
+                                              {group.delivery_time ? <span className="font-medium">{group.delivery_time}</span> : ''}
+                                            </td>
+                                            <td className="p-4 text-center whitespace-nowrap align-middle">
+                                              {isDelivered ? (
+                                                <div className="inline-flex flex-col items-center">
+                                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                    Voltooid & Afgeleverd
+                                                  </span>
+                                                  {deliveredAt && (
+                                                    <span className="text-[10px] text-gray-400 mt-1">
+                                                      {new Date(deliveredAt).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                                  Openstaand
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="p-4 align-middle text-right whitespace-nowrap">
+                                              <div className="flex items-center justify-end gap-2">
+                                                {/* Factuur genereren / Downloaden knop (Mokum Local Kitchen) */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setSelectedInvoiceOrder(group)}
+                                                  className={`text-xs px-2.5 py-1.5 font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-xs ${
+                                                    isDelivered
+                                                      ? 'bg-[#5170ff] hover:bg-blue-600 text-white border border-[#5170ff]'
+                                                      : 'bg-white hover:bg-gray-100 text-[#05053D] border border-gray-300'
+                                                  }`}
+                                                  title="Factuur genereren, inzien of downloaden / printen als PDF"
+                                                >
+                                                  <Printer className={`w-3.5 h-3.5 ${isDelivered ? 'text-[#b58b4c]' : 'text-gray-600'}`} />
+                                                  <span>Factuur / PDF</span>
+                                                </button>
+
+                                                {/* Factuur rechtstreeks mailen naar klant via Resend */}
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setSelectedInvoiceOrder(group);
+                                                    setInvoiceModalInitialShowEmail(true);
+                                                  }}
+                                                  className="text-xs px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+                                                  title="Factuur met één klik rechtstreeks mailen naar de klant via Resend"
+                                                >
+                                                  <Mail className="w-3.5 h-3.5 text-blue-600" />
+                                                  <span>Mail Factuur</span>
+                                                </button>
+
+                                                {isDelivered ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleToggleDeliveryStatus(group, 'pending')}
+                                                    disabled={updatingDeliveryStatus === group.id}
+                                                    className="text-xs px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+                                                    title="Status herstellen naar Openstaand"
+                                                  >
+                                                    {updatingDeliveryStatus === group.id ? (
+                                                      <span className="w-3.5 h-3.5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin inline-block"></span>
+                                                    ) : (
+                                                      <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                                                    )}
+                                                    <span>Herstel</span>
+                                                  </button>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleToggleDeliveryStatus(group, 'delivered')}
+                                                    disabled={updatingDeliveryStatus === group.id}
+                                                    className="text-xs px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                                                    title="Markeer als Voltooid en afgeleverd"
+                                                  >
+                                                    {updatingDeliveryStatus === group.id ? (
+                                                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block"></span>
+                                                    ) : (
+                                                      <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    )}
+                                                    <span>Markeer afgeleverd</span>
+                                                  </button>
+                                                )}
+
+                                                <button 
+                                                  type="button"
+                                                  onClick={() => handleResendInvoice(group)}
+                                                  disabled={resendingInvoice === group.id}
+                                                  className="text-xs px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors inline-flex items-center gap-1.5 disabled:opacity-50"
+                                                  title="Stuur factuur/bevestiging opnieuw naar ons toe"
+                                                >
+                                                  {resendingInvoice === group.id ? (
+                                                    <span className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin inline-block"></span>
+                                                  ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.87-11.45L2 6"/></svg>
+                                                  )}
+                                                  <span>Opnieuw sturen</span>
+                                                </button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+
+                              {/* Maand- / Verzamelfactuur Kiezer Modal */}
+                              {isMonthlySelectorOpen && (
+                                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+                                  <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden my-auto border border-gray-200">
+                                    {/* Header */}
+                                    <div className="flex items-center justify-between px-6 py-4 bg-[#05053D] text-white border-b border-gray-800">
+                                      <div className="flex items-center gap-2">
+                                        <Calendar className="w-5 h-5 text-[#b58b4c]" />
+                                        <h3 className="font-bold text-base">Maand- / Verzamelfactuur Genereren</h3>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setIsMonthlySelectorOpen(false)}
+                                        className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition-colors cursor-pointer"
+                                      >
+                                        <X className="w-5 h-5" />
+                                      </button>
+                                    </div>
+
+                                    <div className="p-6 space-y-5">
+                                      <p className="text-xs text-gray-500 leading-relaxed">
+                                        Kies een bedrijf en maand om alle afgeronde bestellingen samen te voegen op één officiële verzamelfactuur van Mokum Local Kitchen (inclusief eigen factuurnummer en BTW 9% specificatie).
+                                      </p>
+
+                                      {/* Bedrijf Selecteren */}
+                                      <div>
+                                        <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                          Selecteer Bedrijf
+                                        </label>
+                                        <select
+                                          value={monthlySelectedCompanyId}
+                                          onChange={(e) => setMonthlySelectedCompanyId(e.target.value)}
+                                          className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 font-medium focus:ring-2 focus:ring-[#05053D] outline-none"
                                         >
-                                          {resendingInvoice === group.id ? (
-                                            <span className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin inline-block"></span>
-                                          ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.13 15.57a9 9 0 1 0 3.87-11.45L2 6"/></svg>
+                                          {filterCompanyList.length === 0 && (
+                                            <option value="">Geen geregistreerde bedrijven gevonden</option>
                                           )}
-                                          Opnieuw sturen
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  );
-                                  })}
-                                </tbody>
-                              </table>
+                                          {filterCompanyList.map((c, idx) => (
+                                            <option key={`monthly-comp-${c.id || idx}-${idx}`} value={c.id}>
+                                              {c.name}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </div>
+
+                                      {/* Maand & Jaar */}
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            Maand
+                                          </label>
+                                          <select
+                                            value={monthlySelectedMonth}
+                                            onChange={(e) => setMonthlySelectedMonth(Number(e.target.value))}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 font-medium focus:ring-2 focus:ring-[#05053D] outline-none"
+                                          >
+                                            {MONTH_NAMES.map((name, idx) => (
+                                              <option key={`month-opt-${name}-${idx}`} value={idx + 1}>
+                                                {name}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                            Jaar
+                                          </label>
+                                          <select
+                                            value={monthlySelectedYear}
+                                            onChange={(e) => setMonthlySelectedYear(Number(e.target.value))}
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 font-medium focus:ring-2 focus:ring-[#05053D] outline-none"
+                                          >
+                                            {[2024, 2025, 2026, 2027].map((yr) => (
+                                              <option key={`yr-opt-${yr}`} value={yr}>
+                                                {yr}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+
+                                      {/* Alleen Afgeleverd Filter */}
+                                      <div className="flex items-center gap-2 pt-1">
+                                        <input
+                                          type="checkbox"
+                                          id="chkMonthlyOnlyDelivered"
+                                          checked={monthlyOnlyDelivered}
+                                          onChange={(e) => setMonthlyOnlyDelivered(e.target.checked)}
+                                          className="w-4 h-4 rounded text-[#05053D] focus:ring-[#05053D] border-gray-300"
+                                        />
+                                        <label htmlFor="chkMonthlyOnlyDelivered" className="text-xs font-medium text-gray-700 cursor-pointer">
+                                          Alleen afgeronde / voltooide bestellingen meenemen (status: Voltooid & Afgeleverd)
+                                        </label>
+                                      </div>
+
+                                      {/* Overzicht van gevonden bestellingen */}
+                                      {(() => {
+                                        const matching: any[] = groupedOrders.filter((group: any) => {
+                                          if (group.company_id !== monthlySelectedCompanyId) return false;
+                                          const d = group.delivery_date ? new Date(group.delivery_date) : new Date(group.created_at);
+                                          if (d.getFullYear() !== monthlySelectedYear) return false;
+                                          if (d.getMonth() + 1 !== monthlySelectedMonth) return false;
+                                          if (monthlyOnlyDelivered) {
+                                            const isDeliv = group.items.some((i: any) => i.delivery_status === 'delivered') || Boolean(deliveredOrdersMap[group.id]);
+                                            if (!isDeliv) return false;
+                                          }
+                                          return true;
+                                        });
+
+                                        const totalMonthlyAmount: number = matching.reduce((sum: number, g: any): number => {
+                                          const disc = g.discount && Number(g.discount.amount) > 0 ? Number(g.discount.amount) : 0;
+                                          return sum + Math.max(0, Number(g.total_order_price || 0) - disc);
+                                        }, 0);
+
+                                        return (
+                                          <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-xs font-bold text-gray-700">
+                                                Gevonden bestellingen in {MONTH_NAMES[monthlySelectedMonth - 1]} {monthlySelectedYear}:
+                                              </span>
+                                              <span className={`text-xs px-2 py-0.5 rounded font-bold ${matching.length > 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-200 text-gray-700'}`}>
+                                                {matching.length} bestelling{matching.length === 1 ? '' : 'en'}
+                                              </span>
+                                            </div>
+
+                                            {matching.length > 0 ? (
+                                              <div className="max-h-44 overflow-y-auto divide-y divide-gray-200 text-xs bg-white rounded-lg border border-gray-200 p-2">
+                                                {matching.map((ord: any, ordIdx: number) => {
+                                                  const dStr = ord.delivery_date 
+                                                    ? new Date(ord.delivery_date).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' }) 
+                                                    : new Date(ord.created_at).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit' });
+                                                  const disc = ord.discount && Number(ord.discount.amount) > 0 ? Number(ord.discount.amount) : 0;
+                                                  const net = Math.max(0, Number(ord.total_order_price || 0) - disc);
+                                                  return (
+                                                    <div key={`matching-order-${ord.id || ordIdx}-${ordIdx}`} className="py-2 px-1 flex items-center justify-between gap-2">
+                                                      <div>
+                                                        <span className="font-semibold text-gray-900">{dStr}</span>{' '}
+                                                        <span className="text-gray-500">({ord.delivery_time || '16:00'})</span>
+                                                        <div className="text-[11px] text-gray-600 truncate max-w-xs">
+                                                          {ord.items?.map((i: any) => `${i.product_name} (${i.portion_size}st)`).join(', ')}
+                                                        </div>
+                                                      </div>
+                                                      <span className="font-bold text-gray-900 shrink-0">€{net.toFixed(2)}</span>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            ) : (
+                                              <div className="text-center py-4 text-xs text-gray-500 bg-white rounded-lg border border-dashed border-gray-300">
+                                                Geen bestellingen gevonden voor dit bedrijf in {MONTH_NAMES[monthlySelectedMonth - 1]} {monthlySelectedYear}.
+                                              </div>
+                                            )}
+
+                                            <div className="flex justify-between items-center pt-2 border-t border-gray-200 text-xs font-bold text-gray-900">
+                                              <span>Totaalbedrag verzamelfactuur:</span>
+                                              <span className="text-sm text-emerald-800">€{totalMonthlyAmount.toFixed(2)}</span>
+                                            </div>
+
+                                            {/* Actieknoppen */}
+                                            <div className="flex items-center justify-end gap-3 pt-3">
+                                              <button
+                                                type="button"
+                                                onClick={() => setIsMonthlySelectorOpen(false)}
+                                                className="px-4 py-2 border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                                              >
+                                                Annuleren
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                disabled={matching.length === 0}
+                                                onClick={() => {
+                                                  const comp = customers.find((c: any) => c.id === monthlySelectedCompanyId) || 
+                                                    { id: monthlySelectedCompanyId, name: (matching[0] as any)?.company_name || 'Bedrijf' };
+                                                  setSelectedMonthlyInvoiceData({
+                                                    company: comp,
+                                                    month: monthlySelectedMonth,
+                                                    year: monthlySelectedYear,
+                                                    monthName: `${MONTH_NAMES[monthlySelectedMonth - 1]} ${monthlySelectedYear}`,
+                                                    orders: matching,
+                                                  });
+                                                  setIsMonthlySelectorOpen(false);
+                                                }}
+                                                className="px-4 py-2 bg-[#5170ff] hover:bg-blue-600 text-white text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm cursor-pointer"
+                                              >
+                                                <Printer className="w-3.5 h-3.5 text-[#b58b4c]" />
+                                                <span>Verzamelfactuur Openen & Downloaden</span>
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })()}
@@ -2499,10 +4034,12 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                onChange={(e) => setSelectedPriceProduct(e.target.value)}
                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
                              >
-                               {dbProducts.length > 0 ? dbProducts.map(prod => (
-                                 <option key={prod.name} value={(prod.name || '').trim()}>{(prod.name || '').trim()}</option>
-                               )) : AVAILABLE_PRODUCTS.map(prod => (
-                                 <option key={prod} value={prod.trim()}>{prod.trim()}</option>
+                               {dbProducts.length > 0 ? (
+                                 Array.from(new Set(dbProducts.map(p => (p.name || '').trim()))).filter(Boolean).map((prodName, idx) => (
+                                   <option key={`price-prod-${prodName}-${idx}`} value={prodName}>{prodName}</option>
+                                 ))
+                               ) : AVAILABLE_PRODUCTS.map((prod, idx) => (
+                                 <option key={`price-avail-${prod.trim()}-${idx}`} value={prod.trim()}>{prod.trim()}</option>
                                ))}
                              </select>
                            </div>
@@ -2514,8 +4051,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
                              >
                                <option value="">Standaard (Geen deal)</option>
-                               {customers.map(c => (
-                                 <option key={c.id} value={c.id}>{c.name}</option>
+                               {customers.map((c, idx) => (
+                                 <option key={`price-cust-${c.id || idx}-${idx}`} value={c.id}>{c.name}</option>
                                ))}
                              </select>
                            </div>
@@ -2535,8 +4072,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
                                 return (
                                   <tbody className="divide-y divide-gray-100">
-                                    {portionsToUse.map((portion: number) => (
-                                      <tr key={portion} className="hover:bg-gray-50/50 transition-colors">
+                                    {portionsToUse.map((portion: number, portionIdx: number) => (
+                                      <tr key={`portion-row-${portion}-${portionIdx}`} className="hover:bg-gray-50/50 transition-colors">
                                   <td className="px-6 py-4 font-medium text-gray-900">{portion} stuks</td>
                                   <td className="px-6 py-4 text-right">
                                     <div className="relative inline-flex items-center justify-end w-32 ml-auto">
@@ -2578,10 +4115,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                      <thead className="bg-gray-50 border-b border-gray-200">
                                        <tr>
                                          <th className="px-4 py-3 font-semibold text-gray-700">Variant</th>
-                                         {portionsToUse.map((size: number) => {
+                                         {portionsToUse.map((size: number, sizeIdx: number) => {
                                             const baseP = getDisplayPrice(size);
                                             return (
-                                              <th key={size} className="px-4 py-3 font-semibold text-gray-700 text-right min-w-[140px]">
+                                              <th key={`hdr-size-${size}-${sizeIdx}`} className="px-4 py-3 font-semibold text-gray-700 text-right min-w-[140px]">
                                                 <div>{size} st.</div>
                                                 <div className="text-[11px] font-normal text-gray-500">
                                                   Basisprijs: {baseP !== '' ? `€${Number(baseP).toFixed(2)}` : 'N.v.t.'}
@@ -2592,10 +4129,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                        </tr>
                                      </thead>
                                      <tbody className="divide-y divide-gray-100">
-                                       {prod.variants.map((v: string) => (
-                                         <tr key={v} className="hover:bg-gray-50/50 transition-colors">
+                                       {prod.variants.map((v: string, vIdx: number) => (
+                                         <tr key={`var-row-${v}-${vIdx}`} className="hover:bg-gray-50/50 transition-colors">
                                            <td className="px-4 py-3 text-gray-800 font-medium">{v}</td>
-                                           {portionsToUse.map((size: number) => {
+                                           {portionsToUse.map((size: number, sIdx: number) => {
                                               const key = `${v}_${size}`;
                                               const baseP = Number(getDisplayPrice(size)) || 0;
                                               const currentVal = variantFullPrices[key] !== undefined ? variantFullPrices[key] : '';
@@ -2603,7 +4140,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                               const diff = (!isNaN(numVal) && baseP > 0) ? Math.round((numVal - baseP) * 100) / 100 : null;
 
                                               return (
-                                                <td key={size} className="px-4 py-2.5 text-right">
+                                                <td key={`var-cell-${v}-${size}-${sIdx}`} className="px-4 py-2.5 text-right">
                                                   <div className="flex flex-col items-end gap-1">
                                                     <div className="flex items-center gap-1 justify-end">
                                                       <span className="text-gray-500 text-xs">€</span>
@@ -2666,6 +4203,27 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
             </div>
           </motion.div>
         </motion.div>
+      )}
+
+      {/* Factuur Modal (Mokum Local Kitchen - Single of Maandfactuur) */}
+      {(selectedInvoiceOrder || selectedMonthlyInvoiceData) && (
+        <InvoiceModal
+          isOpen={Boolean(selectedInvoiceOrder || selectedMonthlyInvoiceData)}
+          onClose={() => {
+            setSelectedInvoiceOrder(null);
+            setSelectedMonthlyInvoiceData(null);
+            setInvoiceModalInitialShowEmail(false);
+          }}
+          orderGroup={selectedInvoiceOrder}
+          monthlyData={selectedMonthlyInvoiceData}
+          initialShowEmail={invoiceModalInitialShowEmail}
+          customerCompany={
+            selectedInvoiceOrder?.company_id 
+              ? customers.find((c: any) => c.id === selectedInvoiceOrder.company_id) 
+              : selectedMonthlyInvoiceData?.company
+          }
+          storeSettings={localStoreSettings}
+        />
       )}
     </AnimatePresence>
   );

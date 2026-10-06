@@ -1,5 +1,6 @@
 import React, { useState, useEffect, FormEvent, MouseEvent } from 'react';
 import { supabase, sortVariantsByCategory } from '../lib/supabase';
+import { getTypographyStyle } from '../lib/typography';
 import { useNavigate } from 'react-router-dom';
 import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck, X, Info, Utensils } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -48,6 +49,9 @@ export function EmployeeOrdering() {
   
   const [assortment, setAssortment] = useState<string[]>([]);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
+  const [categoryDescriptions, setCategoryDescriptions] = useState<Record<string, string>>({});
+  const [categoryRestrictions, setCategoryRestrictions] = useState<Record<string, string[]>>({});
+  const [pageContent, setPageContent] = useState<any>({});
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [prices, setPrices] = useState<PriceMap>({});
   
@@ -197,11 +201,20 @@ export function EmployeeOrdering() {
         ]);
         const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
         const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || {};
+        const catDescMap: Record<string, string> = storeRes?.data?.page_content?.category_descriptions || {};
+        const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || {};
+        const catRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || {};
+        setCategoryDescriptions(catDescMap);
+        setCategoryRestrictions(catRestrictionsMap);
+        if (storeRes?.data?.page_content) {
+          setPageContent(storeRes.data.page_content);
+        }
         if (prodsRes.data) {
           prods = prodsRes.data.map((p: any) => ({
             ...p,
             brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
-            hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()])
+            hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
+            allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
           }));
         }
       } catch (e) {
@@ -287,7 +300,7 @@ export function EmployeeOrdering() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (Object.keys(selections).length === 0 || !selectedAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))) {
-      setError("Selecteer a.u.b. minimaal één product en vul uw contactgegevens in.");
+      setError(pageContent?.emp_error_required || "Selecteer a.u.b. minimaal één product en vul uw contactgegevens in.");
       return;
     }
 
@@ -309,7 +322,11 @@ export function EmployeeOrdering() {
     }, 0);
     
     if (maxSpendLimit !== null && totalOrderPrice > maxSpendLimit) {
-      setError(`Het maximaal toegestane bedrag per bestelling is €${maxSpendLimit.toFixed(2)}. Het totaalbedrag is nu €${totalOrderPrice.toFixed(2)}.`);
+      const defaultLimitMsg = `Het maximaal toegestane bedrag per bestelling is €${maxSpendLimit.toFixed(2)}. Het totaalbedrag is nu €${totalOrderPrice.toFixed(2)}.`;
+      const configuredLimitMsg = pageContent?.emp_error_max_spend
+        ? pageContent.emp_error_max_spend.replace('{limit}', maxSpendLimit.toFixed(2)).replace('{total}', totalOrderPrice.toFixed(2))
+        : defaultLimitMsg;
+      setError(configuredLimitMsg);
       setIsSubmitting(false);
       return;
     }
@@ -426,7 +443,7 @@ export function EmployeeOrdering() {
 
       } catch (e: any) {
         console.error(e);
-        setError("Er ging iets mis bij het plaatsen van de bestelling.");
+        setError(pageContent?.emp_error_general || "Er ging iets mis bij het plaatsen van de bestelling.");
       }
     } else {
       setTimeout(() => setOrderSuccess(true), 1000);
@@ -440,6 +457,12 @@ export function EmployeeOrdering() {
   }
 
   if (orderSuccess) {
+    const successTitle = pageContent?.emp_success_title || "Bestelling Geplaatst!";
+    const successMsg = pageContent?.emp_success_message || "Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.";
+    const delayNotice = pageContent?.delivery_delay_notice || "Opmerking: Wegens een technische vertraging bij onze e-mailprovider duren bevestigingsmails momenteel iets langer dan gebruikelijk.";
+    const modifyTitle = pageContent?.emp_modify_title || "Bestelling wijzigen of annuleren?";
+    const modifyNotice = pageContent?.emp_success_notice || "U kunt deze bestelling te allen tijde inzien, aanpassen of annuleren via uw Bedrijfsdashboard.";
+
     return (
       <div className="min-h-screen bg-[#f4f6f9] pt-32 pb-20 font-serif flex items-center justify-center px-6">
         <motion.div 
@@ -450,23 +473,23 @@ export function EmployeeOrdering() {
           <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 size={40} />
           </div>
-          <h2 className="text-3xl font-bold text-ob-text mb-4">Bestelling Geplaatst!</h2>
+          <h2 className="text-3xl font-bold text-ob-text mb-4">{successTitle}</h2>
           <p className="text-gray-600 mb-6 leading-relaxed">
-            Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.
-            {emailFailed && <span className="block mt-4 text-orange-600 text-sm">Opmerking: Wegens een technische vertraging bij onze e-mailprovider duren bevestigingsmails momenteel iets langer dan gebruikelijk.</span>}
+            {successMsg}
+            {emailFailed && <span className="block mt-4 text-orange-600 text-sm">{delayNotice}</span>}
           </p>
 
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 mb-6 text-xs text-blue-900 text-left">
-            💡 <strong>Bestelling wijzigen of annuleren?</strong><br />
-            U kunt deze bestelling te allen tijde inzien, aanpassen of annuleren via uw <strong>Bedrijfsdashboard</strong>.
+            💡 <strong>{modifyTitle}</strong><br />
+            {modifyNotice}
           </div>
 
           <div className="flex flex-col gap-2.5">
             <button 
               onClick={() => navigate('/dashboard')}
-              className="w-full bg-[#05053D] text-white py-3 rounded-lg font-semibold hover:bg-[#1a2a47] transition-colors"
+              className="w-full bg-[#5170ff] text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
             >
-              Ga naar Bedrijfsdashboard
+              {pageContent?.emp_btn_dashboard || "Ga naar Bedrijfsdashboard"}
             </button>
             <button 
               onClick={() => {
@@ -476,7 +499,7 @@ export function EmployeeOrdering() {
               }}
               className="w-full bg-gray-100 text-gray-700 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-sm"
             >
-              Nieuwe Bestelling Plaatsen
+              {pageContent?.emp_btn_new || "Nieuwe Bestelling Plaatsen"}
             </button>
           </div>
         </motion.div>
@@ -491,8 +514,12 @@ export function EmployeeOrdering() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-ob-text mb-1">Nieuwe Bestelling</h1>
-            <p className="text-gray-500">Bestel via het account van <strong className="text-ob-blue">{companyName}</strong></p>
+            <h1 className="text-3xl font-bold text-ob-text mb-1">{pageContent?.emp_order_title || "Nieuwe Bestelling"}</h1>
+            <p className="text-gray-500">
+              {pageContent?.emp_order_subtitle 
+                ? pageContent.emp_order_subtitle.replace('{companyName}', companyName) 
+                : <>Bestel via het account van <strong className="text-ob-blue">{companyName}</strong></>}
+            </p>
           </div>
           <button onClick={handleLogout} className="text-sm font-semibold text-red-600 hover:text-red-800 transition-colors">
             Uitloggen
@@ -512,14 +539,14 @@ export function EmployeeOrdering() {
             <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
               <div className="mb-6">
                 <h2 className="text-xl font-bold text-ob-text flex items-center gap-2">
-                  <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm"><Truck size={16} /></span> 
+                  <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs"><Truck size={16} /></span> 
                   Kies je bezorgmethode
                 </h2>
                 <p className="text-gray-500 mt-2 ml-10">Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {deliveryMethods.map(method => (
-                  <label key={method.id} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
+                {deliveryMethods.map((method, mIdx) => (
+                  <label key={`emp-del-${method.id || mIdx}-${mIdx}`} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
                     <div className="w-full h-32 rounded-lg overflow-hidden bg-gray-100 mb-4 shrink-0">
                       <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
                     </div>
@@ -550,7 +577,7 @@ export function EmployeeOrdering() {
           <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-ob-text flex items-center gap-2">
-                <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm">1</span> 
+                <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs">1</span> 
                 Kies uw Snacks & Porties
               </h2>
               {maxSpendLimit !== null && (
@@ -566,7 +593,22 @@ export function EmployeeOrdering() {
               <div className="flex flex-col gap-10">
                 {(() => {
                   const itemsToRender = dbProducts.length > 0 
-                    ? dbProducts.filter(p => assortment.includes(p.name) && !['inactive', 'inactief', 'verborgen'].includes((p.status || '').toLowerCase()))
+                    ? dbProducts.filter(p => {
+                        if (!assortment.includes(p.name)) return false;
+                        if (['inactive', 'inactief', 'verborgen'].includes((p.status || '').toLowerCase())) return false;
+                        
+                        // Check if primary category is restricted to specific companies
+                        const cat = (p.category || '').trim();
+                        if (cat && categoryRestrictions[cat] && Array.isArray(categoryRestrictions[cat]) && categoryRestrictions[cat].length > 0) {
+                          if (!categoryRestrictions[cat].includes(companyId)) return false;
+                        }
+
+                        // Check if product is restricted to specific companies
+                        if (p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0) {
+                          if (!p.allowed_company_ids.includes(companyId)) return false;
+                        }
+                        return true;
+                      })
                     : assortment.map(name => ({ name, status: 'Actief' }));
 
                   // Group items by category if available, maintaining category sort order
@@ -575,13 +617,24 @@ export function EmployeeOrdering() {
                       ? Array.from(new Set([item.category, ...item.additional_categories])) 
                       : [item.category || 'Assortiment'];
                     itemCats.forEach((cat: string) => {
+                      // Check category permission
+                      if (categoryRestrictions[cat] && Array.isArray(categoryRestrictions[cat]) && categoryRestrictions[cat].length > 0) {
+                        if (!categoryRestrictions[cat].includes(companyId)) return;
+                      }
                       if (!acc[cat]) acc[cat] = [];
                       acc[cat].push(item);
                     });
                     return acc;
                   }, {});
 
-                  const categoryList = Object.keys(grouped).map(key => {
+                  const categoryList = Object.keys(grouped)
+                    .filter(key => {
+                      if (categoryRestrictions[key] && Array.isArray(categoryRestrictions[key]) && categoryRestrictions[key].length > 0) {
+                        return categoryRestrictions[key].includes(companyId);
+                      }
+                      return true;
+                    })
+                    .map(key => {
                     const primaryItems = itemsToRender.filter(
                       (i: any) => (i.category || 'Assortiment').trim().toLowerCase() === key.trim().toLowerCase()
                     );
@@ -597,23 +650,34 @@ export function EmployeeOrdering() {
                   });
                   categoryList.sort((a, b) => a.minSortOrder - b.minSortOrder);
 
-                  return categoryList.map((category) => (
-                    <div key={category.title}>
+                  return categoryList.map((category, catIdx) => (
+                    <div key={`emp-cat-${category.title || catIdx}-${catIdx}`}>
                       {categoryList.length > 1 && category.title !== 'Assortiment' && (
-                        <h3 className="text-2xl font-serif font-bold text-ob-blue mb-5 border-b pb-2">{category.title}</h3>
+                        <h3 
+                          className="text-2xl font-bold text-ob-blue mb-2 border-b pb-2 font-title-default"
+                          style={getTypographyStyle('title', pageContent?.menu_category_title_font, pageContent?.menu_category_title_size)}
+                        >
+                          {category.title}
+                        </h3>
+                      )}
+                      {categoryDescriptions[category.title] && (
+                        <p className="text-sm text-gray-600 mb-5 italic bg-blue-50/50 p-3 rounded-lg border border-blue-100/70">
+                          ℹ️ {categoryDescriptions[category.title]}
+                        </p>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {category.items.map((item: any) => {
+                        {category.items.map((item: any, itemIdx: number) => {
                           const product = item.name;
                           const prodSelections = selections[product] || {};
-                          const productSizes = (item.portions && item.portions.length > 0) ? item.portions : PORTION_SIZES;
+                          const rawSizes = (item.portions && item.portions.length > 0) ? item.portions : PORTION_SIZES;
+                          const productSizes = Array.from(new Set(rawSizes)).sort((a: any, b: any) => Number(a) - Number(b));
                           const isSoldOut = ['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase());
                           const hasSelections = Object.keys(prodSelections).length > 0;
                           const hasImage = !item.hide_image && Boolean(item.image_url || PRODUCT_IMAGES[product] || item.image);
                           
                           return (
                             <div 
-                              key={product} 
+                              key={`emp-item-${category.title}-${item.id || item.name}-${itemIdx}`} 
                               className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${
                                 hasSelections 
                                   ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' 
@@ -641,7 +705,7 @@ export function EmployeeOrdering() {
                                       <div className="flex-1 min-w-0 flex flex-col">
                                         <div className="flex items-start justify-between gap-2 mb-1.5">
                                           <div className="flex items-center gap-2 flex-wrap">
-                                            <h4 className="font-bold text-[15px] text-[#05053D] leading-tight">{product}</h4>
+                                            <h4 className="font-normal text-[15px] text-[#05053D] leading-tight">{product}</h4>
                                           </div>
                                           {hasSelections && (
                                             <button 
@@ -707,16 +771,16 @@ export function EmployeeOrdering() {
                                             <span className="font-semibold text-gray-700">Kies variant:</span>
                                           </div>
                                           <div className="flex flex-wrap gap-1.5 w-full">
-                                            {sortedVariants.map((v: string) => {
+                                            {sortedVariants.map((v: string, vIdx: number) => {
                                               const isSelected = currentVariant === v;
                                               return (
                                                 <button
-                                                  key={v}
+                                                  key={`emp-var-${v}-${vIdx}`}
                                                   type="button"
                                                   onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
                                                   className={`flex-1 min-w-[70px] py-1.5 px-2.5 text-xs rounded-full font-bold transition-all border text-center ${
                                                     isSelected
-                                                      ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                                      ? 'bg-[#151f34] text-white border-[#151f34] shadow-sm ring-1 ring-[#151f34]'
                                                       : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                                   }`}
                                                 >
@@ -735,7 +799,7 @@ export function EmployeeOrdering() {
                                         </div>
                                       ) : null}
                                       <div className="grid grid-cols-2 gap-2 w-full">
-                                        {productSizes.map((size: number) => {
+                                        {productSizes.map((size: any, sizeIdx: number) => {
                                           const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
                                           const countForCurrentSelection = prodSelections[selKey] || 0;
                                           const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
@@ -747,13 +811,13 @@ export function EmployeeOrdering() {
                                           
                                           return (
                                             <button
-                                              key={size}
+                                              key={`emp-size-${size}-${sizeIdx}`}
                                               type="button"
                                               disabled={isDisabled} 
                                               onClick={() => {
                                                 handlePortionSelect(product, size, currentVariant);
                                               }}
-                                              className={`relative py-2 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
+                                              className={`relative py-2 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f34] text-white border-[#151f34] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f34] hover:shadow-sm'}`}
                                             >
                                               <span className="font-bold text-[13px]">{size} st.</span>
                                               <span className={`text-[11px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
@@ -769,7 +833,7 @@ export function EmployeeOrdering() {
                                                 </div>
                                               )}
                                               {countForCurrentSelection > 0 && (
-                                                <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                                <span className="absolute -top-2 -right-2 bg-[#151f34] text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
                                                   {countForCurrentSelection}
                                                 </span>
                                               )}
@@ -785,7 +849,7 @@ export function EmployeeOrdering() {
                                       {hasSelections && (
                                         <div className="mt-2 pt-3 border-t border-gray-200">
                                           <div className="flex flex-col gap-1">
-                                            {Object.entries(prodSelections).map(([s, qty]) => {
+                                            {Object.entries(prodSelections).map(([s, qty], sIdx) => {
                                               const parts = s.split('_');
                                               const sizeNum = parts[0];
                                               const variant = parts[1] || '';
@@ -794,7 +858,7 @@ export function EmployeeOrdering() {
                                               const surcharge = getVariantSurcharge(product, variant, sizeNum);
                                               const itemPrice = (basePrice + surcharge) * (qty as number);
                                               return (
-                                                <div key={s} className="flex justify-between items-center text-xs bg-white px-2.5 py-1.5 rounded border border-gray-200">
+                                                <div key={`emp-sel-${s}-${sIdx}`} className="flex justify-between items-center text-xs bg-white px-2.5 py-1.5 rounded border border-gray-200">
                                                   <span className="font-semibold text-gray-800">
                                                     {qty}x {sizeNum} stuks {variant && <span className="text-ob-blue font-bold">({variant})</span>}
                                                   </span>
@@ -842,14 +906,14 @@ export function EmployeeOrdering() {
           {/* Step 2: Delivery Details */}
           <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
             <h2 className="text-xl font-bold text-ob-text mb-6 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-full bg-ob-blue text-white flex items-center justify-center text-sm">2</span> 
+              <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs">2</span> 
               Aflevergegevens
             </h2>
             
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                  <MapPin size={16} className="text-gray-400" /> Kies Afleverlocatie
+                  <MapPin size={16} className="text-[#5170ff]" /> Kies Afleverlocatie
                 </label>
                 <select 
                   required
@@ -858,8 +922,8 @@ export function EmployeeOrdering() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-ob-blue bg-white"
                 >
                   <option value="" disabled>Selecteer een locatie...</option>
-                  {addresses.map(addr => (
-                    <option key={addr.id} value={addr.id}>
+                  {addresses.map((addr, aIdx) => (
+                    <option key={`addr-opt-${addr.id || aIdx}-${aIdx}`} value={addr.id}>
                       {addr.label} ({addr.address_line})
                     </option>
                   ))}
@@ -875,7 +939,7 @@ export function EmployeeOrdering() {
               {/* Delivery Time Selection */}
               <div className="border-b border-gray-100 pb-6 mb-6">
                 <label className="block text-sm font-semibold text-ob-text mb-3 flex items-center gap-2">
-                  <Clock size={16} className="text-gray-400" /> Bezorgmoment
+                  <Clock size={16} className="text-[#5170ff]" /> Bezorgmoment
                 </label>
                 
                 <div className="flex gap-4 mb-4">
@@ -907,7 +971,7 @@ export function EmployeeOrdering() {
                   <div className="grid grid-cols-2 gap-4 mt-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Calendar size={14} /> Datum
+                        <Calendar size={14} className="text-[#5170ff]" /> Datum
                       </label>
                       <input 
                         type="date" 
@@ -919,7 +983,7 @@ export function EmployeeOrdering() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Clock size={14} /> Tijd
+                        <Clock size={14} className="text-[#5170ff]" /> Tijd
                       </label>
                       <input 
                         type="time" 
@@ -933,7 +997,7 @@ export function EmployeeOrdering() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                  <Phone size={16} className="text-gray-400" /> Telefoonnummer contactpersoon
+                  <Phone size={16} className="text-[#5170ff]" /> Telefoonnummer contactpersoon
                 </label>
                 <input 
                   type="tel" 
@@ -989,9 +1053,9 @@ export function EmployeeOrdering() {
             <button 
               type="submit" 
               disabled={isSubmitting || Object.keys(selections).length === 0 || !selectedAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
-              className="w-full bg-[#05053D] text-white py-4 rounded-xl font-bold text-lg hover:bg-ob-blue transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
-              {isSubmitting ? 'Bezig met plaatsen...' : <><ShoppingBag size={20} /> Bestelling Plaatsen</>}
+              {isSubmitting ? (pageContent?.btn_submitting || 'Bezig met plaatsen...') : <><ShoppingBag size={20} /> {pageContent?.emp_btn_submit || 'Bestelling Plaatsen'}</>}
             </button>
           </div>
 
@@ -1030,7 +1094,7 @@ export function EmployeeOrdering() {
             
             <div className="p-6 overflow-y-auto flex flex-col gap-4">
               <div>
-                <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                <h3 className="text-2xl font-serif font-normal text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
                 {infoModalProduct.brand && (
                   <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
                     <span className="text-ob-blue/70 font-semibold">Merk:</span>
@@ -1073,16 +1137,16 @@ export function EmployeeOrdering() {
                             <span className="font-semibold text-gray-700">Kies variant:</span>
                           </div>
                           <div className="flex flex-wrap gap-1.5 w-full">
-                            {sortedModalVariants.map((v: string) => {
+                            {sortedModalVariants.map((v: string, vIdx: number) => {
                               const isSelected = currentVariant === v;
                               return (
                                 <button
-                                  key={v}
+                                  key={`emp-modal-var-${v}-${vIdx}`}
                                   type="button"
                                   onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
                                   className={`flex-1 min-w-[70px] py-1.5 px-3 text-xs rounded-full font-bold transition-all border text-center ${
                                     isSelected
-                                      ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                      ? 'bg-[#151f34] text-white border-[#151f34] shadow-sm ring-1 ring-[#151f34]'
                                       : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                   }`}
                                 >
@@ -1102,7 +1166,7 @@ export function EmployeeOrdering() {
                       ) : null}
                       
                       <div className="grid grid-cols-2 gap-2 w-full">
-                        {modalPortions.map((size: number) => {
+                        {Array.from(new Set(modalPortions)).sort((a: any, b: any) => Number(a) - Number(b)).map((size: any, sizeIdx: number) => {
                           const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
                           const prodSelections = selections[infoModalProduct.name] || {};
                           const countForCurrentSelection = prodSelections[selKey] || 0;
@@ -1116,13 +1180,13 @@ export function EmployeeOrdering() {
                           
                           return (
                             <button
-                              key={size}
+                              key={`emp-modal-size-${size}-${sizeIdx}`}
                               type="button"
-                              disabled={isDisabled}
+                              disabled={isDisabled} 
                               onClick={() => {
                                 handlePortionSelect(infoModalProduct.name, size, currentVariant);
                               }}
-                              className={`relative py-3 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
+                              className={`relative py-3 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f34] text-white border-[#151f34] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f34] hover:shadow-sm'}`}
                             >
                               <span className="font-bold text-[14px]">{size} stuks</span>
                               <span className={`text-[12px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
@@ -1141,7 +1205,7 @@ export function EmployeeOrdering() {
                                 </div>
                               )}
                               {countForCurrentSelection > 0 && (
-                                <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                <span className="absolute -top-2 -right-2 bg-[#151f34] text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
                                   {countForCurrentSelection}
                                 </span>
                               )}

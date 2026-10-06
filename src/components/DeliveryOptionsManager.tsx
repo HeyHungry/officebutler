@@ -224,7 +224,7 @@ export function DeliveryOptionsManager() {
             setEditingId('new');
             setEditForm({ is_active: true, price: 0 });
           }}
-          className="flex items-center gap-2 bg-[#05053D] text-white px-2 py-2 rounded-lg text-sm font-medium hover:bg-[#0a0a5c] transition-colors"
+          className="flex items-center gap-2 bg-[#5170ff] text-white px-2 py-2 rounded-lg text-sm font-medium hover:bg-blue-600 transition-colors"
         >
           <Plus size={16} /> Nieuwe Optie
         </button>
@@ -249,8 +249,8 @@ export function DeliveryOptionsManager() {
                   </tr>
                 )}
                 
-                {methods.map(p => (
-                  <SortableRow key={p.id} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} />
+                {methods.map((p, idx) => (
+                  <SortableRow key={`del-method-${p.id || idx}-${idx}`} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} />
                 ))}
               </tbody>
             </table>

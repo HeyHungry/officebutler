@@ -155,7 +155,7 @@ export function Auth() {
               </p>
               <button 
                 onClick={() => navigate('/')}
-                className="bg-ob-blue text-white px-8 py-3 tracking-wider hover:bg-ob-blue-dark transition-colors"
+                className="bg-[#5170ff] text-white px-8 py-3 tracking-wider hover:bg-[#4060ee] transition-colors rounded-lg font-semibold shadow-sm"
               >
                 TERUG NAAR HOME
               </button>
@@ -181,7 +181,7 @@ export function Auth() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
-                      className="w-full pl-10 pr-4 py-3 border border-gray-200 focus:outline-none focus:border-ob-blue focus:ring-1 focus:ring-ob-blue transition-colors"
+                      className="w-full pl-10 pr-4 py-3 border border-gray-200 focus:outline-none focus:border-[#5170ff] focus:ring-1 focus:ring-[#5170ff] transition-colors rounded-lg"
                       placeholder="naam@bedrijf.nl"
                     />
                     <Mail size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -196,7 +196,7 @@ export function Auth() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="w-full pl-10 pr-10 py-3 border border-gray-200 focus:outline-none focus:border-ob-blue focus:ring-1 focus:ring-ob-blue transition-colors"
+                      className="w-full pl-10 pr-10 py-3 border border-gray-200 focus:outline-none focus:border-[#5170ff] focus:ring-1 focus:ring-[#5170ff] transition-colors rounded-lg"
                       placeholder="••••••••"
                     />
                     <Lock size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -211,7 +211,7 @@ export function Auth() {
                 <button 
                   type="submit" 
                   disabled={isLoading}
-                  className="w-full bg-ob-blue text-white py-3.5 flex items-center justify-center gap-2 hover:bg-ob-blue-dark transition-colors tracking-wider font-semibold mt-2 disabled:opacity-50"
+                  className="w-full bg-[#5170ff] text-white py-3.5 flex items-center justify-center gap-2 hover:bg-[#4060ee] transition-colors tracking-wider font-semibold mt-2 disabled:opacity-50 rounded-lg shadow-sm"
                 >
                   {isLoading ? 'BEZIG...' : <><LogIn size={18} /> INLOGGEN</>}
                 </button>
@@ -221,7 +221,7 @@ export function Auth() {
                 <p className="text-gray-600 mb-3">Nieuw kantoor inschrijven?</p>
                 <button 
                   onClick={() => { setMode('register'); setError(''); }}
-                  className="text-ob-blue font-semibold hover:text-ob-accent transition-colors tracking-wide underline underline-offset-4"
+                  className="text-[#5170ff] font-semibold hover:text-[#4060ee] transition-colors tracking-wide underline underline-offset-4"
                 >
                   REGISTREER UW KANTOOR
                 </button>
@@ -305,7 +305,7 @@ export function Auth() {
 
                 {error && <div className="text-red-500 text-sm font-medium p-3 bg-red-50 border border-red-100 rounded">{error}</div>}
 
-                <button type="submit" disabled={isLoading} className="w-full bg-ob-blue text-white py-3.5 flex items-center justify-center gap-2 hover:bg-ob-blue-dark transition-colors tracking-wider font-semibold mt-4 disabled:opacity-50">
+                <button type="submit" disabled={isLoading} className="w-full bg-[#5170ff] text-white py-3.5 flex items-center justify-center gap-2 hover:bg-[#4060ee] transition-colors tracking-wider font-semibold mt-4 disabled:opacity-50 rounded-lg shadow-sm">
                   {isLoading ? 'BEZIG...' : <><UserPlus size={18} /> INSCHRIJVEN</>}
                 </button>
               </form>

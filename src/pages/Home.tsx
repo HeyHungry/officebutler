@@ -14,11 +14,11 @@ export function Home({ settings, storeSettings }: { settings: SharedSettings, st
     ? (content.section_order as HomepageSectionKey[])
     : DEFAULT_SECTION_ORDER;
 
-  // Zorg dat alle bekende secties aanwezig zijn (ook als er een nieuw is toegevoegd)
-  const fullOrder = [
+  // Zorg dat alle bekende secties uniek en aanwezig zijn
+  const fullOrder = Array.from(new Set([
     ...rawOrder.filter(key => DEFAULT_SECTION_ORDER.includes(key as HomepageSectionKey)),
-    ...DEFAULT_SECTION_ORDER.filter(key => !rawOrder.includes(key))
-  ];
+    ...DEFAULT_SECTION_ORDER
+  ]));
 
   const renderSection = (key: HomepageSectionKey) => {
     switch (key) {
@@ -41,8 +41,8 @@ export function Home({ settings, storeSettings }: { settings: SharedSettings, st
 
   return (
     <main className="font-serif flex-grow">
-      {fullOrder.map(sectionKey => (
-        <div key={sectionKey} className="contents">
+      {fullOrder.map((sectionKey, index) => (
+        <div key={`section-${sectionKey}-${index}`} className="contents">
           {renderSection(sectionKey as HomepageSectionKey)}
         </div>
       ))}

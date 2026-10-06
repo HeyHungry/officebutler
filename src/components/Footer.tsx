@@ -2,7 +2,10 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="font-serif bg-[#111827] text-white relative w-full min-w-full overflow-hidden">
+    <footer 
+      className="font-serif text-white relative w-full min-w-full overflow-hidden"
+      style={{ backgroundColor: '#151f34' }}
+    >
       {/* Checkered top border */}
       <div 
         className="h-6 w-full min-w-full"
@@ -13,7 +16,7 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
           `,
           backgroundPosition: '0 0, 12px 12px',
           backgroundSize: '24px 24px',
-          backgroundColor: '#111827'
+          backgroundColor: '#151f34'
         }}
       />
 
@@ -101,8 +104,57 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
         </div>
 
         {/* Bottom info */}
-        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/40 font-sans">
+        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/40 font-sans mb-4">
           <span>&copy; {currentYear} Office Butler</span>
+        </div>
+
+        {/* Partners Backlinks */}
+        <div className="pt-6 border-t border-white/5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-white/40 font-sans">
+          <span className="text-white/30 uppercase tracking-wider font-medium text-[11px]">Onze partners:</span>
+          <a 
+            href="https://rentastripper.nl/" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-white/70 transition-colors hover:underline underline-offset-2"
+          >
+            Rent a Stripper
+          </a>
+          <span className="text-white/20">•</span>
+          <a 
+            href="https://hireastripper.nl/" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-white/70 transition-colors hover:underline underline-offset-2"
+          >
+            Hire a Stripper
+          </a>
+          <span className="text-white/20">•</span>
+          <a 
+            href="https://striptease-agency.nl/" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-white/70 transition-colors hover:underline underline-offset-2"
+          >
+            Striptease Agency
+          </a>
+          <span className="text-white/20">•</span>
+          <a 
+            href="https://brice-app.com/" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-white/70 transition-colors hover:underline underline-offset-2"
+          >
+            Brice App
+          </a>
+          <span className="text-white/20">•</span>
+          <a 
+            href="https://vonmoos.nl/" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-white/70 transition-colors hover:underline underline-offset-2"
+          >
+            Von Moos
+          </a>
         </div>
 
       </div>

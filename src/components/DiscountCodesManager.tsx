@@ -172,7 +172,7 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
         {!isAdding && (
           <button
             onClick={handleOpenAdd}
-            className="inline-flex items-center gap-2 bg-[#05053D] hover:bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm cursor-pointer"
+            className="inline-flex items-center gap-2 bg-[#5170ff] hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-sm cursor-pointer"
           >
             <Plus size={16} />
             Nieuwe Kortingscode
@@ -289,14 +289,14 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
                     <span className="absolute right-3 top-2.5 text-gray-400 font-bold">%</span>
                   </div>
                   <div className="flex gap-2">
-                    {[5, 10, 15, 20, 25, 50].map((val) => (
+                    {[5, 10, 15, 20, 25, 50].map((val, idx) => (
                       <button
-                        key={val}
+                        key={`discount-val-${val}-${idx}`}
                         type="button"
                         onClick={() => setPercentageValue(val)}
                         className={`px-2.5 py-1 text-xs rounded font-medium border cursor-pointer ${
                           percentageValue === val
-                            ? 'bg-[#05053D] text-white border-[#05053D]'
+                            ? 'bg-[#5170ff] text-white border-[#5170ff]'
                             : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
                         }`}
                       >
@@ -320,8 +320,8 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
                     onChange={(e) => handleProductChange(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:border-[#05053D]"
                   >
-                    {dbProducts.map((p) => (
-                      <option key={p.id || p.name} value={p.name}>
+                    {dbProducts.map((p, idx) => (
+                      <option key={`disc-prod-${p.id || p.name}-${idx}`} value={p.name}>
                         {p.name} {p.category ? `(${p.category})` : ''}
                       </option>
                     ))}
@@ -339,8 +339,8 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
                       onChange={(e) => setSelectedPortion(Number(e.target.value))}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:border-[#05053D]"
                     >
-                      {activeProductObj?.portions?.map((port: number) => (
-                        <option key={port} value={port}>
+                      {activeProductObj?.portions?.map((port: number, idx: number) => (
+                        <option key={`disc-port-${port}-${idx}`} value={port}>
                           {port} stuks
                         </option>
                       )) || (
@@ -365,8 +365,8 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:border-[#05053D]"
                       >
                         <option value="">Standaard</option>
-                        {activeProductObj.variants.map((v: string) => (
-                          <option key={v} value={v}>
+                        {activeProductObj.variants.map((v: string, idx: number) => (
+                          <option key={`disc-var-${v}-${idx}`} value={v}>
                             {v}
                           </option>
                         ))}
@@ -424,7 +424,7 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
               <button
                 type="submit"
                 disabled={isSaving}
-                className="px-5 py-2 bg-[#05053D] hover:bg-blue-950 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2"
+                className="px-5 py-2 bg-[#5170ff] hover:bg-blue-600 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 cursor-pointer flex items-center gap-2"
               >
                 {isSaving ? 'Opslaan...' : 'Kortingscode Aanmaken'}
               </button>
@@ -444,7 +444,7 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
             </p>
             <button
               onClick={handleOpenAdd}
-              className="inline-flex items-center gap-2 bg-[#05053D] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-950 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 bg-[#5170ff] text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors cursor-pointer"
             >
               <Plus size={16} />
               Eerste code toevoegen
@@ -464,8 +464,8 @@ export function DiscountCodesManager({ storeSettings, onStoreSettingsUpdated, db
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm">
-                {codes.map((item) => (
-                  <tr key={item.id} className={`hover:bg-gray-50/80 transition-colors ${!item.is_active ? 'opacity-60 bg-gray-50/40' : ''}`}>
+                {codes.map((item, idx) => (
+                  <tr key={`disc-code-${item.id || idx}-${idx}`} className={`hover:bg-gray-50/80 transition-colors ${!item.is_active ? 'opacity-60 bg-gray-50/40' : ''}`}>
                     {/* Code */}
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-2">

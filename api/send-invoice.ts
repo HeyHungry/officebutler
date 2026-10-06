@@ -96,10 +96,32 @@ async function sendOrderToBiteberry(params: {
   discountAmount?: number;
   freeProductInfo?: string;
   isTest?: boolean;
+  supabaseAdmin?: any;
 }) {
   try {
-    const apiKey = process.env.BITEBERRY_API_KEY?.trim() || "ob_live_8f3a9e2b7c4d1f5e0a6b";
-    const storefrontId = process.env.BITEBERRY_STOREFRONT_ID?.trim() || "7b306068-28af-4c7d-a170-0f2cc3192e11";
+    let apiKey = process.env.BITEBERRY_API_KEY?.trim() || "ob_live_8f3a9e2b7c4d1f5e0a6b";
+    let storefrontId = process.env.BITEBERRY_STOREFRONT_ID?.trim() || "322e275f-c3d3-44bd-876c-f30ecf713227";
+    if (storefrontId === "4f6adec7-55d6-4bdb-b719-a37f44a3fc19") {
+      storefrontId = "322e275f-c3d3-44bd-876c-f30ecf713227";
+    }
+
+    if (params.supabaseAdmin) {
+      try {
+        const { data: storeRow } = await params.supabaseAdmin
+          .from('store_settings')
+          .select('page_content')
+          .eq('id', 1)
+          .single();
+        if (storeRow?.page_content?.biteberry_storefront_id?.trim() && storeRow.page_content.biteberry_storefront_id.trim() !== "4f6adec7-55d6-4bdb-b719-a37f44a3fc19") {
+          storefrontId = storeRow.page_content.biteberry_storefront_id.trim();
+        }
+        if (storeRow?.page_content?.biteberry_api_key?.trim()) {
+          apiKey = storeRow.page_content.biteberry_api_key.trim();
+        }
+      } catch (e) {
+        // Fallback to env
+      }
+    }
 
     if (!apiKey) {
       console.warn("[BiteBerry] Geen API key gevonden, bestelling wordt overgeslagen.");

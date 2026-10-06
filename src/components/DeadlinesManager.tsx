@@ -161,7 +161,7 @@ export function DeadlinesManager({
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="px-5 py-2.5 text-xs font-bold text-white bg-[#05053D] hover:bg-[#15233c] disabled:opacity-50 rounded-lg transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+            className="px-5 py-2.5 text-xs font-bold text-white bg-[#5170ff] hover:bg-blue-600 disabled:opacity-50 rounded-lg transition-all flex items-center gap-2 shadow-xs cursor-pointer"
           >
             {isSaving ? (
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -234,8 +234,8 @@ export function DeadlinesManager({
           <span>Overzicht van de 5 Individuele Wijzigingsacties:</span>
         </h4>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-          {(Object.keys(DEADLINE_ACTION_LABELS) as DeadlineAction[]).map(act => (
-            <div key={act} className="p-3 bg-gray-50 rounded-lg border border-gray-100 flex items-start gap-2.5">
+          {(Object.keys(DEADLINE_ACTION_LABELS) as DeadlineAction[]).map((act, idx) => (
+            <div key={`deadline-act-${act}-${idx}`} className="p-3 bg-gray-50 rounded-lg border border-gray-100 flex items-start gap-2.5">
               <span className="shrink-0 mt-0.5">{actionIcons[act]}</span>
               <div>
                 <div className="font-bold text-[#05053D]">{DEADLINE_ACTION_LABELS[act].label}</div>
@@ -295,7 +295,7 @@ export function DeadlinesManager({
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
               {tiers.map((tier, idx) => (
-                <tr key={tier.id} className="hover:bg-blue-50/20 transition-colors">
+                <tr key={`tier-tr-${tier.id || idx}-${idx}`} className="hover:bg-blue-50/20 transition-colors">
                   <td className="p-4">
                     <div className="font-bold text-[#05053D]">{tier.name}</div>
                     <div className="text-[11px] text-gray-500">
@@ -397,8 +397,8 @@ export function DeadlinesManager({
 
         {/* Mobiele Kaarten Weergave */}
         <div className="lg:hidden space-y-4">
-          {tiers.map(tier => (
-            <div key={tier.id} className="bg-white p-5 rounded-xl border border-gray-200 shadow-2xs space-y-4">
+          {tiers.map((tier, idx) => (
+            <div key={`tier-card-${tier.id || idx}-${idx}`} className="bg-white p-5 rounded-xl border border-gray-200 shadow-2xs space-y-4">
               <div className="border-b pb-2">
                 <div className="font-bold text-base text-[#05053D]">{tier.name}</div>
                 <div className="text-xs text-gray-500">
@@ -409,8 +409,8 @@ export function DeadlinesManager({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {(Object.keys(DEADLINE_ACTION_LABELS) as DeadlineAction[]).map(act => (
-                  <div key={act} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                {(Object.keys(DEADLINE_ACTION_LABELS) as DeadlineAction[]).map((act, idx) => (
+                  <div key={`card-act-${tier.id || ''}-${act}-${idx}`} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-lg border border-gray-100">
                     <div className="flex items-center gap-2">
                       {actionIcons[act]}
                       <span className="font-semibold text-gray-800">{DEADLINE_ACTION_LABELS[act].short}</span>

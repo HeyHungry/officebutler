@@ -1,5 +1,6 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import { supabase, sortVariantsByCategory, DiscountCode } from '../lib/supabase';
+import { getTypographyStyle } from '../lib/typography';
 import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X, Tag, Percent, Gift } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
@@ -30,6 +31,7 @@ export function GuestOrdering() {
   const [selections, setSelections] = useState<Record<string, Record<string, number>>>({});
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [categoryDescriptions, setCategoryDescriptions] = useState<Record<string, string>>({});
   const [deliveryMethods, setDeliveryMethods] = useState<any[]>([]);
   const [selectedDeliveryMethod, setSelectedDeliveryMethod] = useState<any>(null);
   
@@ -61,6 +63,7 @@ export function GuestOrdering() {
   const [emailFailed, setEmailFailed] = useState(false);
   const [error, setError] = useState('');
   const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
+  const [pageContent, setPageContent] = useState<any>({});
 
   // Fetch prices if available
   useEffect(() => {
@@ -68,6 +71,7 @@ export function GuestOrdering() {
       if (supabase) {
         let prods = null;
         let globalPrices: any = null;
+        let categoryRestrictionsMap: Record<string, string[]> = {};
         try {
           const [pricesRes, prodsRes, storeRes] = await Promise.all([
             supabase.from('ob_product_prices').select('*'),
@@ -77,13 +81,21 @@ export function GuestOrdering() {
           globalPrices = pricesRes.data;
           const brandsMap: Record<string, string> = storeRes?.data?.page_content?.product_brands || {};
           const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || {};
+          const catDescMap: Record<string, string> = storeRes?.data?.page_content?.category_descriptions || {};
+          const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || {};
+          categoryRestrictionsMap = storeRes?.data?.page_content?.category_restricted_companies || {};
+          setCategoryDescriptions(catDescMap);
+          if (storeRes?.data?.page_content) {
+            setPageContent(storeRes.data.page_content);
+          }
           const loadedCodes: DiscountCode[] = storeRes?.data?.page_content?.discount_codes || [];
           setDiscountCodes(loadedCodes);
           if (prodsRes.data) {
             prods = prodsRes.data.map((p: any) => ({
               ...p,
               brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
-              hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()])
+              hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
+              allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
             }));
           }
           if (pricesRes.data) {
@@ -118,15 +130,25 @@ export function GuestOrdering() {
           const grouped = prods.reduce((acc, item) => {
             const st = (item.status || '').toLowerCase();
             if (['inactive', 'inactief', 'verborgen'].includes(st)) return acc;
+            // Exclude products restricted to specific companies from guest ordering
+            if (item.allowed_company_ids && Array.isArray(item.allowed_company_ids) && item.allowed_company_ids.length > 0) {
+              return acc;
+            }
             const itemCats = item.additional_categories && item.additional_categories.length > 0 ? Array.from(new Set([item.category, ...item.additional_categories])) : [item.category || 'Overig'];
             itemCats.forEach(cat => {
+              // Exclude categories restricted to specific companies from guest ordering
+              if (categoryRestrictionsMap[cat] && Array.isArray(categoryRestrictionsMap[cat]) && categoryRestrictionsMap[cat].length > 0) {
+                return;
+              }
               if (!acc[cat]) acc[cat] = [];
               acc[cat].push(item);
             });
             return acc;
           }, {});
           
-          const cats = Object.keys(grouped).map(key => {
+          const cats = Object.keys(grouped)
+            .filter(key => !(categoryRestrictionsMap[key] && Array.isArray(categoryRestrictionsMap[key]) && categoryRestrictionsMap[key].length > 0))
+            .map(key => {
             const primaryItems = prods.filter(
               (i: any) => (i.category || 'Overig').trim().toLowerCase() === key.trim().toLowerCase()
             );
@@ -276,7 +298,7 @@ export function GuestOrdering() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (Object.keys(selections).length === 0 || !guestName || !guestEmail || !guestAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))) {
-      setError("Vul a.u.b. alle verplichte velden in en selecteer minimaal één product.");
+      setError(pageContent?.guest_error_required || "Vul a.u.b. alle verplichte velden in en selecteer minimaal één product.");
       return;
     }
 
@@ -453,7 +475,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
         setOrderSuccess(true);
       } catch (e: any) {
         console.error(e);
-        setError("Er ging iets mis bij het plaatsen van de bestelling.");
+        setError(pageContent?.guest_error_general || "Er ging iets mis bij het plaatsen van de bestelling.");
       }
     } else {
       setTimeout(() => setOrderSuccess(true), 1000);
@@ -463,21 +485,29 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
   };
 
   if (orderSuccess) {
+    const successTitle = pageContent?.guest_success_title || pageContent?.order_success_title || "Bestelling Ontvangen!";
+    const defaultMsg = `Bedankt voor uw bestelling${guestName ? `, ${guestName}` : ''}. We hebben uw aanvraag goed ontvangen.`;
+    const configuredMsg = pageContent?.guest_success_message 
+      ? pageContent.guest_success_message.replace('{guestName}', guestName || '')
+      : defaultMsg;
+    const delayNotice = pageContent?.delivery_delay_notice || " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later).";
+    const invoiceNotice = pageContent?.guest_invoice_notice || " De factuur is verstuurd naar uw e-mail.";
+
     return (
       <div className="font-serif min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="bg-white max-w-md w-full rounded-2xl shadow-xl p-8 text-center border border-gray-100">
           <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle size={40} className="text-green-500" />
           </div>
-          <h2 className="text-3xl font-bold text-ob-blue mb-4">Bestelling Ontvangen!</h2>
+          <h2 className="text-3xl font-bold text-ob-blue mb-4">{successTitle}</h2>
           <p className="text-gray-600 mb-8 leading-relaxed">
-            Bedankt voor uw bestelling, {guestName}. We hebben uw aanvraag goed ontvangen.{emailFailed ? " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later)." : " De factuur is verstuurd naar uw e-mail."}
+            {configuredMsg}{emailFailed ? delayNotice : invoiceNotice}
           </p>
           <Link 
             to="/"
-            className="inline-block bg-ob-blue text-white px-8 py-3 rounded-xl font-semibold hover:bg-ob-blue-dark transition-colors"
+            className="inline-block bg-[#5170ff] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#4060ee] transition-colors shadow-sm"
           >
-            Terug naar home
+            {pageContent?.guest_success_button || "Terug naar home"}
           </Link>
         </div>
       </div>
@@ -514,8 +544,8 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
         
         
         <header className="mb-10 text-center">
-          <h1 className="text-3xl md:text-4xl font-bold text-ob-blue mb-3">Eenmalig Bestellen</h1>
-          <p className="text-gray-600">Selecteer uw favoriete snacks en vul uw factuur- en bezorggegevens in.</p>
+          <h1 className="text-3xl md:text-4xl font-bold text-ob-blue mb-3">{pageContent?.guest_order_title || "Eenmalig Bestellen"}</h1>
+          <p className="text-gray-600">{pageContent?.guest_order_subtitle || "Selecteer uw favoriete snacks en vul uw factuur- en bezorggegevens in."}</p>
         </header>
 
         {error && (
@@ -537,8 +567,8 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {deliveryMethods.map(method => (
-                    <label key={method.id} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
+                  {deliveryMethods.map((method, mIdx) => (
+                    <label key={`guest-del-${method.id || mIdx}-${mIdx}`} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
                       <div className="w-full h-32 rounded-lg overflow-hidden bg-gray-100 mb-4 shrink-0">
                         <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
                       </div>
@@ -576,17 +606,28 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             
             <div className="p-6">
               <div className="flex flex-col gap-12">
-                {categories.map((category) => (
-                  <div key={category.title}>
-                    <h3 className="text-2xl font-serif font-bold text-ob-blue mb-6 border-b pb-2">{category.title}</h3>
+                {categories.map((category, catIdx) => (
+                  <div key={`guest-cat-${category.title || catIdx}-${catIdx}`}>
+                    <h3 
+                      className="text-2xl font-bold text-ob-blue mb-2 border-b pb-2 font-title-default"
+                      style={getTypographyStyle('title', pageContent?.menu_category_title_font, pageContent?.menu_category_title_size)}
+                    >
+                      {category.title}
+                    </h3>
+                    {categoryDescriptions[category.title] && (
+                      <p className="text-sm text-gray-600 mb-6 italic bg-blue-50/50 p-3 rounded-lg border border-blue-100/70">
+                        ℹ️ {categoryDescriptions[category.title]}
+                      </p>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {category.items.map((item) => {
+                      {category.items.map((item, itemIdx) => {
                         const product = item.name;
                         const prodSelections = selections[product] || {};
-                        const productSizes = item.portions || [];
+                        const rawSizes = item.portions || [];
+                        const productSizes = Array.from(new Set(rawSizes)).sort((a: any, b: any) => Number(a) - Number(b));
                         const hasImage = !item.hide_image && Boolean(item.image_url || item.image);
                         return (
-                          <div key={product} className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${Object.keys(prodSelections).length > 0 ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' : 'border-gray-200 bg-white hover:border-ob-blue/40 hover:shadow-sm'}`}>
+                          <div key={`guest-item-${category.title}-${item.id || item.name}-${itemIdx}`} className={`flex flex-col h-full border rounded-xl overflow-hidden transition-all ${Object.keys(prodSelections).length > 0 ? 'border-ob-blue shadow-md ring-1 ring-ob-blue/10 bg-white' : 'border-gray-200 bg-white hover:border-ob-blue/40 hover:shadow-sm'}`}>
                             {/* Top info section */}
                             <div className={`p-4 flex ${hasImage ? 'gap-4' : 'flex-col gap-2'}`}>
                               {hasImage && (
@@ -603,7 +644,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                               
                               <div className="flex-1 min-w-0 flex flex-col">
                                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                                  <h4 className="font-bold text-[15px] text-[#05053D] leading-tight">{product}</h4>
+                                  <h4 className="font-normal text-[15px] text-[#05053D] leading-tight">{product}</h4>
                                 </div>
                                 
                                 {((item.status && !['actief', 'inactief', 'verborgen', 'active', 'inactive', 'hidden'].includes((item.status || '').toLowerCase())) || !hasImage) && (
@@ -658,16 +699,16 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                           <span className="font-semibold text-gray-700">Kies variant:</span>
                                         </div>
                                         <div className="flex flex-wrap gap-1.5 w-full">
-                                          {sortedVariants.map((v: string) => {
+                                          {sortedVariants.map((v: string, vIdx: number) => {
                                             const isSelected = currentVariant === v;
                                             return (
                                               <button
-                                                key={v}
+                                                key={`guest-var-${v}-${vIdx}`}
                                                 type="button"
                                                 onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
                                                 className={`flex-1 min-w-[70px] py-1.5 px-2.5 text-xs rounded-full font-bold transition-all border text-center ${
                                                   isSelected
-                                                    ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                                    ? 'bg-[#151f34] text-white border-[#151f34] shadow-sm ring-1 ring-[#151f34]'
                                                     : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                                 }`}
                                               >
@@ -687,7 +728,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                     ) : null}
                                     <div className="grid grid-cols-2 gap-2 w-full">
                                       {productSizes.length > 0 ? (
-                                        productSizes.map(size => {
+                                        productSizes.map((size: any, sizeIdx: number) => {
                                     const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
                                     const countForCurrentSelection = prodSelections[selKey] || 0;
                                     const totalCountForSize = Object.keys(prodSelections).reduce((sum, key) => (key === size.toString() || key.startsWith(size + '_')) ? sum + prodSelections[key] : sum, 0);
@@ -701,13 +742,13 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                     
                                     return (
                                     <button
-                                      key={size}
+                                      key={`guest-size-${size}-${sizeIdx}`}
                                       type="button"
                                       disabled={isDisabled} 
                                       onClick={() => {
                                         handlePortionSelect(product, size, currentVariant);
                                       }}
-                                      className={`relative py-2 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
+                                      className={`relative py-2 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-0.5 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f34] text-white border-[#151f34] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f34] hover:shadow-sm'}`}
                                     >
                                       <span className="font-bold text-[13px]">{size} st.</span>
                                       <span className={`text-[11px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
@@ -723,7 +764,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                         </div>
                                       )}
                                       {countForCurrentSelection > 0 && (
-                                        <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                                        <span className="absolute -top-2 -right-2 bg-[#151f34] text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
                                           {countForCurrentSelection}
                                         </span>
                                       )}
@@ -741,12 +782,12 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                               {Object.keys(prodSelections).length > 0 && (
                                 <div className="mt-2 pt-3 border-t border-gray-200">
                                   <div className="flex flex-col gap-1">
-                                    {Object.entries(prodSelections).map(([s, qty]) => {
+                                    {Object.entries(prodSelections).map(([s, qty], sIdx) => {
                                       const parts = s.split('_');
                                       const sizeNum = parts[0];
                                       const variant = parts[1] || '';
                                       return (
-                                        <div key={s} className="flex justify-between items-center">
+                                        <div key={`guest-sel-${s}-${sIdx}`} className="flex justify-between items-center">
                                           <span className="text-[11px] font-semibold text-[#151f33]">{qty as number}x {sizeNum} st. {variant && <span className="text-gray-500 font-normal">({variant})</span>}</span>
                                         </div>
                                       );
@@ -792,7 +833,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-gray-100 pb-6">
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <Building size={16} className="text-gray-400" /> Naam / Bedrijfsnaam
+                    <Building size={16} className="text-[#5170ff]" /> Naam / Bedrijfsnaam
                   </label>
                   <input 
                     type="text" 
@@ -805,7 +846,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <Mail size={16} className="text-gray-400" /> Factuur E-mailadres
+                    <Mail size={16} className="text-[#5170ff]" /> Factuur E-mailadres
                   </label>
                   <input 
                     type="email" 
@@ -833,7 +874,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-gray-100 pb-6">
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <MapPin size={16} className="text-gray-400" /> Volledig Bezorgadres
+                    <MapPin size={16} className="text-[#5170ff]" /> Volledig Bezorgadres
                   </label>
                   <textarea 
                     required
@@ -846,7 +887,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <Phone size={16} className="text-gray-400" /> Telefoonnummer
+                    <Phone size={16} className="text-[#5170ff]" /> Telefoonnummer
                   </label>
                   <input 
                     type="tel" 
@@ -862,7 +903,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
               {/* Delivery Time Selection */}
               <div className="border-b border-gray-100 pb-6">
                 <label className="block text-sm font-semibold text-ob-text mb-3 flex items-center gap-2">
-                  <Clock size={16} className="text-gray-400" /> Bezorgmoment
+                  <Clock size={16} className="text-[#5170ff]" /> Bezorgmoment
                 </label>
                 
                 <div className="flex gap-4 mb-4">
@@ -894,7 +935,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                   <div className="grid grid-cols-2 gap-4 mt-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Calendar size={14} /> Datum
+                        <Calendar size={14} className="text-[#5170ff]" /> Datum
                       </label>
                       <input 
                         type="date" 
@@ -906,7 +947,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Clock size={14} /> Tijd
+                        <Clock size={14} className="text-[#5170ff]" /> Tijd
                       </label>
                       <input 
                         type="time" 
@@ -962,7 +1003,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                     <button
                       type="button"
                       onClick={handleApplyCoupon}
-                      className="px-6 py-3 bg-[#05053D] hover:bg-ob-blue text-white rounded-xl font-bold text-sm transition-colors cursor-pointer"
+                      className="px-6 py-3 bg-[#151f34] hover:bg-[#0c1322] text-white rounded-xl font-bold text-sm transition-colors cursor-pointer shadow-sm"
                     >
                       Toepassen
                     </button>
@@ -1052,9 +1093,9 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             <button 
               type="submit" 
               disabled={isSubmitting || Object.keys(selections).length === 0 || !guestName || !guestEmail || !guestAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
-              className="w-full bg-[#05053D] text-white py-4 rounded-xl font-bold text-lg hover:bg-ob-blue transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
-              {isSubmitting ? 'Bezig met plaatsen...' : <><ShoppingBag size={20} /> Bestelling Plaatsen (€{finalTotalAmount.toFixed(2)})</>}
+              {isSubmitting ? (pageContent?.btn_submitting || 'Bezig met plaatsen...') : <><ShoppingBag size={20} /> {pageContent?.guest_btn_submit || 'Bestelling Plaatsen'} (€{finalTotalAmount.toFixed(2)})</>}
             </button>
           </div>
 
@@ -1076,7 +1117,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             
             <div className="p-6 overflow-y-auto flex flex-col gap-4">
               <div>
-                <h3 className="text-2xl font-serif font-bold text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                <h3 className="text-2xl font-serif font-normal text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
                 {infoModalProduct.brand && (
                   <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
                     <span className="text-ob-blue/70 font-semibold">Merk:</span>
@@ -1116,16 +1157,16 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                             <span className="font-semibold text-gray-700">Kies variant:</span>
                           </div>
                           <div className="flex flex-wrap gap-1.5 w-full">
-                            {sortedModalVariants.map((v: string) => {
+                            {sortedModalVariants.map((v: string, vIdx: number) => {
                               const isSelected = currentVariant === v;
                               return (
                                 <button
-                                  key={v}
+                                  key={`guest-modal-var-${v}-${vIdx}`}
                                   type="button"
                                   onClick={() => setSelectedVariants({...selectedVariants, [variantKey]: v})}
                                   className={`flex-1 min-w-[70px] py-1.5 px-3 text-xs rounded-full font-bold transition-all border text-center ${
                                     isSelected
-                                      ? 'bg-[#05053D] text-white border-[#05053D] shadow-sm ring-1 ring-[#05053D]'
+                                      ? 'bg-[#151f34] text-white border-[#151f34] shadow-sm ring-1 ring-[#151f34]'
                                       : 'bg-white text-gray-700 border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                                   }`}
                                 >
@@ -1145,7 +1186,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                       ) : null}
                       
                       <div className="grid grid-cols-2 gap-2 w-full">
-                        {infoModalProduct.portions && [...infoModalProduct.portions].sort((a: number, b: number) => a - b).map((size: number) => {
+                        {infoModalProduct.portions && Array.from(new Set(infoModalProduct.portions)).sort((a: any, b: any) => Number(a) - Number(b)).map((size: any, sizeIdx: number) => {
                           const selKey = currentVariant ? `${size}_${currentVariant}` : size.toString();
                     const prodSelections = selections[infoModalProduct.name] || {};
                     const countForCurrentSelection = prodSelections[selKey] || 0;
@@ -1159,13 +1200,13 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                     
                     return (
                       <button
-                        key={size}
+                        key={`guest-modal-size-${size}-${sizeIdx}`}
                         type="button"
-                        disabled={isDisabled}
+                        disabled={isDisabled} 
                         onClick={() => {
                           handlePortionSelect(infoModalProduct.name, size, currentVariant);
                         }}
-                        className={`relative py-3 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f33] text-white border-[#151f33] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f33] hover:shadow-sm'}`}
+                        className={`relative py-3 px-1 text-sm rounded-lg border transition-all flex flex-col items-center justify-center gap-1 ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-50 border-gray-200' : countForCurrentSelection > 0 ? 'bg-[#151f34] text-white border-[#151f34] shadow-md' : 'bg-white text-gray-700 border-gray-200 hover:border-[#151f34] hover:shadow-sm'}`}
                       >
                         <span className="font-bold text-[14px]">{size} stuks</span>
                         <span className={`text-[12px] font-medium ${countForCurrentSelection > 0 ? 'text-white/90' : 'text-gray-500'}`}>{displayPrice !== undefined ? `€${displayPrice.toFixed(2)}` : '-'}</span>
@@ -1184,7 +1225,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                           </div>
                         )}
                         {countForCurrentSelection > 0 && (
-                          <span className="absolute -top-2 -right-2 bg-blue-500 text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
+                          <span className="absolute -top-2 -right-2 bg-[#151f34] text-white text-[11px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-md border-2 border-white">
                             {countForCurrentSelection}
                           </span>
                         )}

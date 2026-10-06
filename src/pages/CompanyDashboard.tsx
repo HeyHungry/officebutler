@@ -456,10 +456,34 @@ export function CompanyDashboard() {
         // Fetch products
         let prodsList: any[] = [];
         try {
-          const { data: prods } = await supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
-          if (prods) {
-            setDbProducts(prods);
-            prodsList = prods;
+          const [prodsRes, storeRes] = await Promise.all([
+            supabase.from('ob_products').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }),
+            supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle()
+          ]);
+          const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || {};
+          const hideImagesMap: Record<string, boolean> = storeRes?.data?.page_content?.hide_image_products || {};
+          const categoryRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || {};
+
+          if (prodsRes.data) {
+            const enriched = prodsRes.data.map((p: any) => ({
+              ...p,
+              hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
+              allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
+            }));
+            const allowedForCompany = enriched.filter((p: any) => {
+              // Check category restrictions
+              const cat = (p.category || '').trim();
+              if (cat && categoryRestrictionsMap[cat] && Array.isArray(categoryRestrictionsMap[cat]) && categoryRestrictionsMap[cat].length > 0) {
+                if (!categoryRestrictionsMap[cat].includes(comp.id)) return false;
+              }
+              // Check product restrictions
+              if (p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0) {
+                return p.allowed_company_ids.includes(comp.id);
+              }
+              return true;
+            });
+            setDbProducts(allowedForCompany);
+            prodsList = allowedForCompany;
           }
         } catch (e) {
           console.warn('No products table');
@@ -752,31 +776,31 @@ export function CompanyDashboard() {
           <div className="w-full md:w-64 shrink-0">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <nav className="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
-                <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'settings' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
-                  <Building size={18} /> Bedrijfsinstellingen
+                <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'settings' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
+                  <Building size={18} className={activeTab === 'settings' ? 'text-white' : 'text-[#5170ff]'} /> Bedrijfsinstellingen
                 </button>
-                <button onClick={() => setActiveTab('addresses')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'addresses' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
-                  <MapPin size={18} /> Afleveradressen
+                <button onClick={() => setActiveTab('addresses')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'addresses' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
+                  <MapPin size={18} className={activeTab === 'addresses' ? 'text-white' : 'text-[#5170ff]'} /> Afleveradressen
                 </button>
-                <button onClick={() => setActiveTab('employees')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'employees' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
-                  <Users size={18} /> Werknemers
+                <button onClick={() => setActiveTab('employees')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'employees' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
+                  <Users size={18} className={activeTab === 'employees' ? 'text-white' : 'text-[#5170ff]'} /> Werknemers
                 </button>
-                <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'orders' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
-                    <ShoppingBag size={18} /> Bestelgeschiedenis
+                <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'orders' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
+                    <ShoppingBag size={18} className={activeTab === 'orders' ? 'text-white' : 'text-[#5170ff]'} /> Bestelgeschiedenis
                   </button>
                   
-                <button onClick={() => setActiveTab('assortment')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'assortment' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
-                  <ListOrdered size={20} />
+                <button onClick={() => setActiveTab('assortment')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'assortment' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
+                  <ListOrdered size={20} className={activeTab === 'assortment' ? 'text-white' : 'text-[#5170ff]'} />
                   <span>Assortiment</span>
                 </button>
-                <button onClick={() => setActiveTab('delivery')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'delivery' ? 'bg-[#151f33] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-gray-50 border-l-4 border-transparent'}`}>
-                  <Truck size={20} />
+                <button onClick={() => setActiveTab('delivery')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'delivery' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
+                  <Truck size={20} className={activeTab === 'delivery' ? 'text-white' : 'text-[#5170ff]'} />
                   <span>Bezorgopties</span>
                 </button>
 
                 <div className="md:mt-4 p-4 shrink-0 border-t border-gray-100">
-                  <button onClick={() => navigate('/order')} className="w-full flex justify-center items-center gap-2 px-6 py-3 bg-ob-blue text-white text-sm font-semibold rounded-lg hover:bg-ob-blue-dark transition-colors">
-                    <ShoppingBag size={18} /> Zelf Bestellen
+                  <button onClick={() => navigate('/order')} className="w-full flex justify-center items-center gap-2 px-6 py-3 bg-[#5170ff] text-white text-sm font-semibold rounded-lg hover:bg-[#4060ee] transition-colors shadow-sm">
+                    <ShoppingBag size={18} className="text-white" /> Zelf Bestellen
                   </button>
                 </div>
               </nav>
@@ -834,7 +858,7 @@ export function CompanyDashboard() {
                     />
                     <p className="text-xs text-gray-500 mt-1">Laat dit veld leeg als er geen limiet is. Bestellingen boven dit bedrag worden geblokkeerd.</p>
                   </div>
-                  <button type="submit" disabled={isSaving} className="bg-ob-blue text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors flex items-center gap-2 disabled:opacity-50">
+                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
                     <Save size={18} /> Opslaan
                   </button>
                 </form>
@@ -852,8 +876,8 @@ export function CompanyDashboard() {
                 {/* Existing Addresses */}
                 {addresses.length > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {addresses.map(addr => (
-                      <div key={addr.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50 flex flex-col justify-between">
+                    {addresses.map((addr, idx) => (
+                      <div key={`dash-addr-${addr.id || idx}-${idx}`} className="border border-gray-200 rounded-xl p-4 bg-gray-50 flex flex-col justify-between">
                         <div className="mb-4">
                           <h4 className="font-bold text-ob-text">{addr.label}</h4>
                           <p className="text-sm text-gray-600 mt-1">{addr.address_line}</p>
@@ -885,7 +909,7 @@ export function CompanyDashboard() {
                     <input type="text" value={newInstructions} onChange={e => setNewInstructions(e.target.value)} placeholder="Bijv: Bellen bij de poort" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue" />
                   </div>
                   
-                  <button type="submit" disabled={isSaving} className="bg-ob-blue text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors flex items-center gap-2 disabled:opacity-50">
+                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
                     <Plus size={18} /> Toevoegen
                   </button>
                 </form>
@@ -912,7 +936,7 @@ export function CompanyDashboard() {
                       <input type="text" value={allowedDomain} onChange={e => setAllowedDomain(e.target.value)} placeholder="@bedrijf.nl" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue focus:ring-1 focus:ring-ob-blue" />
                     </div>
                     
-                  <button type="submit" disabled={isSaving} className="bg-ob-blue text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors flex items-center gap-2 disabled:opacity-50">
+                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
                       Opslaan
                     </button>
                   </div>
@@ -948,7 +972,7 @@ export function CompanyDashboard() {
                     </div>
                   </div>
                   
-                  <button type="submit" disabled={isSaving} className="bg-ob-blue text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors flex items-center gap-2 disabled:opacity-50">
+                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
                     <UserPlus size={18} /> Aanmaken
                   </button>
                 </form>
@@ -964,10 +988,10 @@ export function CompanyDashboard() {
                     </div>
                   ) : (
                     <ul className="divide-y divide-gray-100">
-                      {employees.map(emp => (
-                        <li key={emp.id} className="p-4 px-6 flex items-center justify-between">
+                      {employees.map((emp, idx) => (
+                        <li key={`dash-emp-${emp.id || idx}-${idx}`} className="p-4 px-6 flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-[#151f33] text-white flex items-center justify-center font-bold">
+                            <div className="w-10 h-10 rounded-full bg-[#5170ff] text-white flex items-center justify-center font-bold">
                               {emp.first_name ? emp.first_name.charAt(0).toUpperCase() : <Users size={16} />}
                             </div>
                             <div>
@@ -1073,10 +1097,10 @@ export function CompanyDashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {groupedOrders.map((group: any) => {
+                          {groupedOrders.map((group: any, groupIdx: number) => {
                             const isCancelled = group.status === 'cancelled';
                             return (
-                              <tr key={group.id} className={`hover:bg-gray-50/50 align-top transition-colors ${isCancelled ? 'bg-gray-50/40 opacity-75' : ''}`}>
+                              <tr key={`comp-group-${group.id || groupIdx}-${groupIdx}`} className={`hover:bg-gray-50/50 align-top transition-colors ${isCancelled ? 'bg-gray-50/40 opacity-75' : ''}`}>
                                 <td className="py-3 px-4 text-xs text-gray-800 whitespace-nowrap font-medium">
                                   {new Date(group.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                 </td>
@@ -1096,7 +1120,7 @@ export function CompanyDashboard() {
                                 <td className="py-3 px-4 text-xs">
                                   <div className="space-y-1">
                                     {group.items.map((item: any, i: number) => (
-                                      <div key={item.id || i} className="text-xs flex items-center justify-between gap-3">
+                                      <div key={`comp-item-${group.id || groupIdx}-${item.id || i}-${i}`} className="text-xs flex items-center justify-between gap-3">
                                         <span className={`${isCancelled ? 'line-through text-gray-400' : 'text-gray-800 font-medium'}`}>
                                           {item.product_name} <span className="text-gray-500 font-normal">({item.portion_size}x)</span>
                                         </span>
@@ -1196,15 +1220,15 @@ export function CompanyDashboard() {
                     <h2 className="text-xl font-serif font-bold text-[#05053D] mb-2">Bezorgopties Beheren</h2>
                     <p className="text-sm text-gray-500">Bepaal welke bezorgopties medewerkers kunnen kiezen bij hun bestelling.</p>
                   </div>
-                  <button onClick={handleSaveDeliveryMethods} disabled={isSaving} className="flex items-center justify-center gap-2 bg-[#05053D] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0a0a5c] transition-colors disabled:opacity-70 shrink-0">
+                  <button onClick={handleSaveDeliveryMethods} disabled={isSaving} className="flex items-center justify-center gap-2 bg-[#5170ff] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-70 shrink-0">
                     {isSaving && <Loader2 size={16} className="animate-spin" />}
                     <Save size={18} /> Opties Opslaan
                   </button>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-                  {allDeliveryMethods.map(method => (
-                    <label key={method.id} className={`flex flex-col gap-3 p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethods.includes(method.id) ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                  {allDeliveryMethods.map((method, idx) => (
+                    <label key={`cdm-del-${method.id || idx}-${idx}`} className={`flex flex-col gap-3 p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethods.includes(method.id) ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
                       <div className="flex justify-between items-start">
                         <div className="w-full h-32 shrink-0 rounded-lg overflow-hidden bg-gray-100 mb-2">
                           <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1234,28 +1258,33 @@ export function CompanyDashboard() {
                     <h2 className="text-xl font-bold text-ob-text mb-1">Beschikbaar Assortiment</h2>
                     <p className="text-gray-500 text-sm">Vink aan welke producten uw werknemers mogen bestellen.</p>
                   </div>
-                  <button onClick={handleSaveAssortment} disabled={isSaving} className="bg-ob-blue text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-ob-blue-dark transition-colors flex items-center gap-2 disabled:opacity-50 shrink-0">
+                  <button onClick={handleSaveAssortment} disabled={isSaving} className="bg-[#5170ff] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50 shrink-0">
                     <Save size={18} /> Assortiment Opslaan
                   </button>
                 </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4">
-                  {(dbProducts.length > 0 ? dbProducts : AVAILABLE_PRODUCTS).map(product => (
-                    <label key={product.name} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${selectedProducts.includes(product.name) ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-                      <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-gray-100">
-                        <img src={product.image_url || product.image} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      </div>
-                      <div className="flex-1">
-                        <span className="font-medium text-gray-800 block">{product.name}</span>
-                      </div>
-                      <input 
-                        type="checkbox" 
-                        checked={selectedProducts.includes(product.name)}
-                        onChange={() => toggleProduct(product.name)}
-                        className="w-5 h-5 rounded border-gray-300 text-ob-blue focus:ring-ob-blue"
-                      />
-                    </label>
-                  ))}
+                  {(dbProducts.length > 0 ? dbProducts : AVAILABLE_PRODUCTS).map((product, idx) => {
+                    const hasVisibleImage = !product.hide_image && Boolean(product.image_url || product.image);
+                    return (
+                      <label key={`dash-assort-prod-${product.id || product.name}-${idx}`} className={`flex items-center gap-3 p-3 border rounded-xl cursor-pointer transition-colors ${selectedProducts.includes(product.name) ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                        {hasVisibleImage && (
+                          <div className="w-16 h-16 shrink-0 rounded-lg overflow-hidden bg-gray-100 border border-gray-100">
+                            <img src={product.image_url || product.image} alt={product.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-gray-800 block truncate">{product.name}</span>
+                        </div>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedProducts.includes(product.name)}
+                          onChange={() => toggleProduct(product.name)}
+                          className="w-5 h-5 rounded border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0"
+                        />
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1402,7 +1431,7 @@ export function CompanyDashboard() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <ShoppingBag size={14} className="text-ob-blue" /> Producten in deze Bestelling ({modifyItems.length})
+                        <ShoppingBag size={14} className="text-[#5170ff]" /> Producten in deze Bestelling ({modifyItems.length})
                       </label>
                       <span className="text-[11px] text-gray-500">
                         Minimaal 1 product vereist
@@ -1417,7 +1446,7 @@ export function CompanyDashboard() {
                         </div>
                       ) : (
                         modifyItems.map((item, idx) => (
-                          <div key={item.id || idx} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-gray-200 shadow-2xs">
+                          <div key={`modify-item-${item.id || idx}-${idx}`} className="flex items-center justify-between p-2.5 bg-white rounded-lg border border-gray-200 shadow-2xs">
                             <div className="flex-1 min-w-0 pr-3">
                               <div className="text-xs font-semibold text-gray-900 truncate">
                                 {item.product_name}
@@ -1488,8 +1517,8 @@ export function CompanyDashboard() {
                               className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue font-medium"
                             >
                               <option value="">-- Kies een snack / product --</option>
-                              {(dbProducts.length > 0 ? dbProducts : AVAILABLE_PRODUCTS).map((p: any) => (
-                                <option key={p.name} value={p.name}>{p.name}</option>
+                              {(dbProducts.length > 0 ? dbProducts : AVAILABLE_PRODUCTS).map((p: any, pIdx: number) => (
+                                <option key={`modify-prod-${p.id || p.name}-${pIdx}`} value={p.name}>{p.name}</option>
                               ))}
                             </select>
                           </div>
@@ -1507,8 +1536,8 @@ export function CompanyDashboard() {
                                   onChange={(e) => setAddVariant(e.target.value)}
                                   className="w-full px-2.5 py-1.5 text-xs bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue font-medium"
                                 >
-                                  {vars.map((v: string) => (
-                                    <option key={v} value={v}>{v}</option>
+                                  {vars.map((v: string, vIdx: number) => (
+                                    <option key={`modify-var-${v}-${vIdx}`} value={v}>{v}</option>
                                   ))}
                                 </select>
                               </div>
@@ -1529,9 +1558,10 @@ export function CompanyDashboard() {
                             >
                               {(() => {
                                 const selectedObj = dbProducts.find((p: any) => p.name === addProdName || p.name?.trim() === (addProdName || '').trim());
-                                const portions = (selectedObj?.portions && selectedObj.portions.length > 0) ? selectedObj.portions : [25, 50, 100, 200];
-                                return portions.map((num: number) => (
-                                  <option key={num} value={num}>{num} stuks</option>
+                                const rawPortions = (selectedObj?.portions && selectedObj.portions.length > 0) ? selectedObj.portions : [25, 50, 100, 200];
+                                const portions = Array.from(new Set(rawPortions)).sort((a: any, b: any) => Number(a) - Number(b));
+                                return portions.map((num: any, nIdx: number) => (
+                                  <option key={`modify-portion-${num}-${nIdx}`} value={num}>{num} stuks</option>
                                 ));
                               })()}
                             </select>
@@ -1543,7 +1573,7 @@ export function CompanyDashboard() {
                               type="button"
                               onClick={handleAddProduct}
                               disabled={!addProdName}
-                              className="w-full px-3 py-1.5 text-xs font-bold text-white bg-ob-blue hover:bg-[#0c1322] disabled:opacity-40 rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                              className="w-full px-3 py-1.5 text-xs font-bold text-white bg-[#5170ff] hover:bg-[#4060ee] disabled:opacity-40 rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs"
                             >
                               <Plus size={14} /> Toevoegen
                             </button>
@@ -1583,7 +1613,7 @@ export function CompanyDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <MapPin size={13} className="text-ob-blue" /> Bezorglocatie / Afleveradres
+                            <MapPin size={13} className="text-[#5170ff]" /> Bezorglocatie / Afleveradres
                           </span>
                           {!modalActions.change_location.allowed && (
                             <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
@@ -1597,8 +1627,8 @@ export function CompanyDashboard() {
                           disabled={!modalActions.change_location.allowed}
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue bg-white disabled:bg-gray-100 disabled:text-gray-500 font-medium"
                         >
-                          {addresses.map((addr) => (
-                            <option key={addr.id} value={addr.id}>
+                          {addresses.map((addr, aIdx) => (
+                            <option key={`modify-addr-${addr.id || aIdx}-${aIdx}`} value={addr.id}>
                               {addr.label} &mdash; {addr.address_line}
                             </option>
                           ))}
@@ -1610,7 +1640,7 @@ export function CompanyDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <Calendar size={13} className="text-ob-blue" /> Nieuwe Bezorgdatum
+                            <Calendar size={13} className="text-[#5170ff]" /> Nieuwe Bezorgdatum
                           </span>
                           {!modalActions.change_time.allowed && (
                             <span className="text-[10px] text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-1">
@@ -1631,7 +1661,7 @@ export function CompanyDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <Clock size={13} className="text-ob-blue" /> Nieuwe Bezorgtijd
+                            <Clock size={13} className="text-[#5170ff]" /> Nieuwe Bezorgtijd
                           </span>
                           {!modalActions.change_time.allowed && (
                             <span className="text-[10px] text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-1">
@@ -1652,7 +1682,7 @@ export function CompanyDashboard() {
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
-                        <Phone size={13} className="text-ob-blue" /> Telefoonnummer Contactpersoon / Chauffeur
+                        <Phone size={13} className="text-[#5170ff]" /> Telefoonnummer Contactpersoon / Chauffeur
                       </label>
                       <input
                         type="tel"
@@ -1702,7 +1732,7 @@ export function CompanyDashboard() {
                         {/* Locatie wijzigen */}
                         <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs flex flex-col justify-between space-y-1">
                           <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
-                            <MapPin size={13} className="text-ob-blue shrink-0" />
+                            <MapPin size={13} className="text-[#5170ff] shrink-0" />
                             <span>Locatie wijzigen</span>
                           </div>
                           <div className="font-bold text-slate-900 text-xs sm:text-[13px]">
@@ -1713,7 +1743,7 @@ export function CompanyDashboard() {
                         {/* Tijdstip wijzigen */}
                         <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs flex flex-col justify-between space-y-1">
                           <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
-                            <Calendar size={13} className="text-ob-blue shrink-0" />
+                            <Calendar size={13} className="text-[#5170ff] shrink-0" />
                             <span>Tijdstip wijzigen</span>
                           </div>
                           <div className="font-bold text-slate-900 text-xs sm:text-[13px]">
@@ -1758,7 +1788,7 @@ export function CompanyDashboard() {
                     <button
                       type="submit"
                       disabled={isModifying || modifyItems.length === 0}
-                      className="px-5 py-2 text-sm font-semibold text-white bg-[#05053D] hover:bg-[#1a2a47] rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 shadow-xs cursor-pointer"
+                      className="px-5 py-2 text-sm font-semibold text-white bg-[#5170ff] hover:bg-blue-600 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 shadow-xs cursor-pointer"
                     >
                       {isModifying ? (
                         <>

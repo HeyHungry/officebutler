@@ -11,9 +11,13 @@ export function OrderModal({ content }: { content?: any }) {
 
   if (step === 'none') return null;
 
+  const getTxt = (key: string, fallbackNl: string, fallbackEn?: string) => {
+    return content?.[key] || t(fallbackNl, fallbackEn);
+  };
+
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div key={`order-modal-${step}`} className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -29,8 +33,10 @@ export function OrderModal({ content }: { content?: any }) {
           className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden z-10"
         >
           <div className="flex justify-between items-center p-6 border-b border-gray-100">
-            <h2 className="text-2xl font-serif font-bold text-ob-blue">
-              {step === 'step1' ? t('Hoe wilt u bestellen?') : t('Maak uw keuze')}
+            <h2 className="text-2xl font-bold text-ob-blue font-title-default">
+              {step === 'step1' 
+                ? getTxt('modal_step1_title', 'Hoe wilt u bestellen?', 'How would you like to order?') 
+                : getTxt('modal_step2_title', 'Maak uw keuze', 'Make your choice')}
             </h2>
             <button onClick={closeModal} className="p-2 text-gray-400 hover:bg-gray-100 rounded-full transition-colors cursor-pointer" aria-label="Close">
               <X size={20} />
@@ -47,38 +53,38 @@ export function OrderModal({ content }: { content?: any }) {
                     if (el) el.scrollIntoView({ behavior: 'smooth' });
                     else navigate('/#business');
                   }}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-[#5170ff] hover:bg-[#5170ff]/5 transition-colors text-left group cursor-pointer"
                 >
-                  <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
+                  <div className="bg-[#5170ff]/10 p-3 rounded-lg text-[#5170ff] group-hover:scale-110 transition-transform">
                     <Building2 size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{content?.business_title || t("Word vaste klant")}</h3>
-                    <p className="text-sm text-gray-500">{content?.business_subtitle || t("Meld uw bedrijf aan voor een vaste bestelomgeving")}</p>
+                    <h3 className="font-bold text-gray-900">{getTxt('modal_business_title', content?.business_title || "Word vaste klant", "Become a regular client")}</h3>
+                    <p className="text-sm text-gray-500">{getTxt('modal_business_subtitle', content?.business_subtitle || "Meld uw bedrijf aan voor een vaste bestelomgeving", "Register your company for a dedicated ordering portal")}</p>
                   </div>
                 </button>
 
                 <button
-                  onClick={() => openStep2('scheduled')} className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer">
-                  <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
+                  onClick={() => openStep2('scheduled')} className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-[#5170ff] hover:bg-[#5170ff]/5 transition-colors text-left group cursor-pointer">
+                  <div className="bg-[#5170ff]/10 p-3 rounded-lg text-[#5170ff] group-hover:scale-110 transition-transform">
                     <Clock size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{t('Bestel vooraf', 'Pre-order')}</h3>
-                    <p className="text-sm text-gray-500">{t('Plan uw bestelling voor een later moment', 'Schedule your order for a later time')}</p>
+                    <h3 className="font-bold text-gray-900">{getTxt('modal_preorder_title', 'Bestel vooraf', 'Pre-order')}</h3>
+                    <p className="text-sm text-gray-500">{getTxt('modal_preorder_subtitle', 'Plan uw bestelling voor een later moment', 'Schedule your order for a later time')}</p>
                   </div>
                 </button>
 
                 <button
                   onClick={() => openStep2('zsm')}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-[#5170ff] hover:bg-[#5170ff]/5 transition-colors text-left group cursor-pointer"
                 >
-                  <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
+                  <div className="bg-[#5170ff]/10 p-3 rounded-lg text-[#5170ff] group-hover:scale-110 transition-transform">
                     <Zap size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{t('Bestel direct', 'Order directly')}</h3>
-                    <p className="text-sm text-gray-500">{t('Ontvang uw bestelling zo snel mogelijk', 'Receive your order as quickly as possible')}</p>
+                    <h3 className="font-bold text-gray-900">{getTxt('modal_direct_title', 'Bestel direct', 'Order directly')}</h3>
+                    <p className="text-sm text-gray-500">{getTxt('modal_direct_subtitle', 'Ontvang uw bestelling zo snel mogelijk', 'Receive your order as quickly as possible')}</p>
                   </div>
                 </button>
               </>
@@ -91,14 +97,14 @@ export function OrderModal({ content }: { content?: any }) {
                     closeModal();
                     navigate('/auth', { state: { deliveryMode: deliveryPref } });
                   }}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-[#5170ff] hover:bg-[#5170ff]/5 transition-colors text-left group cursor-pointer"
                 >
-                  <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
+                  <div className="bg-[#5170ff]/10 p-3 rounded-lg text-[#5170ff] group-hover:scale-110 transition-transform">
                     <LogIn size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{t('Inloggen')}</h3>
-                    <p className="text-sm text-gray-500">{t('Voor bestaande zakelijke klanten en medewerkers', 'For registered corporate clients and employees')}</p>
+                    <h3 className="font-bold text-gray-900">{getTxt('modal_login_title', 'Inloggen', 'Login')}</h3>
+                    <p className="text-sm text-gray-500">{getTxt('modal_login_subtitle', 'Voor bestaande zakelijke klanten en medewerkers', 'For registered corporate clients and employees')}</p>
                   </div>
                 </button>
 
@@ -107,14 +113,14 @@ export function OrderModal({ content }: { content?: any }) {
                     closeModal();
                     navigate('/guest-order', { state: { deliveryMode: deliveryPref } });
                   }}
-                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-ob-blue hover:bg-blue-50 transition-colors text-left group cursor-pointer"
+                  className="w-full flex items-center gap-4 p-4 border border-gray-200 rounded-xl hover:border-[#5170ff] hover:bg-[#5170ff]/5 transition-colors text-left group cursor-pointer"
                 >
-                  <div className="bg-ob-blue/10 p-3 rounded-lg text-ob-blue group-hover:scale-110 transition-transform">
+                  <div className="bg-[#5170ff]/10 p-3 rounded-lg text-[#5170ff] group-hover:scale-110 transition-transform">
                     <User size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{t('Eenmalig / Particulier bestellen', 'One-time / Guest order')}</h3>
-                    <p className="text-sm text-gray-500">{t('Snel bestellen zonder account', 'Quick ordering without an account')}</p>
+                    <h3 className="font-bold text-gray-900">{getTxt('modal_guest_title', 'Eenmalig / Particulier bestellen', 'One-time / Guest order')}</h3>
+                    <p className="text-sm text-gray-500">{getTxt('modal_guest_subtitle', 'Snel bestellen zonder account', 'Quick ordering without an account')}</p>
                   </div>
                 </button>
               </>

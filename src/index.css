@@ -1,17 +1,136 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
 @import "tailwindcss";
 
+/* -------------------------------------------------------------
+ * Custom Fonts: Postman's Serif
+ * ------------------------------------------------------------- */
+@font-face {
+  font-family: "Postman's Serif";
+  src: local("Postman's Serif Regular"), local("Postman's Serif"), local("Postmans Serif"),
+       url("/fonts/Postman's Serif-Regular.otf") format("opentype"),
+       url("/fonts/Postmans-Serif-Regular.otf") format("opentype"),
+       url("/fonts/Postman's Serif - All/Postman's Serif-Regular.otf") format("opentype"),
+       url("/Postman's Serif - All/Postman's Serif-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Postman's Serif";
+  src: local("Postman's Serif Bold"), local("Postmans Serif Bold"),
+       url("/fonts/Postman's Serif-Bold.otf") format("opentype"),
+       url("/fonts/Postmans-Serif-Bold.otf") format("opentype"),
+       url("/fonts/Postman's Serif - All/Postman's Serif-Bold.otf") format("opentype"),
+       url("/Postman's Serif - All/Postman's Serif-Bold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Postman's Serif";
+  src: local("Postman's Serif Medium"), local("Postmans Serif Medium"),
+       url("/fonts/Postman's Serif-Medium.otf") format("opentype"),
+       url("/fonts/Postmans-Serif-Medium.otf") format("opentype"),
+       url("/fonts/Postman's Serif - All/Postman's Serif-Medium.otf") format("opentype"),
+       url("/Postman's Serif - All/Postman's Serif-Medium.otf") format("opentype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Postman's Serif";
+  src: local("Postman's Serif Light"), local("Postmans Serif Light"),
+       url("/fonts/Postman's Serif-Light.otf") format("opentype"),
+       url("/fonts/Postmans-Serif-Light.otf") format("opentype"),
+       url("/fonts/Postman's Serif - All/Postman's Serif-Light.otf") format("opentype"),
+       url("/Postman's Serif - All/Postman's Serif-Light.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Postman's Serif";
+  src: local("Postman's Serif Regular Italic"), local("Postman's Serif Italic"),
+       url("/fonts/Postman's Serif-Regular Italic.otf") format("opentype"),
+       url("/fonts/Postman's Serif - All/Postman's Serif-Regular Italic.otf") format("opentype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* -------------------------------------------------------------
+ * Custom Fonts: Agrandir
+ * ------------------------------------------------------------- */
+@font-face {
+  font-family: "Agrandir Narrow";
+  src: local("Agrandir Narrow"), local("Agrandir-Narrow"),
+       url("/fonts/Agrandir-Narrow.otf") format("opentype"),
+       url("/fonts/AgrandirNarrow.otf") format("opentype"),
+       url("/fonts/Agrandir-Narrow.woff2") format("woff2"),
+       url("/fonts/Agrandir-Narrow.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Agrandir Regular";
+  src: local("Agrandir Regular"), local("Agrandir"), local("Agrandir-Regular"),
+       url("/fonts/Agrandir-Regular.otf") format("opentype"),
+       url("/fonts/Agrandir.otf") format("opentype"),
+       url("/fonts/Agrandir-Regular.woff2") format("woff2"),
+       url("/fonts/Agrandir-Regular.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Agrandir Bold";
+  src: local("Agrandir Bold"), local("Agrandir-Bold"),
+       url("/fonts/Agrandir-Bold.otf") format("opentype"),
+       url("/fonts/AgrandirBold.otf") format("opentype"),
+       url("/fonts/Agrandir-Bold.woff2") format("woff2"),
+       url("/fonts/Agrandir-Bold.woff") format("woff");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Agrandir";
+  src: local("Agrandir Regular"), local("Agrandir"),
+       url("/fonts/Agrandir-Regular.otf") format("opentype"),
+       url("/fonts/Agrandir.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Agrandir";
+  src: local("Agrandir Bold"), local("Agrandir-Bold"),
+       url("/fonts/Agrandir-Bold.otf") format("opentype"),
+       url("/fonts/AgrandirBold.otf") format("opentype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
-  --font-sans: "Postman's Serif", "Playfair Display", serif;
-  --font-serif: "Postman's Serif", "Playfair Display", serif;
+  --font-sans: "Agrandir Regular", "Agrandir", "Plus Jakarta Sans", sans-serif;
+  --font-serif: "Postman's Serif", "Postmans Serif", "Playfair Display", Georgia, serif;
   
   --color-ob-cream: #F4F6F9;
   --color-ob-cream-dark: #E2E8F0;
-  --color-ob-blue: #151f33;
+  --color-ob-blue: #151f34;
   --color-ob-blue-dark: #0d131f;
   --color-ob-blue-light: #25334d;
-  --color-ob-accent: #151f33;
-  --color-ob-accent-hover: #0d131f;
+  --color-ob-accent: #5170ff;
+  --color-ob-accent-hover: #4060ee;
   --color-ob-text: #05053D;
   --color-ob-text-light: #3A435E;
   
@@ -28,16 +147,69 @@
 }
 
 @layer base {
-  *, ::before, ::after {
-    font-family: "Postman's Serif", "Playfair Display", serif !important;
-  }
   html, body {
+    font-family: "Agrandir Narrow", "Agrandir", "Plus Jakarta Sans", sans-serif;
     @apply bg-ob-cream text-ob-text antialiased scroll-smooth;
   }
   
-  h1, h2, h3, h4, h5, h6 {
-    @apply font-semibold tracking-wide text-ob-text;
+  /* Titels in Postman's Serif Regular */
+  h1, h2 {
+    font-family: "Postman's Serif", "Postmans Serif", "Playfair Display", Georgia, serif;
+    font-weight: 400;
+    @apply tracking-wide text-ob-text;
   }
+
+  /* Kopjes in Agrandir Bold */
+  h3, h4, h5, h6 {
+    font-family: "Agrandir Bold", "Agrandir", "Plus Jakarta Sans", sans-serif;
+    font-weight: 700;
+    @apply tracking-wide text-ob-text;
+  }
+
+  /* Paragrafen in Agrandir Narrow */
+  p {
+    font-family: "Agrandir Narrow", "Agrandir", "Plus Jakarta Sans", sans-serif;
+    font-weight: 400;
+  }
+
+  /* Bullets / Knoppen in Agrandir Regular capslock */
+  button:not(.font-override) {
+    font-family: "Agrandir Regular", "Agrandir", "Plus Jakarta Sans", sans-serif;
+    font-weight: 500;
+  }
+}
+
+/* Explicit typographic utility classes */
+.font-title-default {
+  font-family: "Postman's Serif", "Postmans Serif", "Playfair Display", Georgia, serif;
+  font-weight: 400;
+}
+
+.font-subtitle-default {
+  font-family: "Agrandir Narrow", "Agrandir", "Plus Jakarta Sans", sans-serif;
+  font-weight: 400;
+}
+
+.font-heading-default {
+  font-family: "Agrandir Bold", "Agrandir", "Plus Jakarta Sans", sans-serif;
+  font-weight: 700;
+}
+
+.font-paragraph-default {
+  font-family: "Agrandir Narrow", "Agrandir", "Plus Jakarta Sans", sans-serif;
+  font-weight: 400;
+}
+
+.font-button-default {
+  font-family: "Agrandir Regular", "Agrandir", "Plus Jakarta Sans", sans-serif;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* 180 degree linear gradient blue background */
+.bg-gradient-blue-180 {
+  background: linear-gradient(180deg, #151f34 0%, #5270ff 100%);
 }
 
 /* Custom Scrollbar for Horizontal Tables */

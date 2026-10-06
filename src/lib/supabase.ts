@@ -76,6 +76,11 @@ export type StoreSettings = {
     company_deadlines?: Record<string, CompanyCustomDeadlines>;
     product_brands?: Record<string, string>;
     hide_image_products?: Record<string, boolean>;
+    product_kitchen_info?: Record<string, {
+      kitchen_name?: string;
+      ingredients?: string;
+      prep_instructions?: string;
+    }>;
     discount_codes?: DiscountCode[];
 
     // HERO
@@ -195,6 +200,7 @@ export type StoreSettings = {
     faq_q4_size?: string;
     faq_a4?: string;
     faq_a4_size?: string;
+    [key: string]: any;
   };
 };
 
@@ -267,13 +273,15 @@ export function getVariantScore(variant: string, categoryTitle: string): number 
 
 export function sortVariantsByCategory(variants: string[] | undefined, categoryTitle: string): string[] {
   if (!variants || variants.length === 0) return [];
-  return [...variants].sort((a, b) => {
+  // Deduplicate and trim variants
+  const uniqueVariants = Array.from(new Set(variants.map(v => (v || '').trim()).filter(Boolean)));
+  return uniqueVariants.sort((a, b) => {
     const scoreA = getVariantScore(a, categoryTitle);
     const scoreB = getVariantScore(b, categoryTitle);
     if (scoreA !== scoreB) {
       return scoreB - scoreA; // higher score first
     }
-    return 0;
+    return a.localeCompare(b);
   });
 }
 
