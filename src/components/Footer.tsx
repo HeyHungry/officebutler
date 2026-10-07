@@ -1,5 +1,16 @@
-export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
+import { Link } from 'react-router-dom';
+import { Shield } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
+
+export function Footer({ 
+  onOpenModPanel, 
+  onOpenPrivacyModal 
+}: { 
+  onOpenModPanel: () => void; 
+  onOpenPrivacyModal?: () => void; 
+}) {
   const currentYear = new Date().getFullYear();
+  const { t } = useLanguage();
 
   return (
     <footer 
@@ -103,9 +114,30 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
           </a>
         </div>
 
-        {/* Bottom info */}
-        <div className="flex justify-center items-center gap-6 flex-wrap text-sm text-white/40 font-sans mb-4">
+        {/* Bottom info & Legal */}
+        <div className="flex justify-center items-center gap-3 sm:gap-6 flex-wrap text-sm text-white/50 font-sans mb-4">
           <span>&copy; {currentYear} Office Butler</span>
+          <span className="text-white/20">•</span>
+          <span className="text-white/70">Mokum Local Kitchen (KvK 99852667)</span>
+          <span className="text-white/20">•</span>
+          {onOpenPrivacyModal ? (
+            <button 
+              type="button" 
+              onClick={onOpenPrivacyModal}
+              className="text-amber-400 hover:text-amber-300 transition-colors hover:underline underline-offset-4 cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <Shield size={13} />
+              {t('Privacy Policy', 'Privacy Policy')}
+            </button>
+          ) : (
+            <Link 
+              to="/privacy"
+              className="text-amber-400 hover:text-amber-300 transition-colors hover:underline underline-offset-4 inline-flex items-center gap-1.5"
+            >
+              <Shield size={13} />
+              {t('Privacy Policy', 'Privacy Policy')}
+            </Link>
+          )}
         </div>
 
         {/* Partners Backlinks */}
@@ -121,12 +153,12 @@ export function Footer({ onOpenModPanel }: { onOpenModPanel: () => void }) {
           </a>
           <span className="text-white/20">•</span>
           <a 
-            href="https://hireastripper.nl/" 
+            href="https://amsterdamactivityguide.com/" 
             target="_blank" 
             rel="noopener noreferrer" 
             className="hover:text-white/70 transition-colors hover:underline underline-offset-2"
           >
-            Hire a Stripper
+            Amsterdam Activity Guide
           </a>
           <span className="text-white/20">•</span>
           <a 

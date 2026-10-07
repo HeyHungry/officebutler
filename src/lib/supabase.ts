@@ -84,6 +84,7 @@ export type StoreSettings = {
     discount_codes?: DiscountCode[];
 
     // HERO
+    hero_background_image?: string;
     hero_pre_title?: string;
     hero_pre_title_size?: string;
     hero_title?: string;
@@ -271,15 +272,82 @@ export function getVariantScore(variant: string, categoryTitle: string): number 
   return 0;
 }
 
-export function sortVariantsByCategory(variants: string[] | undefined, categoryTitle: string): string[] {
+export type CategoryVariantRule = {
+  order?: string[];
+  hidden?: string[];
+};
+
+export type CategoryVariantRulesMap = Record<string, Record<string, CategoryVariantRule>>;
+
+export function sortVariantsByCategory(
+  variants: string[] | undefined,
+  categoryTitle: string,
+  product?: { id?: string; name?: string } | string,
+  categoryVariantRules?: CategoryVariantRulesMap
+): string[] {
   if (!variants || variants.length === 0) return [];
   // Deduplicate and trim variants
   const uniqueVariants = Array.from(new Set(variants.map(v => (v || '').trim()).filter(Boolean)));
-  return uniqueVariants.sort((a, b) => {
+  if (uniqueVariants.length === 0) return [];
+
+  // Check if a category variant rule exists
+  if (categoryVariantRules && categoryTitle) {
+    const catClean = categoryTitle.trim().toLowerCase();
+    const catEntry = Object.entries(categoryVariantRules).find(([catKey]) => (catKey || '').trim().toLowerCase() === catClean);
+    const catRules = catEntry ? catEntry[1] : undefined;
+
+    if (catRules) {
+      let rule: CategoryVariantRule | undefined;
+      const prodId = typeof product === 'object' && product !== null ? product.id : undefined;
+      const prodName = typeof product === 'string' ? product : (typeof product === 'object' && product !== null ? product.name : undefined);
+      const cleanProdName = (prodName || '').trim().toLowerCase();
+
+      if (prodId && catRules[prodId]) {
+        rule = catRules[prodId];
+      } else if (prodName && catRules[prodName]) {
+        rule = catRules[prodName];
+      } else if (cleanProdName) {
+        const found = Object.entries(catRules).find(([k]) => (k || '').trim().toLowerCase() === cleanProdName);
+        if (found) rule = found[1];
+      }
+      if (!rule && catRules['*']) {
+        rule = catRules['*'];
+      }
+
+      if (rule) {
+        // Filter out hidden variants
+        const hiddenSet = new Set((rule.hidden || []).map(h => (h || '').trim().toLowerCase()));
+        let visibleVariants = uniqueVariants.filter(v => !hiddenSet.has(v.toLowerCase()));
+
+        // If an explicit order is defined for this category
+        if (rule.order && rule.order.length > 0) {
+          const orderMap = new Map<string, number>();
+          rule.order.forEach((item, idx) => {
+            orderMap.set(item.trim().toLowerCase(), idx);
+          });
+          visibleVariants.sort((a, b) => {
+            const posA = orderMap.has(a.toLowerCase()) ? orderMap.get(a.toLowerCase())! : 999;
+            const posB = orderMap.has(b.toLowerCase()) ? orderMap.get(b.toLowerCase())! : 999;
+            if (posA !== posB) return posA - posB;
+            return uniqueVariants.indexOf(a) - uniqueVariants.indexOf(b);
+          });
+        }
+        return visibleVariants;
+      }
+    }
+  }
+
+  // Fallback to heuristic scoring
+  return [...uniqueVariants].sort((a, b) => {
     const scoreA = getVariantScore(a, categoryTitle);
     const scoreB = getVariantScore(b, categoryTitle);
     if (scoreA !== scoreB) {
       return scoreB - scoreA; // higher score first
+    }
+    const idxA = uniqueVariants.indexOf(a);
+    const idxB = uniqueVariants.indexOf(b);
+    if (idxA !== -1 && idxB !== -1) {
+      return idxA - idxB;
     }
     return a.localeCompare(b);
   });

@@ -1,10 +1,15 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
 import { supabase, sortVariantsByCategory, DiscountCode } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
-import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X, Tag, Percent, Gift } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
+import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
+import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X, Tag, Percent, Gift, ShieldCheck } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+import { PrivacyModal } from '../components/PrivacyModal';
 
 export function GuestOrdering() {
+  const { t, language } = useLanguage();
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -72,6 +77,7 @@ export function GuestOrdering() {
         let prods = null;
         let globalPrices: any = null;
         let categoryRestrictionsMap: Record<string, string[]> = {};
+        let deliveryTrans: Record<string, { name_en?: string; description_en?: string }> = {};
         try {
           const [pricesRes, prodsRes, storeRes] = await Promise.all([
             supabase.from('ob_product_prices').select('*'),
@@ -84,16 +90,20 @@ export function GuestOrdering() {
           const catDescMap: Record<string, string> = storeRes?.data?.page_content?.category_descriptions || {};
           const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || {};
           categoryRestrictionsMap = storeRes?.data?.page_content?.category_restricted_companies || {};
+          deliveryTrans = storeRes?.data?.page_content?.delivery_translations || {};
           setCategoryDescriptions(catDescMap);
           if (storeRes?.data?.page_content) {
             setPageContent(storeRes.data.page_content);
           }
           const loadedCodes: DiscountCode[] = storeRes?.data?.page_content?.discount_codes || [];
           setDiscountCodes(loadedCodes);
+          const prodTranslations: Record<string, { extra_info_en?: string }> = storeRes?.data?.page_content?.product_translations || {};
           if (prodsRes.data) {
             prods = prodsRes.data.map((p: any) => ({
               ...p,
               brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
+              extra_info: p.extra_info || '',
+              extra_info_en: p.extra_info_en || prodTranslations[p.id]?.extra_info_en || prodTranslations[p.name]?.extra_info_en || prodTranslations[(p.name || '').trim()]?.extra_info_en || '',
               hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
               allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
             }));
@@ -185,8 +195,13 @@ export function GuestOrdering() {
         const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').eq('is_active', true).order('sort_order', { ascending: true });
         if (dmError) console.error('Error fetching delivery methods:', dmError);
         if (dmData && dmData.length > 0) {
-          setDeliveryMethods(dmData);
-          setSelectedDeliveryMethod(dmData[0]);
+          const enrichedDm = dmData.map((m: any) => ({
+            ...m,
+            name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
+            description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
+          }));
+          setDeliveryMethods(enrichedDm);
+          setSelectedDeliveryMethod(enrichedDm[0]);
         }
 
 
@@ -560,10 +575,10 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
           {deliveryMethods.length > 0 && (
             <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2">
-                  <Truck size={20} className="text-ob-accent" /> Kies je bezorgmethode
+                <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2 font-heading-default">
+                  <Truck size={20} className="text-ob-accent" /> {t('Kies je bezorgmethode', 'Choose your delivery method')}
                 </h2>
-                <p className="text-gray-500 text-sm mt-1">Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.</p>
+                <p className="text-gray-500 text-sm mt-1 font-paragraph-default">{t('Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}</p>
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -581,10 +596,14 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                           className="w-5 h-5 mt-0.5 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0" 
                         />
                         <div>
-                          <span className="font-semibold text-gray-900 block text-lg">{method.name}</span>
-                          <span className="text-xs text-gray-500 block mb-2">{method.description}</span>
-                          <span className="font-bold text-[#05053D] block">
-                            {method.price === 0 ? 'Gratis' : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}`}
+                          <span className="font-semibold text-gray-900 block text-lg font-heading-default">
+                            {getDeliveryMethodName(method, language, t)}
+                          </span>
+                          <span className="text-xs text-gray-500 block mb-2 font-paragraph-default leading-relaxed">
+                            {getDeliveryMethodDescription(method, language, t)}
+                          </span>
+                          <span className="font-bold text-[#05053D] block font-button-default text-xs tracking-wider">
+                            {method.price === 0 ? t('Gratis', 'Free') : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ` ${t('/ uur (uurtarief)', '/ hour (hourly rate)')}` : ''}`}
                           </span>
                         </div>
                       </div>
@@ -637,7 +656,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                 >
                                   <img src={item.image_url || item.image} alt={product} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                                    <span className="text-white text-xs font-semibold">Extra informatie</span>
+                                    <span className="text-white text-xs font-semibold">{t('Extra informatie', 'Extra info')}</span>
                                   </div>
                                 </div>
                               )}
@@ -661,17 +680,20 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                                         className="text-[11px] text-ob-blue bg-blue-50/60 hover:bg-blue-100 px-2 py-0.5 rounded flex items-center gap-1 font-medium transition-colors cursor-pointer"
                                       >
                                         <Info size={12} />
-                                        Extra informatie
+                                        {t('Extra informatie', 'Extra info')}
                                       </button>
                                     )}
                                   </div>
                                 )}
 
-                                {(item.variants && item.variants.length > 1) && (
-                                  <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                                    <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(item.variants, category.title).join(', ')}
-                                  </p>
-                                )}
+                                {(() => {
+                                  const visibleCardVariants = sortVariantsByCategory(item.variants, category.title, item, pageContent?.category_variant_rules);
+                                  return (visibleCardVariants.length > 1) ? (
+                                    <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
+                                      <span className="font-semibold text-gray-700">Opties:</span> {visibleCardVariants.join(', ')}
+                                    </p>
+                                  ) : null;
+                                })()}
 
                                 {item.sauces && item.sauces.length > 0 && (
                                   <div className="mt-auto inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit">
@@ -686,11 +708,14 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                             <div className={`p-4 bg-gray-50/50 mt-auto border-t border-gray-100 flex flex-col ${hasImage ? 'gap-3' : 'gap-2.5'}`}>
                               {(() => {
                                 const sortedVariants = (item.variants && item.variants.length > 0)
-                                  ? sortVariantsByCategory(item.variants, category.title)
+                                  ? sortVariantsByCategory(item.variants, category.title, item, pageContent?.category_variant_rules)
                                   : [];
                                 const defaultVariant = sortedVariants[0] || '';
                                 const variantKey = `${category.title}_${product}`;
-                                const currentVariant = (item.variants && item.variants.length > 0) ? (selectedVariants[variantKey] || defaultVariant) : '';
+                                const prevSelected = selectedVariants[variantKey];
+                                const currentVariant = (sortedVariants.length > 0)
+                                  ? (prevSelected && sortedVariants.includes(prevSelected) ? prevSelected : defaultVariant)
+                                  : '';
                                 return (
                                   <>
                                     {sortedVariants.length > 1 ? (
@@ -1061,7 +1086,7 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
 
                 {selectedDeliveryMethod && Number(selectedDeliveryMethod.price) > 0 && (
                   <div className="flex justify-between text-gray-600">
-                    <span>Bezorging ({selectedDeliveryMethod.name})</span>
+                    <span>{t('Bezorging', 'Delivery')} ({getDeliveryMethodName(selectedDeliveryMethod, language, t)})</span>
                     <span className="font-semibold text-gray-900">€{Number(selectedDeliveryMethod.price).toFixed(2)}</span>
                   </div>
                 )}
@@ -1088,19 +1113,48 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             </div>
           </section>
 
+          {/* Legal / Privacy Notice */}
+          <div className="pt-2">
+            <div className="flex items-start gap-2.5 text-xs text-gray-500 bg-gray-50 p-3 rounded-xl border border-gray-150">
+              <ShieldCheck size={16} className="text-[#5170ff] shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span>
+                  {t(
+                    'Door uw bestelling te plaatsen gaat u akkoord met de verwerking van uw gegevens conform onze',
+                    'By placing your order, you agree to the processing of your details in accordance with our'
+                  )}{' '}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsPrivacyModalOpen(true)}
+                  className="text-[#5170ff] hover:underline font-semibold cursor-pointer inline-flex items-center gap-0.5"
+                >
+                  {t('Privacy Policy', 'Privacy Policy')}
+                </button>
+                <span>. {t('Op vers bereide warme snacks geldt geen herroepingsrecht.', 'Perishable warm snacks are exempt from statutory withdrawal rights.')}</span>
+              </div>
+            </div>
+          </div>
+
           {/* Submit */}
-          <div className="pt-4">
+          <div className="pt-2">
             <button 
               type="submit" 
               disabled={isSubmitting || Object.keys(selections).length === 0 || !guestName || !guestEmail || !guestAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
-              className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg font-button-default cursor-pointer"
             >
-              {isSubmitting ? (pageContent?.btn_submitting || 'Bezig met plaatsen...') : <><ShoppingBag size={20} /> {pageContent?.guest_btn_submit || 'Bestelling Plaatsen'} (€{finalTotalAmount.toFixed(2)})</>}
+              {isSubmitting ? (pageContent?.btn_submitting || t('Bezig met plaatsen...', 'Placing order...')) : <><ShoppingBag size={20} /> {(language === 'en' && pageContent?.guest_btn_submit_en) ? pageContent.guest_btn_submit_en : (pageContent?.guest_btn_submit ? t(pageContent.guest_btn_submit) : t('Bestelling Plaatsen', 'Place Order'))} (€{finalTotalAmount.toFixed(2)})</>}
             </button>
           </div>
 
         </form>
       </div>
+
+      <PrivacyModal 
+        isOpen={isPrivacyModalOpen} 
+        onClose={() => setIsPrivacyModalOpen(false)} 
+        pageContent={pageContent} 
+      />
 
       {infoModalProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setInfoModalProduct(null)}>
@@ -1117,37 +1171,48 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             
             <div className="p-6 overflow-y-auto flex flex-col gap-4">
               <div>
-                <h3 className="text-2xl font-serif font-normal text-ob-blue pr-6 mb-2">{infoModalProduct.name}</h3>
+                <h3 className="text-2xl font-title-default font-normal text-ob-blue pr-6 mb-2">{t(infoModalProduct.name)}</h3>
                 {infoModalProduct.brand && (
-                  <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
-                    <span className="text-ob-blue/70 font-semibold">Merk:</span>
-                    <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
+                  <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3 font-paragraph-default">
+                    <span className="text-ob-blue/70 font-semibold">{t('Merk:', 'Brand:')}</span>
+                    <span className="text-ob-blue font-bold text-sm font-heading-default">{infoModalProduct.brand}</span>
                   </div>
                 )}
-                {(infoModalProduct.variants && infoModalProduct.variants.length > 1) && (
-                  <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                    <span className="font-semibold text-gray-700">Opties:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct._openedFromCategory || '').join(', ')}
-                  </p>
-                )}
+                {(() => {
+                  const modalCat = infoModalProduct._openedFromCategory || '';
+                  const visibleModalVariants = sortVariantsByCategory(infoModalProduct.variants, modalCat, infoModalProduct, pageContent?.category_variant_rules);
+                  return (visibleModalVariants.length > 1) ? (
+                    <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1 font-paragraph-default">
+                      <span className="font-semibold text-gray-700">{t('Opties:', 'Options:')}</span> {visibleModalVariants.map((v: string) => t(v)).join(', ')}
+                    </p>
+                  ) : null;
+                })()}
                 {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
-                  <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3">
+                  <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3 font-paragraph-default">
                     <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
-                    <span className="text-xs text-gray-600 font-medium leading-tight">Inclusief: <span className="font-bold text-gray-900">{infoModalProduct.sauces.join(', ')}</span></span>
+                    <span className="text-xs text-gray-600 font-medium leading-tight">{t('Inclusief:', 'Includes:')} <span className="font-bold text-gray-900">{infoModalProduct.sauces.map((s: string) => t(s)).join(', ')}</span></span>
                   </div>
                 )}
-                {infoModalProduct.extra_info && <div className="text-gray-600 whitespace-pre-wrap">{infoModalProduct.extra_info}</div>}
+                {getSnackExtraInfo(infoModalProduct, language, t) && (
+                  <div className="text-gray-600 whitespace-pre-wrap font-paragraph-default text-sm leading-relaxed">
+                    {getSnackExtraInfo(infoModalProduct, language, t)}
+                  </div>
+                )}
               </div>
               
               <div className="mt-2 pt-4 border-t border-gray-100">
-                <h4 className="font-bold text-ob-blue mb-3">Toevoegen aan bestelling</h4>
+                <h4 className="font-bold text-ob-blue mb-3 font-heading-default">{t('Toevoegen aan bestelling', 'Add to order')}</h4>
                 {(() => {
                   const modalCategory = infoModalProduct._openedFromCategory || '';
                   const sortedModalVariants = (infoModalProduct.variants && infoModalProduct.variants.length > 0)
-                    ? sortVariantsByCategory(infoModalProduct.variants, modalCategory)
+                    ? sortVariantsByCategory(infoModalProduct.variants, modalCategory, infoModalProduct, pageContent?.category_variant_rules)
                     : [];
                   const defaultModalVariant = sortedModalVariants[0] || '';
                   const variantKey = modalCategory ? `${modalCategory}_${infoModalProduct.name}` : infoModalProduct.name;
-                  const currentVariant = (infoModalProduct.variants && infoModalProduct.variants.length > 0) ? (selectedVariants[variantKey] || defaultModalVariant) : '';
+                  const prevSelected = selectedVariants[variantKey];
+                  const currentVariant = sortedModalVariants.length > 0
+                    ? (prevSelected && sortedModalVariants.includes(prevSelected) ? prevSelected : defaultModalVariant)
+                    : '';
                   
                   return (
                     <>

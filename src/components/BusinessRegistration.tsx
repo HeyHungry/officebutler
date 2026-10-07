@@ -1,9 +1,10 @@
 import { useState, FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { supabase } from '../lib/supabase';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
+import { PrivacyModal } from './PrivacyModal';
 
 export function BusinessRegistration({ content }: { content?: any }) {
   const { t } = useLanguage();
@@ -18,6 +19,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
   const [isSuccess, setIsSuccess] = useState(false);
   const [emailFailed, setEmailFailed] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -215,10 +217,26 @@ export function BusinessRegistration({ content }: { content?: any }) {
                     ></textarea>
                   </div>
                   {errorMsg && <p className="font-paragraph-default text-red-500 text-sm">{errorMsg}</p>}
+                  
+                  <div className="flex items-start gap-2 text-xs text-gray-500 pt-1">
+                    <ShieldCheck size={15} className="text-[#5170ff] shrink-0 mt-0.5" />
+                    <span className="leading-relaxed">
+                      {t('Uw gegevens worden vertrouwelijk behandeld en uitsluitend gebruikt om contact met u op te nemen conform onze', 'Your data will be kept confidential and used solely to contact you in accordance with our')}{' '}
+                      <button
+                        type="button"
+                        onClick={() => setIsPrivacyOpen(true)}
+                        className="text-[#5170ff] hover:underline font-semibold cursor-pointer"
+                      >
+                        {t('Privacy Policy', 'Privacy Policy')}
+                      </button>
+                      .
+                    </span>
+                  </div>
+
                   <button 
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-[#5170ff] text-white py-4 hover:bg-[#4060ee] transition-colors font-button-default text-sm mt-4 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center cursor-pointer shadow-md"
+                    className="w-full bg-[#5170ff] text-white py-4 hover:bg-[#4060ee] transition-colors font-button-default text-sm mt-3 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center cursor-pointer shadow-md"
                     style={getTypographyStyle('button', content?.business_btn_font, content?.business_btn_size)}
                   >
                     {isSubmitting ? t('Versturen...', 'Submitting...') : (content?.business_btn || t('Kantoor Inschrijven'))}
@@ -229,6 +247,12 @@ export function BusinessRegistration({ content }: { content?: any }) {
           </motion.div>
         </div>
       </div>
+
+      <PrivacyModal 
+        isOpen={isPrivacyOpen} 
+        onClose={() => setIsPrivacyOpen(false)} 
+        pageContent={content} 
+      />
     </section>
   );
 }

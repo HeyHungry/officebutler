@@ -1,8 +1,9 @@
 import { useState, FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
-import { LogIn, UserPlus, Building, Mail, Phone, Lock, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { LogIn, UserPlus, Building, Mail, Phone, Lock, CheckCircle2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { PrivacyModal } from '../components/PrivacyModal';
 
 type AuthMode = 'login' | 'register' | 'success';
 
@@ -11,6 +12,7 @@ export function Auth() {
   const [mode, setMode] = useState<AuthMode>('login');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
   // Form states
   const [email, setEmail] = useState('');
@@ -305,20 +307,51 @@ export function Auth() {
 
                 {error && <div className="text-red-500 text-sm font-medium p-3 bg-red-50 border border-red-100 rounded">{error}</div>}
 
-                <button type="submit" disabled={isLoading} className="w-full bg-[#5170ff] text-white py-3.5 flex items-center justify-center gap-2 hover:bg-[#4060ee] transition-colors tracking-wider font-semibold mt-4 disabled:opacity-50 rounded-lg shadow-sm">
+                <div className="flex items-start gap-2.5 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-150 mt-2">
+                  <ShieldCheck size={16} className="text-[#5170ff] shrink-0 mt-0.5" />
+                  <span className="leading-relaxed">
+                    Door uw kantoor in te schrijven gaat u akkoord met ons{' '}
+                    <button
+                      type="button"
+                      onClick={() => setIsPrivacyModalOpen(true)}
+                      className="text-[#5170ff] hover:underline font-semibold cursor-pointer"
+                    >
+                      Privacybeleid
+                    </button>
+                    . Uw gegevens worden veilig en conform de AVG opgeslagen voor bedrijfsauthenticatie en bestellingen.
+                  </span>
+                </div>
+
+                <button type="submit" disabled={isLoading} className="w-full bg-[#5170ff] text-white py-3.5 flex items-center justify-center gap-2 hover:bg-[#4060ee] transition-colors tracking-wider font-semibold mt-4 disabled:opacity-50 rounded-lg shadow-sm cursor-pointer">
                   {isLoading ? 'BEZIG...' : <><UserPlus size={18} /> INSCHRIJVEN</>}
                 </button>
               </form>
 
               <div className="mt-6 text-center pt-6 border-t border-gray-100">
-                <button onClick={() => { setMode('login'); setError(''); }} className="text-gray-500 text-sm hover:text-ob-text transition-colors">
+                <button onClick={() => { setMode('login'); setError(''); }} className="text-gray-500 text-sm hover:text-ob-text transition-colors cursor-pointer">
                   ← Terug naar inloggen
                 </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => setIsPrivacyModalOpen(true)}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors inline-flex items-center gap-1 cursor-pointer"
+          >
+            <ShieldCheck size={13} />
+            <span>Privacybeleid & Gegevensbescherming (AVG)</span>
+          </button>
+        </div>
       </div>
+
+      <PrivacyModal 
+        isOpen={isPrivacyModalOpen} 
+        onClose={() => setIsPrivacyModalOpen(false)} 
+      />
     </div>
   );
 }

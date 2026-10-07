@@ -1217,10 +1217,10 @@ export function CompanyDashboard() {
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-xl font-serif font-bold text-[#05053D] mb-2">Bezorgopties Beheren</h2>
-                    <p className="text-sm text-gray-500">Bepaal welke bezorgopties medewerkers kunnen kiezen bij hun bestelling.</p>
+                    <h2 className="text-xl font-heading-default font-bold text-[#05053D] mb-2">Bezorgopties Beheren</h2>
+                    <p className="text-sm text-gray-500 font-paragraph-default">Bepaal welke bezorgopties medewerkers kunnen kiezen bij hun bestelling.</p>
                   </div>
-                  <button onClick={handleSaveDeliveryMethods} disabled={isSaving} className="flex items-center justify-center gap-2 bg-[#5170ff] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-70 shrink-0">
+                  <button onClick={handleSaveDeliveryMethods} disabled={isSaving} className="flex items-center justify-center gap-2 bg-[#5170ff] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-70 shrink-0 font-button-default">
                     {isSaving && <Loader2 size={16} className="animate-spin" />}
                     <Save size={18} /> Opties Opslaan
                   </button>
@@ -1241,9 +1241,9 @@ export function CompanyDashboard() {
                         />
                       </div>
                       <div className="flex-1">
-                        <span className="font-medium text-gray-800 block text-lg">{method.name}</span>
-                        <span className="text-sm text-gray-500 block mb-2">{method.description}</span>
-                        <span className="font-semibold text-[#05053D]">€{Number(method.price).toFixed(2)}{method.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}</span>
+                        <span className="font-medium text-gray-800 block text-lg font-heading-default">{method.name}</span>
+                        <span className="text-sm text-gray-500 block mb-2 font-paragraph-default leading-relaxed">{method.description}</span>
+                        <span className="font-semibold text-[#05053D] font-button-default">€{Number(method.price).toFixed(2)}{method.name?.toLowerCase().includes('uitserveren') ? ' / uur (uurtarief)' : ''}</span>
                       </div>
                     </label>
                   ))}

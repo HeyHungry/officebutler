@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule, DEFAULT_SECTION_ORDER, SECTION_METADATA, HomepageSectionKey } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon, ShieldCheck, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
@@ -11,6 +11,8 @@ import { InvoiceModal, MonthlyInvoiceData } from './InvoiceModal';
 import { ModificationRulesConfig, CompanyCustomDeadlines, DEFAULT_DEADLINE_TIERS } from '../lib/orderDeadlines';
 import { useLanguage } from '../contexts/LanguageContext';
 import { FONT_OPTIONS } from '../lib/typography';
+import { PrivacyModal } from './PrivacyModal';
+import { DEFAULT_PRIVACY_POLICY_NL, DEFAULT_PRIVACY_POLICY_EN } from '../lib/privacyPolicyData';
 
 const MONTH_NAMES = [
   'Januari', 'Februari', 'Maart', 'April', 'Mei', 'Juni',
@@ -52,7 +54,7 @@ const DAYS_OF_WEEK = [
   { id: '0', name: 'Zondag' }
 ];
 
-type Tab = 'store' | 'deadlines' | 'content' | 'registrations' | 'prices' | 'customers' | 'orders' | 'menu' | 'delivery' | 'translations' | 'discounts';
+type Tab = 'store' | 'deadlines' | 'content' | 'registrations' | 'prices' | 'customers' | 'orders' | 'menu' | 'delivery' | 'translations' | 'discounts' | 'privacy';
 
 export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSettingsUpdated, onStoreSettingsUpdated }: ModeratorPanelProps) {
   const navigate = useNavigate();
@@ -100,6 +102,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
 
   const { t } = useLanguage();
   const [contentEditLang, setContentEditLang] = useState<'nl' | 'en'>('nl');
+  const [privacyEditLang, setPrivacyEditLang] = useState<'nl' | 'en'>('nl');
+  const [previewPrivacyOpen, setPreviewPrivacyOpen] = useState(false);
   const [newTransTerm, setNewTransTerm] = useState('');
   const [newTransTranslation, setNewTransTranslation] = useState('');
   const [translationSearch, setTranslationSearch] = useState('');
@@ -129,6 +133,12 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     { term: 'Klassiekers', defaultEn: 'Classics', category: 'Categorie' },
     { term: 'Gamba & Kip', defaultEn: 'Prawns & Chicken', category: 'Categorie' },
     { term: 'Overig', defaultEn: 'Other', category: 'Categorie' },
+    { term: 'Bezorgen', defaultEn: 'Delivery', category: 'Bezorging' },
+    { term: 'Uitpakken', defaultEn: 'Unpack & Setup', category: 'Bezorging' },
+    { term: 'Uitserveren', defaultEn: 'Butler Service', category: 'Bezorging' },
+    { term: 'Butlers bezorgen het netjes tot aan de deur.', defaultEn: 'Butlers deliver neatly to your office door.', category: 'Bezorging' },
+    { term: 'Butlers pakken de snacks uit en maken ze eet klaar.', defaultEn: 'Butlers unpack the snacks and arrange them ready to eat.', category: 'Bezorging' },
+    { term: 'Butlers die rondlopen om de snacks uit te serveren', defaultEn: 'Butlers walk around to serve the snacks to your team and guests.', category: 'Bezorging' },
   ];
 
   const getContentValue = (key: string): string => {
@@ -182,8 +192,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       value={getFontValue(key)}
       onChange={e => setFontValue(key, e.target.value)}
     >
-      {FONT_OPTIONS.map(opt => (
-        <option key={opt.id} value={opt.id}>{opt.label}</option>
+      {FONT_OPTIONS.map((opt, optIdx) => (
+        <option key={`font-opt-${opt.id}-${optIdx}`} value={opt.id}>{opt.label}</option>
       ))}
     </select>
   );
@@ -946,6 +956,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         <Languages size={18} className={activeTab === 'translations' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
                         <span>{!isSidebarCollapsed && <span>Vertalingen (EN)</span>}</span>
                       </button>
+                      <button
+                        onClick={() => { setActiveTab('privacy'); setImpersonating(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'privacy' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                      >
+                        <ShieldCheck size={18} className={activeTab === 'privacy' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
+                        <span>{!isSidebarCollapsed && <span>Privacy & Juridisch</span>}</span>
+                      </button>
                     </nav>
                   </div>
 
@@ -1275,6 +1292,21 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           <div className="bg-white p-6 rounded-xl border shadow-sm mb-6 space-y-4">
                             <h4 className="font-bold text-ob-blue mb-4 border-b pb-2">Sectie 1: Hoofdscherm (Hero)</h4>
                             <div className="grid grid-cols-1 gap-4">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
+                                  <span>Achtergrond Afbeelding (URL)</span>
+                                  <span className="text-[10px] text-gray-400 font-normal">Directe URL (Imgur / CDN / Web)</span>
+                                </label>
+                                <div className="flex gap-2">
+                                  <input type="text" className="flex-1 px-3 py-2 border rounded-md text-sm"
+                                    placeholder="https://i.imgur.com/VKJOvsI.png"
+                                    value={getContentValue('hero_background_image')}
+                                    onChange={e => setContentValue('hero_background_image', e.target.value)} />
+                                </div>
+                                <p className="text-[11px] text-gray-400 mt-1">
+                                  Voer de directe link in naar de achtergrondafbeelding van de homepage.
+                                </p>
+                              </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-700 mb-1 flex justify-between">
                                   <span>Pre-titel (kleine tekst bovenaan)</span>
@@ -3884,8 +3916,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                             onChange={(e) => setMonthlySelectedYear(Number(e.target.value))}
                                             className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-800 font-medium focus:ring-2 focus:ring-[#05053D] outline-none"
                                           >
-                                            {[2024, 2025, 2026, 2027].map((yr) => (
-                                              <option key={`yr-opt-${yr}`} value={yr}>
+                                            {[2024, 2025, 2026, 2027].map((yr, yrIdx) => (
+                                              <option key={`yr-opt-${yr}-${yrIdx}`} value={yr}>
                                                 {yr}
                                               </option>
                                             ))}
@@ -4196,6 +4228,261 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         }}
                         dbProducts={dbProducts}
                       />
+                    ) : activeTab === 'privacy' && localStoreSettings ? (
+                      <div className="space-y-8 animate-in fade-in duration-300">
+                        {/* Header Banner */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-5">
+                          <div>
+                            <h3 className="text-xl font-serif font-semibold text-[#05053D] flex items-center gap-2.5">
+                              <ShieldCheck size={24} className="text-[#5170ff]" />
+                              <span>Privacybeleid & AVG Gegevensbescherming</span>
+                            </h3>
+                            <p className="text-xs text-gray-500 mt-1 max-w-2xl leading-relaxed">
+                              Beheer hier de wettelijk verplichte privacyverklaring voor Office Butler (Mokum Local Kitchen &bull; KvK 99852667). 
+                              De teksten worden direct getoond in de footer, het bestelproces (gasten & medewerkers) en op de registratiepagina.
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                            {/* Taal toggle */}
+                            <div className="flex items-center bg-gray-100 p-1 rounded-xl border border-gray-200">
+                              <button
+                                type="button"
+                                onClick={() => setPrivacyEditLang('nl')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${privacyEditLang === 'nl' ? 'bg-white text-ob-blue shadow-2xs' : 'text-gray-600 hover:text-gray-900'}`}
+                              >
+                                <span>🇳🇱</span> NL
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPrivacyEditLang('en')}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${privacyEditLang === 'en' ? 'bg-[#5170ff] text-white shadow-2xs' : 'text-gray-600 hover:text-gray-900'}`}
+                              >
+                                <span>🇬🇧</span> EN
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setPreviewPrivacyOpen(true)}
+                              className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-xl border border-gray-200 flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Bekijk de privacy policy modal zoals de bezoeker hem ziet"
+                            >
+                              <Eye size={14} /> Voorvertoning
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={handleSaveStoreSettings}
+                              disabled={isSaving}
+                              className="bg-[#151f34] hover:bg-[#1f2937] text-white px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer shadow-sm"
+                            >
+                              <Save size={14} /> {isSaving ? 'Opslaan...' : 'Opslaan in Supabase'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {saveSuccess && (
+                          <div className="bg-green-50 border border-green-200 text-green-800 p-4 rounded-xl flex items-center gap-2 text-xs font-medium animate-in fade-in">
+                            <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+                            <span>Privacybeleid is succesvol opgeslagen in Supabase en is direct actief op de website!</span>
+                          </div>
+                        )}
+
+                        {/* Language Alert */}
+                        <div className={`p-4 rounded-xl border text-xs flex items-start gap-3 ${privacyEditLang === 'en' ? 'bg-blue-50/70 border-blue-200 text-blue-900' : 'bg-amber-50/60 border-amber-200 text-amber-900'}`}>
+                          <span className="text-base">{privacyEditLang === 'en' ? '🇬🇧' : '🇳🇱'}</span>
+                          <div>
+                            <p className="font-bold">
+                              {privacyEditLang === 'en' 
+                                ? 'U bewerkt nu het Engelse Privacybeleid (English Privacy Policy)' 
+                                : 'U bewerkt nu het Nederlandse Privacybeleid'}
+                            </p>
+                            <p className="mt-0.5 opacity-90">
+                              {privacyEditLang === 'en'
+                                ? 'Wanneer Engelstalige bezoekers op "Privacy Policy" klikken of de site in het Engels bekijken, wordt deze tekst getoond.'
+                                : 'Dit is het primaire beleid voor Nederlandstalige bestellingen, registraties en gasten.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Edit Form */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5 shadow-2xs">
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="md:col-span-2 space-y-1.5">
+                              <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
+                                Document Titel ({privacyEditLang.toUpperCase()})
+                              </label>
+                              <input
+                                type="text"
+                                value={
+                                  privacyEditLang === 'en'
+                                    ? (localStoreSettings.page_content?.privacy_policy_title_en ?? DEFAULT_PRIVACY_POLICY_EN.title)
+                                    : (localStoreSettings.page_content?.privacy_policy_title ?? DEFAULT_PRIVACY_POLICY_NL.title)
+                                }
+                                onChange={(e) => {
+                                  const key = privacyEditLang === 'en' ? 'privacy_policy_title_en' : 'privacy_policy_title';
+                                  setLocalStoreSettings({
+                                    ...localStoreSettings,
+                                    page_content: { ...localStoreSettings.page_content, [key]: e.target.value }
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border rounded-lg text-xs focus:border-[#5170ff] focus:outline-none"
+                                placeholder="bijv. Privacybeleid & Gegevensbescherming"
+                              />
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
+                                Ingangsdatum / Laatst Bijgewerkt
+                              </label>
+                              <input
+                                type="text"
+                                value={localStoreSettings.page_content?.privacy_policy_date ?? DEFAULT_PRIVACY_POLICY_NL.lastUpdated}
+                                onChange={(e) => {
+                                  setLocalStoreSettings({
+                                    ...localStoreSettings,
+                                    page_content: { ...localStoreSettings.page_content, privacy_policy_date: e.target.value }
+                                  });
+                                }}
+                                className="w-full px-3 py-2 border rounded-lg text-xs focus:border-[#5170ff] focus:outline-none"
+                                placeholder="bijv. 7 oktober 2026"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
+                              E-mailadres voor Privacyverzoeken (DPO / AVG contact)
+                            </label>
+                            <input
+                              type="email"
+                              value={localStoreSettings.page_content?.privacy_policy_email ?? DEFAULT_PRIVACY_POLICY_NL.contactEmail}
+                              onChange={(e) => {
+                                setLocalStoreSettings({
+                                  ...localStoreSettings,
+                                  page_content: { ...localStoreSettings.page_content, privacy_policy_email: e.target.value }
+                                });
+                              }}
+                              className="w-full px-3 py-2 border rounded-lg text-xs focus:border-[#5170ff] focus:outline-none"
+                              placeholder="info@office-butler.com"
+                            />
+                            <p className="text-[11px] text-gray-400">
+                              Betrokkenen kunnen naar dit e-mailadres AVG-verzoeken sturen (zoals inzage, rectificatie of verwijdering).
+                            </p>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
+                              Inleidende Verklaring & KvK Gegevens ({privacyEditLang.toUpperCase()})
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={
+                                privacyEditLang === 'en'
+                                  ? (localStoreSettings.page_content?.privacy_policy_intro_en ?? DEFAULT_PRIVACY_POLICY_EN.intro)
+                                  : (localStoreSettings.page_content?.privacy_policy_intro ?? DEFAULT_PRIVACY_POLICY_NL.intro)
+                              }
+                              onChange={(e) => {
+                                const key = privacyEditLang === 'en' ? 'privacy_policy_intro_en' : 'privacy_policy_intro';
+                                setLocalStoreSettings({
+                                  ...localStoreSettings,
+                                  page_content: { ...localStoreSettings.page_content, [key]: e.target.value }
+                                });
+                              }}
+                              className="w-full px-3 py-2 border rounded-lg text-xs focus:border-[#5170ff] focus:outline-none leading-relaxed"
+                              placeholder="Introductieparagraaf met verwijzing naar Mokum Local Kitchen KvK 99852667..."
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <label className="text-xs font-bold text-gray-700 uppercase tracking-wider block">
+                                Volledige Tekst & Artikelen ({privacyEditLang.toUpperCase()})
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const def = privacyEditLang === 'en' ? DEFAULT_PRIVACY_POLICY_EN : DEFAULT_PRIVACY_POLICY_NL;
+                                  const formatted = def.sections.map(s => `${s.heading}\n${s.body}`).join('\n\n');
+                                  const key = privacyEditLang === 'en' ? 'privacy_policy_en' : 'privacy_policy_nl';
+                                  setLocalStoreSettings({
+                                    ...localStoreSettings,
+                                    page_content: {
+                                      ...localStoreSettings.page_content,
+                                      [key]: formatted,
+                                      [`${key}_title`]: def.title,
+                                      privacy_policy_date: def.lastUpdated,
+                                      privacy_policy_email: def.contactEmail,
+                                      [`privacy_policy_intro${privacyEditLang === 'en' ? '_en' : ''}`]: def.intro
+                                    }
+                                  });
+                                }}
+                                className="text-[11px] text-[#5170ff] hover:underline font-semibold cursor-pointer flex items-center gap-1"
+                              >
+                                <RotateCcw size={12} /> Standaard modeltekst inladen
+                              </button>
+                            </div>
+
+                            <textarea
+                              rows={16}
+                              value={(() => {
+                                const key = privacyEditLang === 'en' ? 'privacy_policy_en' : 'privacy_policy_nl';
+                                const existingVal = localStoreSettings.page_content?.[key] || (privacyEditLang === 'nl' ? localStoreSettings.page_content?.privacy_policy : '');
+                                if (typeof existingVal === 'string' && existingVal.trim().length > 0) {
+                                  return existingVal;
+                                }
+                                // Fallback formatted template
+                                const def = privacyEditLang === 'en' ? DEFAULT_PRIVACY_POLICY_EN : DEFAULT_PRIVACY_POLICY_NL;
+                                return def.sections.map(s => `${s.heading}\n${s.body}`).join('\n\n');
+                              })()}
+                              onChange={(e) => {
+                                const key = privacyEditLang === 'en' ? 'privacy_policy_en' : 'privacy_policy_nl';
+                                setLocalStoreSettings({
+                                  ...localStoreSettings,
+                                  page_content: { ...localStoreSettings.page_content, [key]: e.target.value }
+                                });
+                              }}
+                              className="w-full px-3 py-2 border rounded-lg text-xs font-mono focus:border-[#5170ff] focus:outline-none leading-relaxed"
+                              placeholder="Voer hier de artikelen en voorwaarden in..."
+                            />
+                            <p className="text-[11px] text-gray-400">
+                              Tip: U kunt de tekst indelen in genummerde kopjes (bijv. 1. Wie is verantwoordelijk, 2. Welke persoonsgegevens...). Deze worden overzichtelijk in de pop-up en op de pagina weergegeven.
+                            </p>
+                          </div>
+
+                        </div>
+
+                        {/* Legal Information & Compliance Guide */}
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 space-y-3 text-xs text-gray-600">
+                          <h4 className="font-bold text-gray-800 flex items-center gap-2 text-sm">
+                            <ShieldCheck size={16} className="text-[#5170ff]" />
+                            <span>Wettelijke verplichtingen & Toelichting opslag</span>
+                          </h4>
+                          <p className="leading-relaxed">
+                            Uw privacybeleid voldoet aan de eisen van de <strong>AVG / GDPR (artikelen 12, 13 en 14)</strong>, 
+                            de <strong>Telecommunicatiewet (art. 11.7a)</strong> en de <strong>Wet Koop op Afstand (art. 6:230p sub f BW)</strong> voor warme snacks.
+                          </p>
+                          <ul className="list-disc pl-5 space-y-1 text-gray-500">
+                            <li><strong>Automatische opslag:</strong> Wijzigingen worden direct veilig opgeslagen in de Supabase tabel <code>store_settings</code> (in de <code>page_content</code> JSON-kolom).</li>
+                            <li><strong>Meertalig:</strong> Bezoekers die Engels kiezen zien automatisch het Engelse beleid; Nederlandstaligen zien het Nederlandse beleid.</li>
+                            <li><strong>Koppeling:</strong> De link naar het beleid is nu actief in de footer, het bestelproces (gasten & werknemers), en de registratiepagina.</li>
+                          </ul>
+                        </div>
+
+                        {/* Save Button Row */}
+                        <div className="flex justify-end pt-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveStoreSettings}
+                            disabled={isSaving}
+                            className="bg-[#151f34] hover:bg-[#1f2937] text-white px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 transition-colors disabled:opacity-50 cursor-pointer shadow-md"
+                          >
+                            <Save size={16} /> {isSaving ? 'Opslaan...' : 'Privacybeleid Opslaan in Supabase'}
+                          </button>
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -4204,6 +4491,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           </motion.div>
         </motion.div>
       )}
+
+      {/* Preview Privacy Modal */}
+      <PrivacyModal
+        isOpen={previewPrivacyOpen}
+        onClose={() => setPreviewPrivacyOpen(false)}
+        pageContent={localStoreSettings?.page_content}
+      />
 
       {/* Factuur Modal (Mokum Local Kitchen - Single of Maandfactuur) */}
       {(selectedInvoiceOrder || selectedMonthlyInvoiceData) && (

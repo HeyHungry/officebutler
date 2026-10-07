@@ -1,10 +1,11 @@
-import { StoreSettings, sortVariantsByCategory, supabase } from '../lib/supabase';
+import { StoreSettings, sortVariantsByCategory, supabase, CategoryVariantRulesMap } from '../lib/supabase';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { ShoppingBag, Info } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
+import { getSnackExtraInfo, hasSnackExtraInfo } from '../lib/translationFallbacks';
 
 type MenuItem = {
   id?: string;
@@ -26,9 +27,10 @@ type MenuCategory = {
 
 export function Menu({ content }: { content?: any }) {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [categoryDescriptions, setCategoryDescriptions] = useState<Record<string, string>>({});
+  const [categoryVariantRules, setCategoryVariantRules] = useState<CategoryVariantRulesMap>({});
   const [isLoading, setIsLoading] = useState(true);
   const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
 
@@ -67,11 +69,16 @@ export function Menu({ content }: { content?: any }) {
         const catDescMap: Record<string, string> = storeRes?.data?.page_content?.category_descriptions || content?.category_descriptions || {};
         const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || content?.company_restricted_products || {};
         const categoryRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || content?.category_restricted_companies || {};
+        const prodTranslationsMap: Record<string, { extra_info_en?: string }> = storeRes?.data?.page_content?.product_translations || content?.product_translations || {};
+        const catVariantRules = storeRes?.data?.page_content?.category_variant_rules || content?.category_variant_rules || {};
         setCategoryDescriptions(catDescMap);
+        setCategoryVariantRules(catVariantRules);
 
         const itemsWithBrands = (data || []).map((item: any) => ({
           ...item,
           brand: item.brand || brandsMap[item.id] || brandsMap[item.name] || '',
+          extra_info: item.extra_info || '',
+          extra_info_en: item.extra_info_en || prodTranslationsMap[item.id]?.extra_info_en || prodTranslationsMap[item.name]?.extra_info_en || prodTranslationsMap[(item.name || '').trim()]?.extra_info_en || '',
           hide_image: item.hide_image != null ? Boolean(item.hide_image) : Boolean(hideImagesMap[item.id] || hideImagesMap[item.name] || hideImagesMap[(item.name || '').trim()]),
           allowed_company_ids: item.allowed_company_ids || companyRestrictionsMap[item.id] || companyRestrictionsMap[item.name] || companyRestrictionsMap[(item.name || '').trim()] || []
         }));
@@ -218,21 +225,30 @@ export function Menu({ content }: { content?: any }) {
                                     <span className={`px-2 py-1 rounded-full text-xs font-medium ml-2 shrink-0 ${['uitverkocht', 'sold out', 'sold_out'].includes((item.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{item.status === 'new' ? t('Nieuw', 'New') : item.status === 'popular' ? t('Meest Gekozen', 'Most Popular') : item.status === 'sold_out' ? t('Uitverkocht', 'Sold Out') : item.status === 'coming_soon' ? t('Binnenkort', 'Coming Soon') : item.status}</span>
                                   )}
                                 </h4>
-                                {(item.extra_info || item.brand) && (
+                                {(item.extra_info || item.extra_info_en || item.brand || hasSnackExtraInfo(item)) && (
                                   <span className="text-[10px] uppercase tracking-wider text-[#5170ff] bg-ob-cream px-2 py-0.5 rounded-full w-fit mt-1 group-hover:bg-[#5170ff]/10 transition-colors flex items-center gap-1 font-medium">
                                     <Info size={11} className="text-[#5170ff]" />
                                     {t('Extra informatie', 'Extra info')}
                                   </span>
                                 )}
-                                {(item.variants && item.variants.length > 1) ? (
-                                  <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
-                                    <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(item.variants, category.title).map((v: string) => t(v)).join(', ')}
-                                  </p>
-                                ) : (item.variants && item.variants.length === 1) ? (
-                                  <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-1">
-                                    <span className="font-semibold text-gray-700">{t('Variant', 'Variant')}:</span> <span className="text-[11px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded border border-gray-200">{item.variants[0]}</span>
-                                  </p>
-                                ) : null}
+                                {(() => {
+                                  const visibleVariants = sortVariantsByCategory(item.variants, category.title, item, categoryVariantRules);
+                                  if (visibleVariants.length > 1) {
+                                    return (
+                                      <p className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
+                                        <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {visibleVariants.map((v: string) => t(v)).join(', ')}
+                                      </p>
+                                    );
+                                  }
+                                  if (visibleVariants.length === 1) {
+                                    return (
+                                      <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap items-center gap-1">
+                                        <span className="font-semibold text-gray-700">{t('Variant', 'Variant')}:</span> <span className="text-[11px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded border border-gray-200">{visibleVariants[0]}</span>
+                                      </p>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                                 {(item.sauces && item.sauces.length > 0) && (
                                   <p className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-1">
                                     <span className="font-semibold text-gray-700">{t('Inclusief', 'Includes')}:</span> {item.sauces.map((s: string) => t(s)).join(', ')}
@@ -270,25 +286,29 @@ export function Menu({ content }: { content?: any }) {
             )}
             
             <div className="p-6 overflow-y-auto">
-              <h3 className="text-2xl font-serif font-normal text-ob-blue mb-2 pr-6">{t(infoModalProduct.name)}</h3>
+              <h3 className="text-2xl font-title-default font-normal text-ob-blue mb-2 pr-6">{t(infoModalProduct.name)}</h3>
               {infoModalProduct.brand && (
-                <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3">
+                <div className="inline-flex items-center gap-2 bg-blue-50/80 border border-blue-200/60 px-3 py-1.5 rounded-lg text-xs font-medium mb-3 font-paragraph-default">
                   <span className="text-ob-blue/70 font-semibold">{t('Merk', 'Brand')}:</span>
-                  <span className="text-ob-blue font-bold text-sm">{infoModalProduct.brand}</span>
+                  <span className="text-ob-blue font-bold text-sm font-heading-default">{infoModalProduct.brand}</span>
                 </div>
               )}
               {infoModalProduct.variants && infoModalProduct.variants.length > 0 && (
-                <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1">
-                  <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct.category || '').map((v: string) => t(v)).join(', ')}
+                <p className="text-xs text-gray-500 mb-2 flex flex-wrap gap-1 font-paragraph-default">
+                  <span className="font-semibold text-gray-700">{t('Opties', 'Options')}:</span> {sortVariantsByCategory(infoModalProduct.variants, infoModalProduct.category || '', infoModalProduct, categoryVariantRules).map((v: string) => t(v)).join(', ')}
                 </p>
               )}
               {infoModalProduct.sauces && infoModalProduct.sauces.length > 0 && (
-                <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3">
+                <div className="inline-flex items-start gap-1.5 bg-yellow-50/40 border border-yellow-100/50 px-2.5 py-1.5 rounded-lg w-fit mb-3 font-paragraph-default">
                   <span className="text-[#d4af37] text-sm leading-none mt-0.5">✦</span> 
                   <span className="text-xs text-gray-600 font-medium leading-tight">{t('Inclusief', 'Includes')}: <span className="font-bold text-gray-900">{infoModalProduct.sauces.map((s: string) => t(s)).join(', ')}</span></span>
                 </div>
               )}
-              {infoModalProduct.extra_info && <div className="text-gray-600 whitespace-pre-wrap mb-4">{t(infoModalProduct.extra_info)}</div>}
+              {getSnackExtraInfo(infoModalProduct, language, t) && (
+                <div className="text-gray-600 whitespace-pre-wrap mb-4 font-paragraph-default text-sm leading-relaxed">
+                  {getSnackExtraInfo(infoModalProduct, language, t)}
+                </div>
+              )}
 
               <div className="pt-4 border-t border-gray-100 mt-2">
                 <button
@@ -297,7 +317,7 @@ export function Menu({ content }: { content?: any }) {
                     setInfoModalProduct(null);
                     navigate('/guest-order');
                   }}
-                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-sans"
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-button-default"
                 >
                   <ShoppingBag size={18} />
                   {t('Bestellen', 'Order')}

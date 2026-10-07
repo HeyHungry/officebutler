@@ -1,36 +1,38 @@
 import { StoreSettings } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { ShoppingCart, Calendar, ConciergeBell } from 'lucide-react';
+import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 
 export function HowItWorks({ content }: { content?: any }) {
+  const { t } = useLanguage();
   const steps = [
     {
       icon: <ShoppingCart size={32} />,
-      title: content?.how_step1_title || "1. Bestel of Meld Aan",
+      title: content?.how_step1_title || t("1. Bestel of Meld Aan", "1. Order or Register"),
       titleSize: content?.how_step1_title_size,
       titleFont: content?.how_step1_title_font,
       descSize: content?.how_step1_desc_size,
       descFont: content?.how_step1_desc_font,
-      description: content?.how_step1_desc || "Bestel direct voor de vrijmibo, of meld uw bedrijf aan voor een vaste, gepersonaliseerde bestellink voor het personeel."
+      description: content?.how_step1_desc || t("Bestel direct voor de vrijmibo, of meld uw bedrijf aan voor een vaste, gepersonaliseerde bestellink voor het personeel.")
     },
     {
       icon: <Calendar size={32} />,
-      title: content?.how_step2_title || "2. Wij Bereiden Voor",
+      title: content?.how_step2_title || t("2. Wij Bereiden Voor", "2. We Prepare"),
       titleSize: content?.how_step2_title_size,
       titleFont: content?.how_step2_title_font,
       descSize: content?.how_step2_desc_size,
       descFont: content?.how_step2_desc_font,
-      description: content?.how_step2_desc || "Onze chefs in de Mokum Local Kitchen bereiden de warme snacks en verzamelen de gekoelde dranken op het afgesproken moment."
+      description: content?.how_step2_desc || t("Onze chefs in de Mokum Local Kitchen bereiden de warme snacks en verzamelen de gekoelde dranken op het afgesproken moment.")
     },
     {
       icon: <ConciergeBell size={32} />,
-      title: content?.how_step3_title || "3. Bezorging op Kantoor",
+      title: content?.how_step3_title || t("3. Bezorging op Kantoor", "3. Office Delivery"),
       titleSize: content?.how_step3_title_size,
       titleFont: content?.how_step3_title_font,
       descSize: content?.how_step3_desc_size,
       descFont: content?.how_step3_desc_font,
-      description: content?.how_step3_desc || "Wij leveren alles vers, warm en gekoeld af bij u op kantoor in Amsterdam, precies op tijd voor de borrel of het evenement."
+      description: content?.how_step3_desc || t("Wij leveren alles vers, warm en gekoeld af bij u op kantoor in Amsterdam, precies op tijd voor de borrel of het evenement.")
     }
   ];
 
@@ -42,7 +44,7 @@ export function HowItWorks({ content }: { content?: any }) {
             className="text-3xl md:text-5xl text-ob-text mb-4 font-title-default" 
             style={getTypographyStyle('title', content?.how_title_font, content?.how_title_size)}
           >
-            {content?.how_title || "Hoe Werkt Office Butler?"}
+            {content?.how_title || t("Hoe Werkt Office Butler?", "How Does Office Butler Work?")}
           </h2>
           {content?.how_subtitle && (
             <p 

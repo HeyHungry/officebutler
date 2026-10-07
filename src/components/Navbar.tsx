@@ -82,7 +82,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
 
   const getNavLinkName = (link: typeof navLinks[0]) => {
     if (content && content[link.key]) {
-      return t(content[link.key]);
+      return content[link.key];
     }
     return t(link.defaultName);
   };
@@ -163,14 +163,14 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
             className="text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap font-button-default"
             style={getTypographyStyle('button', content?.nav_btn_login_font, content?.nav_btn_login_size)}
           >
-            {content?.nav_btn_login ? t(content.nav_btn_login) : t('Inloggen')}
+            {content?.nav_btn_login || t('Inloggen')}
           </a>
           <button 
             onClick={openStep1} 
             className="bg-[#5170ff] hover:bg-[#4060ee] rounded-xl text-white px-6 py-2.5 shadow-[0_0_20px_rgba(81,112,255,0.5)] hover:shadow-[0_0_30px_rgba(81,112,255,0.8)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer font-button-default"
             style={getTypographyStyle('button', content?.nav_btn_order_font, content?.nav_btn_order_size)}
           >
-            {content?.nav_btn_order ? t(content.nav_btn_order) : t('BESTEL NU')}
+            {content?.nav_btn_order || t('BESTEL NU')}
           </button>
         </div>
 
@@ -270,14 +270,14 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
                 className="text-2xl text-ob-text hover:text-ob-accent transition-colors mt-2 font-semibold font-button-default"
                 style={getTypographyStyle('button', content?.nav_btn_login_font, content?.nav_btn_login_size)}
               >
-                {content?.nav_btn_login ? t(content.nav_btn_login) : t('Inloggen')}
+                {content?.nav_btn_login || t('Inloggen')}
               </a>
               <button 
                 onClick={() => { openStep1(); setIsMobileMenuOpen(false); }}
                 className="bg-[#5170ff] text-white px-8 py-4 text-lg mt-4 inline-block mx-auto hover:bg-[#4060ee] transition-colors font-button-default rounded-xl shadow-md"
                 style={getTypographyStyle('button', content?.nav_btn_order_font, content?.nav_btn_order_size)}
               >
-                {content?.nav_btn_order ? t(content.nav_btn_order) : t('BESTEL NU')}
+                {content?.nav_btn_order || t('BESTEL NU')}
               </button>
             </div>
           </motion.div>

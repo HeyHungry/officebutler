@@ -2,10 +2,12 @@ import { StoreSettings } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { Bike, ConciergeBell, Check } from 'lucide-react';
 import { useOrderModal } from '../contexts/OrderModalContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 
 export function Assortments({ content }: { content?: any }) {
   const { openStep1 } = useOrderModal();
+  const { t } = useLanguage();
   return (
     <section id="assortments" className="py-24 bg-ob-cream-dark/30">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
@@ -14,13 +16,13 @@ export function Assortments({ content }: { content?: any }) {
             className="text-3xl md:text-5xl text-ob-text mb-4 font-title-default" 
             style={getTypographyStyle('title', content?.assortments_title_font, content?.assortments_title_size)}
           >
-            {content?.assortments_title || "Onze Assortimenten"}
+            {content?.assortments_title || t("Onze Assortimenten", "Our Assortments")}
           </h2>
           <p 
             className="text-ob-text-light max-w-2xl mx-auto font-subtitle-default" 
             style={getTypographyStyle('subtitle', content?.assortments_subtitle_font, content?.assortments_subtitle_size)}
           >
-            {content?.assortments_subtitle || 'Kies het pakket dat het beste bij uw kantoorborrel past.'}
+            {content?.assortments_subtitle || t('Kies het pakket dat het beste bij uw kantoorborrel past.', 'Choose the package that best fits your office event.')}
           </p>
           <div className="w-16 h-[1px] bg-ob-accent mx-auto mt-6"></div>
         </div>
@@ -41,13 +43,13 @@ export function Assortments({ content }: { content?: any }) {
               className="text-3xl mb-2 font-heading-default text-ob-blue" 
               style={getTypographyStyle('heading', content?.assort_snacks_title_font, content?.assort_snacks_title_size)}
             >
-              {content?.assort_snacks_title || "Bezorgen"}
+              {content?.assort_snacks_title || t("Bezorgen", "Delivery")}
             </h3>
             <p 
               className="text-ob-text-light mb-8 italic font-subtitle-default" 
               style={getTypographyStyle('subtitle', content?.assort_snacks_subtitle_font, content?.assort_snacks_subtitle_size)}
             >
-              {content?.assort_snacks_subtitle || "Netjes en warm tot aan de deur geleverd"}
+              {content?.assort_snacks_subtitle || t("Netjes en warm tot aan de deur geleverd", "Delivered hot and neatly right to your office door")}
             </p>
             
             <ul className="space-y-4 mb-10 flex-grow font-paragraph-default">
@@ -55,7 +57,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.assort_snacks_item1_font, content?.assort_snacks_item1_size)}>
-                    {content?.assort_snacks_item1 || "Gegarandeerd warme levering"}
+                    {content?.assort_snacks_item1 || t("Gegarandeerd warme levering")}
                   </span>
                 </li>
               )}
@@ -63,7 +65,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.assort_snacks_item2_font, content?.assort_snacks_item2_size)}>
-                    {content?.assort_snacks_item2 || "Stipt op de afgesproken tijd (of binnen 45 min)"}
+                    {content?.assort_snacks_item2 || t("Stipt op de afgesproken tijd (of binnen 45 min)")}
                   </span>
                 </li>
               )}
@@ -71,7 +73,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.assort_snacks_item3_font, content?.assort_snacks_item3_size)}>
-                    {content?.assort_snacks_item3 || "Gratis bezorgservice"}
+                    {content?.assort_snacks_item3 || t("Gratis bezorgservice")}
                   </span>
                 </li>
               )}
@@ -79,7 +81,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.assort_snacks_item4_font, content?.assort_snacks_item4_size)}>
-                    {content?.assort_snacks_item4 || "Vanaf 10 personen"}
+                    {content?.assort_snacks_item4 || t("Vanaf 10 personen")}
                   </span>
                 </li>
               )}
@@ -90,7 +92,7 @@ export function Assortments({ content }: { content?: any }) {
               className="w-full border-2 border-[#5170ff] text-[#5170ff] hover:bg-[#5170ff] hover:text-white hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 font-button-default text-sm font-bold cursor-pointer" 
               style={getTypographyStyle('button', content?.assort_snacks_btn_font, content?.assort_snacks_btn_size)}
             >
-              {content?.assort_snacks_btn || "Kies Bezorgen"}
+              {content?.assort_snacks_btn || t("Kies Bezorgen", "Choose Delivery")}
             </button>
           </motion.div>
 
@@ -108,7 +110,7 @@ export function Assortments({ content }: { content?: any }) {
                 className="absolute top-0 right-0 bg-[#5170ff] text-white text-xs uppercase tracking-wider py-1 px-3 font-button-default" 
                 style={getTypographyStyle('button', content?.assort_complete_badge_font, content?.assort_complete_badge_size)}
               >
-                {content?.assort_complete_badge || "Meest Gekozen"}
+                {content?.assort_complete_badge || t("Meest Gekozen", "Most Popular")}
               </div>
             )}
             <div className="text-[#5170ff] mb-4">
@@ -118,13 +120,13 @@ export function Assortments({ content }: { content?: any }) {
               className="text-3xl mb-2 text-white font-heading-default" 
               style={getTypographyStyle('heading', content?.assort_complete_title_font, content?.assort_complete_title_size)}
             >
-              {content?.assort_complete_title || "Uitpakken & uitserveren"}
+              {content?.assort_complete_title || t("Uitpakken & uitserveren", "Unpack & Serve")}
             </h3>
             <p 
               className="text-white/70 mb-8 italic font-subtitle-default" 
               style={getTypographyStyle('subtitle', content?.assort_complete_subtitle_font, content?.assort_complete_subtitle_size)}
             >
-              {content?.assort_complete_subtitle || "De ultieme butler ervaring"}
+              {content?.assort_complete_subtitle || t("De ultieme butler ervaring", "The ultimate butler experience")}
             </p>
             
             <ul className="space-y-4 mb-10 flex-grow font-paragraph-default">
@@ -132,7 +134,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-white/90" style={getTypographyStyle('paragraph', content?.assort_complete_item1_font, content?.assort_complete_item1_size)}>
-                    {content?.assort_complete_item1 || "Butlers pakken de snacks uit en maken ze eetklaar"}
+                    {content?.assort_complete_item1 || t("Butlers pakken de snacks uit en maken ze eetklaar")}
                   </span>
                 </li>
               )}
@@ -140,7 +142,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-white/90" style={getTypographyStyle('paragraph', content?.assort_complete_item2_font, content?.assort_complete_item2_size)}>
-                    {content?.assort_complete_item2 || "Butlers serveren de warme hapjes direct uit"}
+                    {content?.assort_complete_item2 || t("Butlers serveren de warme hapjes direct uit")}
                   </span>
                 </li>
               )}
@@ -148,7 +150,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-white/90" style={getTypographyStyle('paragraph', content?.assort_complete_item3_font, content?.assort_complete_item3_size)}>
-                    {content?.assort_complete_item3 || "Ideaal voor grotere groepen of evenementen"}
+                    {content?.assort_complete_item3 || t("Ideaal voor grotere groepen of evenementen")}
                   </span>
                 </li>
               )}
@@ -156,7 +158,7 @@ export function Assortments({ content }: { content?: any }) {
                 <li className="flex items-start gap-3">
                   <Check className="text-ob-accent mt-1 shrink-0" size={18} />
                   <span className="text-white/90" style={getTypographyStyle('paragraph', content?.assort_complete_item4_font, content?.assort_complete_item4_size)}>
-                    {content?.assort_complete_item4 || "Identiek aan de kwaliteit van Canal Butler"}
+                    {content?.assort_complete_item4 || t("Identiek aan de kwaliteit van Canal Butler")}
                   </span>
                 </li>
               )}
@@ -167,7 +169,7 @@ export function Assortments({ content }: { content?: any }) {
               className="w-full bg-[#5170ff] text-white hover:bg-[#4060ee] hover:-translate-y-1 hover:shadow-lg transition-all duration-300 py-4 font-button-default text-sm font-bold cursor-pointer shadow-md" 
               style={getTypographyStyle('button', content?.assort_complete_btn_font, content?.assort_complete_btn_size)}
             >
-              {content?.assort_complete_btn || "Kies Butler Service"}
+              {content?.assort_complete_btn || t("Kies Butler Service", "Choose Butler Service")}
             </button>
           </motion.div>
         </div>

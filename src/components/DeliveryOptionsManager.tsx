@@ -9,6 +9,8 @@ export type ObDeliveryMethod = {
   id: string;
   name: string;
   description: string;
+  name_en?: string;
+  description_en?: string;
   price: number;
   image_url: string;
   is_active: boolean;
@@ -51,8 +53,14 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: 
             </div>
           )}
           <div>
-            <span className="font-semibold text-gray-800 block">{p.name}</span>
-            <span className="text-xs text-gray-500">{p.description}</span>
+            <span className="font-semibold text-gray-800 block">
+              {p.name}
+              {p.name_en && <span className="ml-2 text-xs font-normal text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">🇬🇧 {p.name_en}</span>}
+            </span>
+            <span className="text-xs text-gray-500 block">{p.description}</span>
+            {p.description_en && (
+              <span className="text-xs text-gray-400 italic block mt-0.5">🇬🇧 {p.description_en}</span>
+            )}
           </div>
         </div>
       </td>
@@ -87,8 +95,19 @@ export function DeliveryOptionsManager() {
     setIsLoading(true);
     if (!supabase) return;
     try {
-      const { data, error } = await supabase.from('ob_delivery_methods').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
-      if (data) setMethods(data);
+      const [methodsRes, storeRes] = await Promise.all([
+        supabase.from('ob_delivery_methods').select('*').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true }),
+        supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle()
+      ]);
+      const deliveryTrans: Record<string, { name_en?: string; description_en?: string }> = storeRes?.data?.page_content?.delivery_translations || {};
+      if (methodsRes.data) {
+        const enriched = methodsRes.data.map((m: any) => ({
+          ...m,
+          name_en: m.name_en || deliveryTrans[m.id]?.name_en || '',
+          description_en: m.description_en || deliveryTrans[m.id]?.description_en || ''
+        }));
+        setMethods(enriched);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -132,30 +151,78 @@ export function DeliveryOptionsManager() {
     setIsSaving(true);
     
     try {
+      const nameEn = editForm.name_en?.trim() || '';
+      const descEn = editForm.description_en?.trim() || '';
+      let savedMethod: any = null;
+
       if (editingId === 'new') {
-        const { data, error } = await supabase.from('ob_delivery_methods').insert({
+        const insertPayload: any = {
           name: editForm.name,
           description: editForm.description || '',
+          name_en: nameEn || null,
+          description_en: descEn || null,
           price: editForm.price || 0,
           image_url: editForm.image_url || '',
           is_active: editForm.is_active !== undefined ? editForm.is_active : true,
           sort_order: methods.length
-        }).select();
+        };
+        let { data, error } = await supabase.from('ob_delivery_methods').insert(insertPayload).select();
+        if (error && (error.message?.toLowerCase().includes('name_en') || error.message?.toLowerCase().includes('description_en'))) {
+          delete insertPayload.name_en;
+          delete insertPayload.description_en;
+          const retry = await supabase.from('ob_delivery_methods').insert(insertPayload).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) { alert('Error: ' + error.message); }
-        if (data) setMethods([...methods, data[0]]);
+        if (data && data[0]) {
+          savedMethod = { ...data[0], name_en: nameEn, description_en: descEn };
+          setMethods([...methods, savedMethod]);
+        }
       } else {
-        const { data, error } = await supabase.from('ob_delivery_methods').update({
+        const updatePayload: any = {
           name: editForm.name,
           description: editForm.description,
+          name_en: nameEn || null,
+          description_en: descEn || null,
           price: editForm.price,
           image_url: editForm.image_url,
           is_active: editForm.is_active
-        }).eq('id', editingId).select();
+        };
+        let { data, error } = await supabase.from('ob_delivery_methods').update(updatePayload).eq('id', editingId).select();
+        if (error && (error.message?.toLowerCase().includes('name_en') || error.message?.toLowerCase().includes('description_en'))) {
+          delete updatePayload.name_en;
+          delete updatePayload.description_en;
+          const retry = await supabase.from('ob_delivery_methods').update(updatePayload).eq('id', editingId).select();
+          data = retry.data;
+          error = retry.error;
+        }
         if (error) { alert('Error: ' + error.message); }
-        if (data) {
-          setMethods(methods.map(p => p.id === editingId ? data[0] : p));
+        if (data && data[0]) {
+          savedMethod = { ...data[0], name_en: nameEn, description_en: descEn };
+          setMethods(methods.map(p => p.id === editingId ? savedMethod : p));
         }
       }
+
+      // Sync into store_settings.page_content.delivery_translations for 100% reliability
+      try {
+        const targetId = editingId === 'new' ? savedMethod?.id : editingId;
+        if (targetId) {
+          const { data: stData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+          const currentContent = stData?.page_content || {};
+          const currentDeliveryTrans = { ...(currentContent.delivery_translations || {}) };
+          currentDeliveryTrans[targetId] = {
+            name_en: nameEn,
+            description_en: descEn
+          };
+          await supabase.from('store_settings').update({
+            page_content: { ...currentContent, delivery_translations: currentDeliveryTrans }
+          }).eq('id', 1);
+        }
+      } catch (stErr) {
+        console.warn('Could not sync delivery_translations to store_settings:', stErr);
+      }
+
       setEditingId(null);
       setEditForm({});
     } catch (err) {
@@ -185,9 +252,26 @@ export function DeliveryOptionsManager() {
           <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600 p-1"><X size={18} /></button>
         </td>
         <td className="px-2 py-2 align-top">
-          <input type="text" placeholder="Naam" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none mb-2" value={editForm.name || ''} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-          <input type="text" placeholder="Beschrijving" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none mb-2" value={editForm.description || ''} onChange={e => setEditForm({...editForm, description: e.target.value})} />
-          <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
+          <div className="space-y-1 mb-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Naam (Nederlands)</span>
+            <input type="text" placeholder="Naam in het Nederlands (bijv. Bezorgen)" className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none text-sm" value={editForm.name || ''} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+          </div>
+          <div className="space-y-1 mb-2">
+            <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider block flex items-center gap-1">🇬🇧 Name (English / Engels)</span>
+            <input type="text" placeholder="Name in English (e.g. Delivery or Unpack & Setup)" className="w-full px-2 py-1.5 border border-amber-300 bg-amber-50/20 rounded focus:border-[#151f33] focus:outline-none text-xs" value={editForm.name_en || ''} onChange={e => setEditForm({...editForm, name_en: e.target.value})} />
+          </div>
+          <div className="space-y-1 mb-2">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Omschrijving (Nederlands)</span>
+            <input type="text" placeholder="Omschrijving in het Nederlands" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.description || ''} onChange={e => setEditForm({...editForm, description: e.target.value})} />
+          </div>
+          <div className="space-y-1 mb-2">
+            <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider block flex items-center gap-1">🇬🇧 Description (English / Engels)</span>
+            <input type="text" placeholder="Description in English" className="w-full px-2 py-1.5 border border-amber-300 bg-amber-50/20 rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.description_en || ''} onChange={e => setEditForm({...editForm, description_en: e.target.value})} />
+          </div>
+          <div className="space-y-1">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Afbeelding URL</span>
+            <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
+          </div>
         </td>
         <td className="px-2 py-2 align-top">
           <input type="number" step="0.01" placeholder={editForm.name?.toLowerCase().includes('uitserveren') ? "Uurtarief (€/uur)" : "Prijs"} className="w-full px-2 py-1.5 border rounded focus:border-[#151f33] focus:outline-none" value={editForm.price !== undefined ? editForm.price : ''} onChange={e => setEditForm({...editForm, price: parseFloat(e.target.value) || 0})} />

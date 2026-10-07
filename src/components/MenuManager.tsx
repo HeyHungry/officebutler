@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical, ChevronUp, ChevronDown, ChefHat, Sparkles, Printer, Search } from 'lucide-react';
+import { supabase, CategoryVariantRulesMap, CategoryVariantRule } from '../lib/supabase';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical, ChevronUp, ChevronDown, ChefHat, Sparkles, Printer, Search, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -15,6 +15,7 @@ export type ObProduct = {
   portions: number[];
   sort_order?: number;
   extra_info?: string;
+  extra_info_en?: string;
   additional_categories?: string[];
   sauces?: string[];
   variants?: string[];
@@ -237,6 +238,13 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete, ha
             {p.variants && p.variants.length > 0 && <span className="text-[10px] text-gray-500">Varianten: {p.variants.join(', ')}</span>}
             {p.sauces && p.sauces.length > 0 && <span className="text-[10px] text-gray-500">Sauzen: {p.sauces.join(', ')}</span>}
             
+            {(p.extra_info || p.extra_info_en) && (
+              <div className="text-[10px] text-gray-500 mt-1 space-y-0.5 max-w-sm">
+                {p.extra_info && <div className="truncate"><span className="font-semibold text-gray-700">Extra info (NL):</span> {p.extra_info}</div>}
+                {p.extra_info_en && <div className="truncate text-amber-800"><span className="font-semibold text-amber-900">🇬🇧 Extra info (EN):</span> {p.extra_info_en}</div>}
+              </div>
+            )}
+            
             {(p.kitchen_name || p.kitchen_ingredients || p.kitchen_prep_instructions) ? (
               <div className="text-[10px] bg-amber-50/90 text-amber-950 border border-amber-300/80 rounded px-2 py-1 mt-1.5 max-w-sm space-y-0.5 shadow-xs">
                 <div className="font-semibold flex items-center gap-1 text-amber-950">
@@ -262,7 +270,7 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete, ha
       
       
       <td className="px-2 py-2"><span className="bg-gray-100 text-gray-700 px-2 py-1 rounded-md text-xs font-medium">{p.category}</span></td>
-      <td className="px-2 py-2"><div className="flex flex-wrap gap-1">{p.portions && p.portions.map((port: number) => (<span key={port} className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-xs font-medium">{port} st.</span>))}</div></td>
+      <td className="px-2 py-2"><div className="flex flex-wrap gap-1">{p.portions && p.portions.map((port: number, portIdx: number) => (<span key={`p-port-${p.id || 'p'}-${port}-${portIdx}`} className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-xs font-medium">{port} st.</span>))}</div></td>
       <td className="px-2 py-2">
         <span className={`px-2 py-1 rounded-md text-xs font-medium ${['uitverkocht', 'verborgen', 'sold_out', 'inactive', 'inactief'].includes((p.status || '').toLowerCase()) ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
           {p.status === 'inactive' ? 'Verborgen' : 
@@ -299,6 +307,9 @@ export function MenuManager() {
   const [catDescInput, setCatDescInput] = useState<string>('');
   const [categoryRestrictions, setCategoryRestrictions] = useState<Record<string, string[]>>({});
   const [editingCatRestrictions, setEditingCatRestrictions] = useState<string | null>(null);
+  const [categoryVariantRules, setCategoryVariantRules] = useState<CategoryVariantRulesMap>({});
+  const [editingCatVariants, setEditingCatVariants] = useState<string | null>(null);
+  const [isSavingCatVariants, setIsSavingCatVariants] = useState(false);
 
   const [isKitchenSheetOpen, setIsKitchenSheetOpen] = useState(false);
   const [kitchenSearch, setKitchenSearch] = useState('');
@@ -456,7 +467,10 @@ export function MenuManager() {
       const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || {};
       const catRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || {};
       const kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string }> = storeRes?.data?.page_content?.product_kitchen_info || {};
+      const productTranslationsMap: Record<string, { extra_info_en?: string }> = storeRes?.data?.page_content?.product_translations || {};
+      const catVariantRulesMap: CategoryVariantRulesMap = storeRes?.data?.page_content?.category_variant_rules || {};
       setCategoryDescriptions(catDescMap);
+      setCategoryVariantRules(catVariantRulesMap);
 
       try {
         const { data: catTableData } = await supabase.from('ob_categories').select('name, allowed_company_ids');
@@ -475,9 +489,11 @@ export function MenuManager() {
       if (productsRes.data) {
         const enriched = productsRes.data.map((p: any) => {
           const kInfo = kitchenInfoMap[p.id] || kitchenInfoMap[p.name] || kitchenInfoMap[(p.name || '').trim()];
+          const pTrans = productTranslationsMap[p.id] || productTranslationsMap[p.name] || productTranslationsMap[(p.name || '').trim()];
           return {
             ...p,
             brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
+            extra_info_en: p.extra_info_en || pTrans?.extra_info_en || '',
             hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
             allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || [],
             kitchen_name: p.kitchen_name || kInfo?.kitchen_name || '',
@@ -622,6 +638,90 @@ export function MenuManager() {
     }
   };
 
+  const handleSaveCategoryVariantRule = async (
+    catTitle: string,
+    productId: string,
+    productName: string,
+    order: string[],
+    hidden: string[]
+  ) => {
+    setIsSavingCatVariants(true);
+    try {
+      const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+      const currentContent = storeData?.page_content || {};
+      const updatedRules: CategoryVariantRulesMap = { ...(currentContent.category_variant_rules || categoryVariantRules || {}) };
+
+      if (!updatedRules[catTitle]) {
+        updatedRules[catTitle] = {};
+      } else {
+        updatedRules[catTitle] = { ...updatedRules[catTitle] };
+      }
+
+      const ruleObj: CategoryVariantRule = {};
+      if (order && order.length > 0) ruleObj.order = order;
+      if (hidden && hidden.length > 0) ruleObj.hidden = hidden;
+
+      if (productId) updatedRules[catTitle][productId] = ruleObj;
+      if (productName) {
+        updatedRules[catTitle][productName] = ruleObj;
+        updatedRules[catTitle][productName.trim()] = ruleObj;
+      }
+
+      await supabase.from('store_settings').update({
+        page_content: {
+          ...currentContent,
+          category_variant_rules: updatedRules
+        }
+      }).eq('id', 1);
+
+      setCategoryVariantRules(updatedRules);
+    } catch (err: any) {
+      alert('Fout bij opslaan van variant-instellingen: ' + (err.message || String(err)));
+    } finally {
+      setIsSavingCatVariants(false);
+    }
+  };
+
+  const handleResetCategoryVariantRule = async (
+    catTitle: string,
+    productId: string,
+    productName: string
+  ) => {
+    setIsSavingCatVariants(true);
+    try {
+      const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+      const currentContent = storeData?.page_content || {};
+      const updatedRules: CategoryVariantRulesMap = { ...(currentContent.category_variant_rules || categoryVariantRules || {}) };
+
+      if (updatedRules[catTitle]) {
+        const catCopy = { ...updatedRules[catTitle] };
+        if (productId) delete catCopy[productId];
+        if (productName) {
+          delete catCopy[productName];
+          delete catCopy[productName.trim()];
+        }
+        if (Object.keys(catCopy).length === 0) {
+          delete updatedRules[catTitle];
+        } else {
+          updatedRules[catTitle] = catCopy;
+        }
+      }
+
+      await supabase.from('store_settings').update({
+        page_content: {
+          ...currentContent,
+          category_variant_rules: updatedRules
+        }
+      }).eq('id', 1);
+
+      setCategoryVariantRules(updatedRules);
+    } catch (err: any) {
+      alert('Fout bij herstellen: ' + (err.message || String(err)));
+    } finally {
+      setIsSavingCatVariants(false);
+    }
+  };
+
   const handleCancel = () => {
     setEditingId(null);
     setEditForm({});
@@ -686,6 +786,7 @@ export function MenuManager() {
     const kitchenNameToSave = editForm.kitchen_name?.trim() || '';
     const kitchenIngredientsToSave = editForm.kitchen_ingredients?.trim() || '';
     const kitchenPrepToSave = editForm.kitchen_prep_instructions?.trim() || '';
+    const extraInfoEnToSave = editForm.extra_info_en?.trim() || '';
 
     try {
       let savedProduct: any = null;
@@ -698,6 +799,7 @@ export function MenuManager() {
           portions: portionsToSave,
           variants: variantsToSave,
           extra_info: editForm.extra_info || null,
+          extra_info_en: extraInfoEnToSave || null,
           additional_categories: editForm.additional_categories || [],
           sauces: saucesToSave,
           sort_order: products.length,
@@ -709,10 +811,11 @@ export function MenuManager() {
         let { data, error } = await supabase.from('ob_products').insert(insertPayload).select();
 
         // If columns do not exist in ob_products table yet, retry without them
-        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids'))) {
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('extra_info_en'))) {
           if (error.message?.toLowerCase().includes('brand')) delete insertPayload.brand;
           if (error.message?.toLowerCase().includes('hide_image')) delete insertPayload.hide_image;
           if (error.message?.toLowerCase().includes('allowed_company_ids')) delete insertPayload.allowed_company_ids;
+          if (error.message?.toLowerCase().includes('extra_info_en')) delete insertPayload.extra_info_en;
           const retry = await supabase.from('ob_products').insert(insertPayload).select();
           data = retry.data;
           error = retry.error;
@@ -723,6 +826,7 @@ export function MenuManager() {
           savedProduct = {
             ...data[0],
             brand: brandToSave || '',
+            extra_info_en: extraInfoEnToSave,
             hide_image: hideImageToSave,
             allowed_company_ids: allowedCompanyIdsToSave,
             kitchen_name: kitchenNameToSave,
@@ -743,6 +847,7 @@ export function MenuManager() {
           portions: portionsToSave,
           variants: variantsToSave,
           extra_info: editForm.extra_info || null,
+          extra_info_en: extraInfoEnToSave || null,
           additional_categories: editForm.additional_categories || [],
           sauces: saucesToSave,
           hide_image: hideImageToSave,
@@ -753,10 +858,11 @@ export function MenuManager() {
         let { data, error } = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
 
         // If columns do not exist in ob_products table yet, retry without them
-        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids'))) {
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('extra_info_en'))) {
           if (error.message?.toLowerCase().includes('brand')) delete updatePayload.brand;
           if (error.message?.toLowerCase().includes('hide_image')) delete updatePayload.hide_image;
           if (error.message?.toLowerCase().includes('allowed_company_ids')) delete updatePayload.allowed_company_ids;
+          if (error.message?.toLowerCase().includes('extra_info_en')) delete updatePayload.extra_info_en;
           const retry = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
           data = retry.data;
           error = retry.error;
@@ -767,6 +873,7 @@ export function MenuManager() {
           savedProduct = {
             ...data[0],
             brand: brandToSave || '',
+            extra_info_en: extraInfoEnToSave,
             hide_image: hideImageToSave,
             allowed_company_ids: allowedCompanyIdsToSave,
             kitchen_name: kitchenNameToSave,
@@ -782,7 +889,7 @@ export function MenuManager() {
         }
       }
 
-      // Sync brand, hide_image, company_restricted_products & product_kitchen_info in store_settings.page_content for reliable persistence
+      // Sync brand, hide_image, company_restricted_products, product_kitchen_info & product_translations in store_settings.page_content for reliable persistence
       try {
         const { data: storeData } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
         const currentContent = storeData?.page_content || {};
@@ -790,6 +897,7 @@ export function MenuManager() {
         const currentHideImages = { ...(currentContent.hide_image_products || {}) };
         const currentRestricted = { ...(currentContent.company_restricted_products || {}) };
         const currentKitchen = { ...(currentContent.product_kitchen_info || {}) };
+        const currentProdTrans = { ...(currentContent.product_translations || {}) };
         const prodId = editingId === 'new' ? savedProduct?.id : editingId;
 
         if (brandToSave) {
@@ -835,17 +943,43 @@ export function MenuManager() {
           delete currentKitchen[trimmedName];
         }
 
+        if (extraInfoEnToSave) {
+          if (prodId) currentProdTrans[prodId] = { ...(currentProdTrans[prodId] || {}), extra_info_en: extraInfoEnToSave };
+          if (editForm.name) currentProdTrans[editForm.name] = { ...(currentProdTrans[editForm.name] || {}), extra_info_en: extraInfoEnToSave };
+          currentProdTrans[trimmedName] = { ...(currentProdTrans[trimmedName] || {}), extra_info_en: extraInfoEnToSave };
+        } else {
+          if (prodId && currentProdTrans[prodId]) {
+            const copy = { ...currentProdTrans[prodId] };
+            delete copy.extra_info_en;
+            if (Object.keys(copy).length === 0) delete currentProdTrans[prodId];
+            else currentProdTrans[prodId] = copy;
+          }
+          if (editForm.name && currentProdTrans[editForm.name]) {
+            const copy = { ...currentProdTrans[editForm.name] };
+            delete copy.extra_info_en;
+            if (Object.keys(copy).length === 0) delete currentProdTrans[editForm.name];
+            else currentProdTrans[editForm.name] = copy;
+          }
+          if (currentProdTrans[trimmedName]) {
+            const copy = { ...currentProdTrans[trimmedName] };
+            delete copy.extra_info_en;
+            if (Object.keys(copy).length === 0) delete currentProdTrans[trimmedName];
+            else currentProdTrans[trimmedName] = copy;
+          }
+        }
+
         await supabase.from('store_settings').update({
           page_content: {
             ...currentContent,
             product_brands: currentBrands,
             hide_image_products: currentHideImages,
             company_restricted_products: currentRestricted,
-            product_kitchen_info: currentKitchen
+            product_kitchen_info: currentKitchen,
+            product_translations: currentProdTrans
           }
         }).eq('id', 1);
       } catch (syncErr) {
-        console.warn('Could not sync brand/hide_image/kitchen to store_settings:', syncErr);
+        console.warn('Could not sync brand/hide_image/kitchen/translations to store_settings:', syncErr);
       }
 
       setEditingId(null);
@@ -934,13 +1068,24 @@ export function MenuManager() {
               <span className="font-semibold text-gray-800">Afbeelding uitzetten op bestel- en assortimentpagina</span>
               <span className="text-[11px] text-gray-500">(wordt alleen getoond bij 'Extra informatie' popup)</span>
             </label>
-            <textarea placeholder="Extra informatie (bijv. allergenen)..." className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none min-h-[60px]" value={editForm.extra_info || ''} onChange={e => setEditForm({...editForm, extra_info: e.target.value})} />
+            
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider block">Extra informatie (Nederlands)</span>
+              <textarea placeholder="Extra informatie (bijv. allergenen, ingrediënten)..." className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none min-h-[50px]" value={editForm.extra_info || ''} onChange={e => setEditForm({...editForm, extra_info: e.target.value})} />
+            </div>
+
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider block flex items-center gap-1">
+                🇬🇧 Extra informatie (Engels / English)
+              </span>
+              <textarea placeholder="Extra information in English (e.g. allergens, ingredients, serving notes)..." className="w-full px-2 py-1.5 border border-amber-300 bg-amber-50/20 rounded text-xs focus:border-[#151f33] focus:outline-none min-h-[50px]" value={editForm.extra_info_en || ''} onChange={e => setEditForm({...editForm, extra_info_en: e.target.value})} />
+            </div>
             
             <div className="flex flex-col gap-1 mt-2">
               <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Extra Categorieën</span>
               <div className="flex flex-wrap gap-1 items-center">
-               {(editForm.additional_categories || []).map(c => (
-                 <span key={c} className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
+               {(editForm.additional_categories || []).map((c, cIdx) => (
+                 <span key={`add-cat-${c}-${cIdx}`} className="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
                    {c}
                    <button onClick={() => setEditForm({...editForm, additional_categories: (editForm.additional_categories || []).filter(x => x !== c)})} className="hover:text-red-500"><X size={12} /></button>
                  </span>
@@ -953,8 +1098,8 @@ export function MenuManager() {
                    e.target.value = '';
                  }}>
                  <option value="">+ Toevoegen</option>
-                 {categories.filter(c => !(editForm.additional_categories || []).includes(c) && c !== editForm.category).map(c => (
-                   <option key={c} value={c}>{c}</option>
+                 {categories.filter(c => !(editForm.additional_categories || []).includes(c) && c !== editForm.category).map((c, cIdx) => (
+                   <option key={`opt-cat-${c}-${cIdx}`} value={c}>{c}</option>
                  ))}
                </select>
               </div>
@@ -986,8 +1131,8 @@ export function MenuManager() {
               )}
             </p>
             <div className="flex flex-wrap gap-1.5 items-center">
-              {(editForm.allowed_company_ids || []).map(cid => (
-                <span key={cid} className="bg-white text-indigo-900 border border-indigo-300 px-2 py-0.5 rounded-md text-xs font-semibold flex items-center gap-1 shadow-xs">
+              {(editForm.allowed_company_ids || []).map((cid, cidIdx) => (
+                <span key={`cid-${cid}-${cidIdx}`} className="bg-white text-indigo-900 border border-indigo-300 px-2 py-0.5 rounded-md text-xs font-semibold flex items-center gap-1 shadow-xs">
                   🏢 {companyNamesMap[cid] || cid}
                   <button
                     type="button"
@@ -1101,14 +1246,57 @@ export function MenuManager() {
           </div>
           
           <div className="space-y-1">
-             <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Varianten</div>
+             <div className="flex items-center justify-between">
+               <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Varianten (Keuzes)</span>
+               <span className="text-[10px] text-gray-400">Gebruik pijltjes om volgorde te wijzigen</span>
+             </div>
              <div className="flex flex-wrap gap-1.5 items-center">
-               {(editForm.variants || []).map((v, idx) => (
-                 <span key={`menu-var-${v}-${idx}`} className="bg-blue-50 text-ob-blue border border-blue-200 px-2 py-0.5 rounded-md text-xs flex items-center gap-1">
-                   {v}
-                   <button onClick={() => setEditForm({...editForm, variants: (editForm.variants || []).filter(x => x !== v)})} className="hover:text-red-500"><X size={12} /></button>
-                 </span>
-               ))}
+               {(editForm.variants || []).map((v, idx) => {
+                 const canMoveLeft = idx > 0;
+                 const canMoveRight = idx < (editForm.variants || []).length - 1;
+                 const moveVariant = (dir: -1 | 1) => {
+                   const arr = [...(editForm.variants || [])];
+                   const target = idx + dir;
+                   if (target < 0 || target >= arr.length) return;
+                   const tmp = arr[idx];
+                   arr[idx] = arr[target];
+                   arr[target] = tmp;
+                   setEditForm({ ...editForm, variants: arr });
+                 };
+                 return (
+                   <span key={`menu-var-${v}-${idx}`} className="bg-blue-50 text-ob-blue border border-blue-200 px-2 py-0.5 rounded-md text-xs flex items-center gap-1.5 shadow-xs">
+                     <span className="font-medium">{v}</span>
+                     <div className="flex items-center gap-0.5 border-l border-blue-200 pl-1 ml-0.5">
+                       <button
+                         type="button"
+                         disabled={!canMoveLeft}
+                         onClick={() => moveVariant(-1)}
+                         title="Naar voren verplaatsen"
+                         className="text-ob-blue/60 hover:text-ob-blue disabled:opacity-25 cursor-pointer p-0.5"
+                       >
+                         <ChevronUp size={12} className="-rotate-90" />
+                       </button>
+                       <button
+                         type="button"
+                         disabled={!canMoveRight}
+                         onClick={() => moveVariant(1)}
+                         title="Naar achteren verplaatsen"
+                         className="text-ob-blue/60 hover:text-ob-blue disabled:opacity-25 cursor-pointer p-0.5"
+                       >
+                         <ChevronDown size={12} className="-rotate-90" />
+                       </button>
+                       <button
+                         type="button"
+                         onClick={() => setEditForm({...editForm, variants: (editForm.variants || []).filter(x => x !== v)})}
+                         className="hover:text-red-500 text-gray-400 cursor-pointer p-0.5 ml-0.5"
+                         title="Verwijderen"
+                       >
+                         <X size={12} />
+                       </button>
+                     </div>
+                   </span>
+                 );
+               })}
                <select 
                  className="px-2 py-0.5 rounded-md text-xs border border-gray-200 w-auto focus:outline-none focus:border-ob-blue bg-white"
                  onChange={(e) => {
@@ -1328,6 +1516,29 @@ export function MenuManager() {
                       ? `Alleen voor: ${categoryRestrictions[cat.title].length} ${categoryRestrictions[cat.title].length === 1 ? 'bedrijf' : 'bedrijven'}`
                       : '+ Zichtbaarheid'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (editingCatVariants === cat.title) {
+                        setEditingCatVariants(null);
+                      } else {
+                        setEditingCatVariants(cat.title);
+                        setEditingCatDesc(null);
+                        setEditingCatRestrictions(null);
+                      }
+                    }}
+                    className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+                      categoryVariantRules[cat.title] && Object.keys(categoryVariantRules[cat.title]).length > 0
+                        ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 font-semibold shadow-xs'
+                        : 'bg-white text-gray-500 border-gray-200 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                    title="Volgorde en weergave van keuzes/varianten (bijv. Rund, Kalfs, Vega) aanpassen of verbergen voor deze categorie"
+                  >
+                    <span>🔀</span>
+                    {categoryVariantRules[cat.title] && Object.keys(categoryVariantRules[cat.title]).length > 0
+                      ? `Keuzes/Varianten (${Object.keys(categoryVariantRules[cat.title]).length} aangepast)`
+                      : '+ Keuzes/Varianten'}
+                  </button>
                 </div>
                 <div className="flex items-center gap-1">
                   <button 
@@ -1503,6 +1714,232 @@ export function MenuManager() {
                 </div>
               )}
 
+              {/* Categorie varianten & keuzes bewerken */}
+              {editingCatVariants === cat.title && (() => {
+                const categoryProductsWithVariants = products.filter(p => 
+                  (p.category === cat.title || (p.additional_categories && p.additional_categories.includes(cat.title))) &&
+                  p.variants && p.variants.length > 0
+                );
+
+                const activeRulesForCat = categoryVariantRules[cat.title] || {};
+
+                return (
+                  <div className="bg-amber-50/90 p-4 border-b border-amber-200 flex flex-col gap-3">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5 uppercase tracking-wide">
+                          🔀 Keuzes & Varianten voor categorie '{cat.title}'
+                        </span>
+                        <p className="text-xs text-amber-900/80 mt-0.5">
+                          Bepaal hieronder de volgorde van keuzes (bijv. Vega voorop) en verberg opties die niet in categorie <strong>'{cat.title}'</strong> mogen verschijnen (bijv. Rund & Kalfs verbergen in Vega).
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setEditingCatVariants(null)}
+                          className="text-xs bg-white text-gray-700 border border-gray-200 hover:bg-gray-100 px-3 py-1 rounded-md font-medium cursor-pointer"
+                        >
+                          Sluiten
+                        </button>
+                      </div>
+                    </div>
+
+                    {categoryProductsWithVariants.length === 0 ? (
+                      <div className="bg-white/80 border border-amber-200 rounded-lg p-3 text-xs text-amber-900 italic">
+                        Geen producten met meerdere keuzes/varianten gevonden in categorie '{cat.title}'. Voeg eerst varianten (bijv. Rund, Kalfs, Vega) toe aan producten via de bewerk-knop bij het product.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {categoryProductsWithVariants.map((prod, prodIdx) => {
+                          const prodRule = activeRulesForCat[prod.id] || activeRulesForCat[prod.name] || activeRulesForCat[(prod.name || '').trim()];
+                          const hasCustomRule = Boolean(prodRule && ((prodRule.order && prodRule.order.length > 0) || (prodRule.hidden && prodRule.hidden.length > 0)));
+                          const hiddenList = prodRule?.hidden || [];
+
+                          // Calculate display order for this product in this category
+                          let displayVariants = [...(prod.variants || [])];
+                          if (prodRule?.order && prodRule.order.length > 0) {
+                            const orderMap = new Map<string, number>(prodRule.order.map((name, i) => [name.trim().toLowerCase(), i]));
+                            displayVariants.sort((a, b) => {
+                              const posA = orderMap.has(a.trim().toLowerCase()) ? (orderMap.get(a.trim().toLowerCase()) as number) : 999;
+                              const posB = orderMap.has(b.trim().toLowerCase()) ? (orderMap.get(b.trim().toLowerCase()) as number) : 999;
+                              return posA - posB;
+                            });
+                          }
+
+                          const hasVegaVariant = (prod.variants || []).some(v => /vega|vegan|vegetarisch|kaas|groente/i.test(v));
+                          const hasMeatVariant = (prod.variants || []).some(v => /rund|kalf|kip|vlees|varken/i.test(v));
+
+                          return (
+                            <div key={`cat-var-prod-${prod.id || prod.name}-${prodIdx}`} className="bg-white rounded-lg border border-amber-200 p-3 shadow-xs">
+                              <div className="flex flex-wrap items-center justify-between gap-2 mb-2 pb-2 border-b border-gray-100">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-sm text-gray-900">{prod.name}</span>
+                                  {prod.category !== cat.title && (
+                                    <span className="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-medium">
+                                      Hoofdcategorie: {prod.category}
+                                    </span>
+                                  )}
+                                  {hasCustomRule && (
+                                    <span className="text-[10px] bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">
+                                      Aangepast voor {cat.title}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  {hasVegaVariant && hasMeatVariant && (
+                                    <button
+                                      type="button"
+                                      disabled={isSavingCatVariants}
+                                      onClick={() => {
+                                        const vegaItems = displayVariants.filter(v => /vega|vegan|vegetarisch|kaas|groente/i.test(v));
+                                        const nonVegaItems = displayVariants.filter(v => !/vega|vegan|vegetarisch|kaas|groente/i.test(v));
+                                        const newOrder = [...vegaItems, ...nonVegaItems];
+                                        const newHidden = nonVegaItems;
+                                        handleSaveCategoryVariantRule(cat.title, prod.id, prod.name, newOrder, newHidden);
+                                      }}
+                                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-1 rounded font-medium flex items-center gap-1 cursor-pointer"
+                                      title="Zet Vega voorop en verberg Rund/Kalfs/Vlees opties voor deze categorie"
+                                    >
+                                      🌱 Alleen Vega tonen (verberg vlees)
+                                    </button>
+                                  )}
+                                  {hasCustomRule && (
+                                    <button
+                                      type="button"
+                                      disabled={isSavingCatVariants}
+                                      onClick={() => handleResetCategoryVariantRule(cat.title, prod.id, prod.name)}
+                                      className="text-[11px] text-gray-500 hover:text-red-600 flex items-center gap-1 cursor-pointer px-1 py-0.5"
+                                      title="Herstel naar standaard productvolgorde en maak alle opties zichtbaar"
+                                    >
+                                      <RotateCcw size={11} /> Herstel standaard
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col gap-1.5">
+                                <span className="text-[11px] text-gray-500 font-medium">
+                                  Volgorde & Zichtbaarheid van opties op bestelpagina onder '{cat.title}':
+                                </span>
+                                <div className="flex flex-wrap gap-2 items-center">
+                                  {displayVariants.map((v, vIdx) => {
+                                    const isHidden = hiddenList.some(h => h.trim().toLowerCase() === v.trim().toLowerCase());
+                                    const canMoveLeft = vIdx > 0;
+                                    const canMoveRight = vIdx < displayVariants.length - 1;
+
+                                    const handleMove = (dir: -1 | 1) => {
+                                      const arr = [...displayVariants];
+                                      const target = vIdx + dir;
+                                      if (target < 0 || target >= arr.length) return;
+                                      const tmp = arr[vIdx];
+                                      arr[vIdx] = arr[target];
+                                      arr[target] = tmp;
+                                      handleSaveCategoryVariantRule(cat.title, prod.id, prod.name, arr, hiddenList);
+                                    };
+
+                                    const handleToggleHidden = () => {
+                                      let newHidden: string[];
+                                      if (isHidden) {
+                                        newHidden = hiddenList.filter(h => h.trim().toLowerCase() !== v.trim().toLowerCase());
+                                      } else {
+                                        newHidden = [...hiddenList, v];
+                                      }
+                                      handleSaveCategoryVariantRule(cat.title, prod.id, prod.name, displayVariants, newHidden);
+                                    };
+
+                                    return (
+                                      <div
+                                        key={`cat-rule-var-${v}-${vIdx}`}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-all ${
+                                          isHidden
+                                            ? 'bg-gray-100 text-gray-400 border-gray-300 line-through'
+                                            : 'bg-white text-gray-800 border-blue-200 shadow-xs'
+                                        }`}
+                                      >
+                                        <span className="font-bold text-gray-900">{vIdx + 1}.</span>
+                                        <span className={`font-semibold ${isHidden ? 'text-gray-400' : 'text-ob-blue'}`}>
+                                          {v}
+                                        </span>
+
+                                        <div className="flex items-center gap-0.5 border-l border-gray-200 pl-1.5 ml-1">
+                                          <button
+                                            type="button"
+                                            disabled={!canMoveLeft || isSavingCatVariants}
+                                            onClick={() => handleMove(-1)}
+                                            title="Naar voren (eerder)"
+                                            className="p-0.5 text-gray-500 hover:text-ob-blue disabled:opacity-20 cursor-pointer"
+                                          >
+                                            <ChevronUp size={13} className="-rotate-90" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={!canMoveRight || isSavingCatVariants}
+                                            onClick={() => handleMove(1)}
+                                            title="Naar achteren (later)"
+                                            className="p-0.5 text-gray-500 hover:text-ob-blue disabled:opacity-20 cursor-pointer"
+                                          >
+                                            <ChevronDown size={13} className="-rotate-90" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={isSavingCatVariants}
+                                            onClick={handleToggleHidden}
+                                            title={isHidden ? `Zichtbaar maken in categorie ${cat.title}` : `Verbergen in categorie ${cat.title}`}
+                                            className={`p-1 rounded cursor-pointer transition-colors ml-1 ${
+                                              isHidden
+                                                ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                                                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                            }`}
+                                          >
+                                            {isHidden ? (
+                                              <span className="flex items-center gap-1 text-[10px] no-underline font-semibold">
+                                                <EyeOff size={11} /> Verborgen
+                                              </span>
+                                            ) : (
+                                              <span className="flex items-center gap-1 text-[10px] font-semibold">
+                                                <Eye size={11} /> Zichtbaar
+                                              </span>
+                                            )}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Actieve categorie variant-regels weergave als niet in edit mode */}
+              {editingCatVariants !== cat.title && categoryVariantRules[cat.title] && Object.keys(categoryVariantRules[cat.title]).length > 0 && (
+                <div className="bg-amber-50/60 px-4 py-2 border-b border-amber-200/80 flex items-center justify-between text-xs text-amber-900">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <span className="font-bold text-amber-950 shrink-0">🔀 Keuzes/Varianten:</span>
+                    <span className="italic truncate text-amber-800">
+                      Aangepaste volgorde & verbergregels actief voor {Object.keys(categoryVariantRules[cat.title]).length} {Object.keys(categoryVariantRules[cat.title]).length === 1 ? 'product' : 'producten'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCatVariants(cat.title);
+                      setEditingCatDesc(null);
+                      setEditingCatRestrictions(null);
+                    }}
+                    className="text-ob-blue hover:underline text-[11px] shrink-0 font-medium ml-3 cursor-pointer"
+                  >
+                    Aanpassen
+                  </button>
+                </div>
+              )}
+
               <SortableContext items={cat.items.map((p: any) => p.id)} strategy={verticalListSortingStrategy}>
                 <table className="w-full text-left text-sm min-w-[1000px]">
                   {catIndex === 0 && (
@@ -1597,8 +2034,8 @@ export function MenuManager() {
                   className="bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:border-amber-500 shadow-2xs cursor-pointer"
                 >
                   <option value="ALL">Alle categorieën ({products.length})</option>
-                  {categories.map(c => (
-                    <option key={`k-cat-${c}`} value={c}>{c}</option>
+                  {categories.map((c, cIdx) => (
+                    <option key={`k-cat-${c}-${cIdx}`} value={c}>{c}</option>
                   ))}
                 </select>
               </div>
@@ -1656,7 +2093,7 @@ export function MenuManager() {
 
                 return (
                   <div className="space-y-3">
-                    {filtered.map(p => {
+                    {filtered.map((p, pIdx) => {
                       const draft = kitchenDraftMap[p.id] || {
                         kitchen_name: p.kitchen_name || '',
                         ingredients: p.kitchen_ingredients || '',
@@ -1668,7 +2105,7 @@ export function MenuManager() {
 
                       return (
                         <div
-                          key={`kitchen-card-${p.id}`}
+                          key={`kitchen-card-${p.id || p.name || pIdx}-${pIdx}`}
                           className="bg-white rounded-xl border border-gray-200 p-4 hover:border-amber-400 hover:shadow-xs transition-all space-y-3"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2.5">

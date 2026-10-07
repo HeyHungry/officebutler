@@ -59,8 +59,8 @@ export function OrderModal({ content }: { content?: any }) {
                     <Building2 size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{getTxt('modal_business_title', content?.business_title || "Word vaste klant", "Become a regular client")}</h3>
-                    <p className="text-sm text-gray-500">{getTxt('modal_business_subtitle', content?.business_subtitle || "Meld uw bedrijf aan voor een vaste bestelomgeving", "Register your company for a dedicated ordering portal")}</p>
+                    <h3 className="font-bold text-gray-900 font-heading-default">{content?.modal_business_title || content?.business_title || t("Word vaste klant", "Become a regular client")}</h3>
+                    <p className="text-sm text-gray-500 font-paragraph-default">{content?.modal_business_subtitle || content?.business_subtitle || t("Meld uw bedrijf aan voor een vaste bestelomgeving", "Register your company for a dedicated ordering portal")}</p>
                   </div>
                 </button>
 
@@ -70,8 +70,8 @@ export function OrderModal({ content }: { content?: any }) {
                     <Clock size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{getTxt('modal_preorder_title', 'Bestel vooraf', 'Pre-order')}</h3>
-                    <p className="text-sm text-gray-500">{getTxt('modal_preorder_subtitle', 'Plan uw bestelling voor een later moment', 'Schedule your order for a later time')}</p>
+                    <h3 className="font-bold text-gray-900 font-heading-default">{getTxt('modal_preorder_title', 'Bestel vooraf', 'Pre-order')}</h3>
+                    <p className="text-sm text-gray-500 font-paragraph-default">{getTxt('modal_preorder_subtitle', 'Plan uw bestelling voor een later moment', 'Schedule your order for a later time')}</p>
                   </div>
                 </button>
 
@@ -83,8 +83,8 @@ export function OrderModal({ content }: { content?: any }) {
                     <Zap size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{getTxt('modal_direct_title', 'Bestel direct', 'Order directly')}</h3>
-                    <p className="text-sm text-gray-500">{getTxt('modal_direct_subtitle', 'Ontvang uw bestelling zo snel mogelijk', 'Receive your order as quickly as possible')}</p>
+                    <h3 className="font-bold text-gray-900 font-heading-default">{getTxt('modal_direct_title', 'Bestel direct', 'Order directly')}</h3>
+                    <p className="text-sm text-gray-500 font-paragraph-default">{getTxt('modal_direct_subtitle', 'Ontvang uw bestelling zo snel mogelijk', 'Receive your order as quickly as possible')}</p>
                   </div>
                 </button>
               </>
@@ -103,8 +103,8 @@ export function OrderModal({ content }: { content?: any }) {
                     <LogIn size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{getTxt('modal_login_title', 'Inloggen', 'Login')}</h3>
-                    <p className="text-sm text-gray-500">{getTxt('modal_login_subtitle', 'Voor bestaande zakelijke klanten en medewerkers', 'For registered corporate clients and employees')}</p>
+                    <h3 className="font-bold text-gray-900 font-heading-default">{getTxt('modal_login_title', 'Inloggen', 'Login')}</h3>
+                    <p className="text-sm text-gray-500 font-paragraph-default">{getTxt('modal_login_subtitle', 'Voor bestaande zakelijke klanten en medewerkers', 'For registered corporate clients and employees')}</p>
                   </div>
                 </button>
 
@@ -119,8 +119,8 @@ export function OrderModal({ content }: { content?: any }) {
                     <User size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{getTxt('modal_guest_title', 'Eenmalig / Particulier bestellen', 'One-time / Guest order')}</h3>
-                    <p className="text-sm text-gray-500">{getTxt('modal_guest_subtitle', 'Snel bestellen zonder account', 'Quick ordering without an account')}</p>
+                    <h3 className="font-bold text-gray-900 font-heading-default">{getTxt('modal_guest_title', 'Eenmalig / Particulier bestellen', 'One-time / Guest order')}</h3>
+                    <p className="text-sm text-gray-500 font-paragraph-default">{getTxt('modal_guest_subtitle', 'Snel bestellen zonder account', 'Quick ordering without an account')}</p>
                   </div>
                 </button>
               </>

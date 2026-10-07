@@ -32,6 +32,8 @@ const STATIC_DICTIONARY: Record<string, string> = {
   'De borrelservice van Mokum': "Amsterdam's Catering Service",
   'Onze butlers leveren de lekkerste snacks voor jouw kantoorborrel.': 'Our butlers deliver the finest hot snacks for your office event.',
   'Wij serveren snacks in butler stijl direct bij jullie op kantoor.': 'We serve warm snacks in classic butler style directly at your office.',
+  'Wij serveren snacks in butler stijl bij jullie op kantoor': 'Premium snacks, delivered to your office in true butler style.',
+  'Wij serveren snacks in butler stijl bij jullie op kantoor.': 'Premium snacks, delivered to your office in true butler style.',
   'Warm en koud geserveerd op het gewenste tijdstip': 'Served hot and cold at your preferred time',
   'Direct Bestellen': 'Order Directly',
   'Bestel direct': 'Order directly',
@@ -63,6 +65,12 @@ const STATIC_DICTIONARY: Record<string, string> = {
   'Bestel voor directe levering binnen 45 minuten of plan de bestelling eenvoudig vooruit.': 'Order for direct delivery within 45 minutes or plan easily in advance.',
   'Uitpakken en uitserveren': 'Unpack and serve',
   'De snacks worden standaard gratis bezorgd, of maak gebruik van de butler service voor het uitpakken en uitserveren.': 'Snacks are delivered free as standard, or opt for our butler service to unpack and serve them.',
+
+  'Opties:': 'Options:',
+  'Inclusief:': 'Includes:',
+  'Ingrediënten & Allergenen': 'Ingredients & Allergens',
+  'Bezorgopties': 'Delivery options',
+  'Bezorging': 'Delivery',
 
   // Categories & Headers
   'Onze Selectie': 'Our Selection',
@@ -138,6 +146,20 @@ const STATIC_DICTIONARY: Record<string, string> = {
   'Runderbitterballen': 'Beef Bitterballen',
   'Kaashapjes': 'Cheese Bites',
   'Snack Mix': 'Signature Snack Mix',
+
+  // Snack Extra Information & Descriptions
+  'Ooit bedacht als hartig hapje bij een bittertje, maar inmiddels dé onbetwiste koning van de borrelplank! De bitterbal is krokant, smeuïg van binnen en onweerstaanbaar lekker. Van bruine kroegen tot chique borrels, deze snack hoort overal thuis ': 'Originally created as a savoury bite with a traditional bitter liqueur, but now the undisputed king of the Dutch platter! Crispy on the outside, creamy on the inside, and irresistibly delicious. From historic brown cafes to chic corporate events, this snack belongs everywhere.',
+  'Ooit bedacht als hartig hapje bij een bittertje, maar inmiddels dé onbetwiste koning van de borrelplank! De bitterbal is krokant, smeuïg van binnen en onweerstaanbaar lekker. Van bruine kroegen tot chique borrels, deze snack hoort overal thuis': 'Originally created as a savoury bite with a traditional bitter liqueur, but now the undisputed king of the Dutch platter! Crispy on the outside, creamy on the inside, and irresistibly delicious. From historic brown cafes to chic corporate events, this snack belongs everywhere.',
+  'De klassiekers die altijd in de smaak vallen.\nBitterballen, Kaasstengels, Frikandellen, Kip\nLoempiaatje en Vlammetjes. Geserveerd met\nmosterd, chili en mayonaise': 'The crowd-pleasing classics that never disappoint.\nBitterballen, Crispy Cheese Sticks, Dutch Frikandellen, Mini Chicken\nSpring Rolls, and Spicy Vlammetjes. Served with\nmustard, sweet chili, and mayonnaise.',
+  'De klassiekers die altijd in de smaak vallen. Bitterballen, Kaasstengels Mini Frikandellen en Vlammetjes + Mosterd, Chili, Mayo.': 'The classics that always please: Bitterballen, Cheese Sticks, Mini Frikandellen and Spicy Vlammetjes + Mustard, Sweet Chili, and Mayonnaise.',
+  'Hoogwaardige en verfijnde smaken.\nKalfs bitterballen, Kaastengels, Truffel Kroketjes\nKreeft Kroketjes en Frikandellen van de slager.\nGeserveerd met mosterd, chili en mayonaise': 'Premium and refined flavours.\nVeal bitterballen, Crispy Cheese Sticks, Truffle Croquettes,\nLobster Croquettes, and artisan butcher Frikandellen.\nServed with mustard, sweet chili, and mayonnaise.',
+  'De classic snacks  aangevuld met Truffel, Geitenkaas, Kreeft Kroketjes. Classic sausjes aangevuld met Truffle & Spicy Mayo.': 'Classic bites enhanced with Truffle, Goat Cheese, and Lobster Croquettes. Accompanied by Truffle Mayo and Spicy Mayo.',
+  'De classics maar dan vega(n) Bitterbal, Vlammetje,\nGroente Kroketjes, Loempia’s en Samosas\nafhankelijk van de voorkeur voor vega of vegan': 'The classics reimagined as vegetarian & vegan: Vegetarian Bitterballen, Vegetarian Vlammetjes,\nVegetable Croquettes, Spring Rolls, and Samosas,\ncustomised according to your preference for vegetarian or vegan.',
+  'Let op: bevat bot en niet geschikt voor elke borrel': 'Please note: contains bones and may not be suitable for every casual event.',
+  '10 stuks\n2x rund bitterballen, 2x normale frikandelletjes, 2x kaasstengel, 2x kip loempia, 2 kip nuggets \nicl. sauces: chili, mustard 5gr sachet, mayo sachet': '10 pieces: 2x beef bitterballen, 2x classic frikandellen, 2x cheese sticks, 2x chicken spring rolls, 2x chicken nuggets. Includes sauces: sweet chili, mustard sachet, mayonnaise sachet.',
+  '2x vega bitterballen, 2x vega loempia, 2x kaasstengel (oma bob), 2x vega kroketjes, 2x vega samosas\nsauces: chili, mustard 5gr sachet, mayo sachet\n': '10 pieces: 2x vegetarian bitterballen, 2x veggie spring rolls, 2x Oma Bobs cheese sticks, 2x veggie croquettes, 2x veggie samosas. Includes sauces: sweet chili, mustard sachet, mayonnaise sachet.',
+  '2x vega bitterballen, 2x vega loempia, 2x kaasstengel (oma bob), 2x vega kroketjes, 2x vega samosas\nsauces: chili, mustard 5gr sachet, mayo sachet': '10 pieces: 2x vegetarian bitterballen, 2x veggie spring rolls, 2x Oma Bobs cheese sticks, 2x veggie croquettes, 2x veggie samosas. Includes sauces: sweet chili, mustard sachet, mayonnaise sachet.',
+  '2x vega bitterballen, 2x vega loempia, 2x karaage, 2x vega kroketjes, 2x vega samosas + sauce 1 mostersvsachet, 1 chili sachet, 1 mayo sachet': '10 pieces: 2x vegetarian bitterballen, 2x veggie spring rolls, 2x halal chicken karaage, 2x veggie croquettes, 2x veggie samosas + sauces: mustard sachet, sweet chili sachet, mayonnaise sachet.',
 
   // Ingredients / Options / Sauces
   'Rund': 'Beef',
@@ -257,8 +279,11 @@ const STATIC_DICTIONARY: Record<string, string> = {
   'Bestel direct zonder vast account': 'Order directly without a corporate account',
   'Selecteer bezorgwijze': 'Select delivery method',
   'Uitserveren': 'On-site Serving',
+  'Uitserveren ': 'On-site Serving',
   'Uitserveren (uurloon)': 'On-site Serving (hourly rate)',
   'Uitserveren (uurtarief)': 'On-site Serving (hourly rate)',
+  'Butlers die rondlopen om de snacks uit te serveren ': 'Our butlers serve the warm snacks directly to your guests.',
+  'Butlers die rondlopen om de snacks uit te serveren': 'Our butlers serve the warm snacks directly to your guests.',
   '/ uur (uurtarief)': '/ hour (hourly rate)',
   'per uur': 'per hour',
   'Gratis': 'Free',
@@ -270,6 +295,45 @@ const STATIC_DICTIONARY: Record<string, string> = {
   'Snel bestellen zonder account': 'Quick ordering without an account',
   'Kies je bezorgmethode': 'Choose your delivery method',
   'Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.': 'Select how you would like to receive or have your order served.',
+  'Standaard Bezorging': 'Standard Delivery',
+  'Tot over de drempel': 'Doorstep Delivery',
+  'Netjes tot over de drempel bezorgd': 'Delivered neatly to your doorstep',
+  'Uitpakken': 'Unpack & Setup',
+  'Uitpakken ': 'Unpack & Setup',
+  'Butlers pakken de snacks uit en maken ze eet klaar.': 'Our butlers unpack the snacks and set them up ready to serve.',
+  'Butlers pakken de snacks uit en maken ze eetklaar.': 'Our butlers unpack the snacks and set them up ready to serve.',
+  'Netjes warm uitgepakt en klaargezet': 'Neatly unpacked and set up warm',
+  'Bezorgmoment': 'Delivery Time',
+  'Bezorgmethode': 'Delivery Method',
+  'Butlers bezorgen het netjes tot aan de deur.': 'Our butlers deliver neatly right to your office door.',
+  'Bezorgkosten': 'Delivery costs',
+  'Kies uw Snacks & Porties': 'Choose your Snacks & Portions',
+  'Bestelling Plaatsen': 'Place Order',
+  'Eenmalig Bestellen': 'Guest Order',
+  'Nieuwe Bestelling': 'New Order',
+  'Nieuwe Bestelling Plaatsen': 'Place New Order',
+  'Bestelling Ontvangen!': 'Order Received!',
+  'Bestelling Geplaatst!': 'Order Placed!',
+  'Assortiment & Prijzen': 'Assortment & Prices',
+  'Toevoegen aan bestelling': 'Add to order',
+  'Kies variant:': 'Choose variant:',
+  'Kies variant': 'Choose variant',
+  'Merk:': 'Brand:',
+  'Merk': 'Brand',
+  'Overzicht Bestelling': 'Order Summary',
+  'Subtotaal': 'Subtotal',
+  'Totaal incl. BTW': 'Total incl. VAT',
+  'BTW': 'VAT',
+  'Uw Gegevens': 'Your Details',
+  'Kies gewenst tijdstip': 'Choose preferred time',
+  'Kies bezorgdatum': 'Choose delivery date',
+  'Zo snel mogelijk': 'As soon as possible',
+  'Zo snel mogelijk (binnen 45 min)': 'As soon as possible (within 45 min)',
+  'Specifieke datum en tijd plannen': 'Schedule specific date and time',
+  'Bezorgopties Beheren': 'Manage Delivery Options',
+  'Bepaal welke bezorgopties medewerkers kunnen kiezen bij hun bestelling.': 'Select which delivery options employees can choose during checkout.',
+  'Opties Opslaan': 'Save Options',
+  'Assortiment Opslaan': 'Save Assortment',
 
   // Days of week
   'Maandag': 'Monday',
@@ -281,10 +345,15 @@ const STATIC_DICTIONARY: Record<string, string> = {
   'Zondag': 'Sunday',
   'Gesloten': 'Closed',
 
-  // Footer
+  // Footer & Legal
   'Luxe borrelservice voor kantoren in Amsterdam.': 'Luxury office catering service in Amsterdam.',
   'Alle rechten voorbehouden.': 'All rights reserved.',
-  'Onderdeel van het Butler netwerk.': 'Part of the Butler network.'
+  'Onderdeel van het Butler netwerk.': 'Part of the Butler network.',
+  'Privacy Policy': 'Privacy Policy',
+  'Privacybeleid': 'Privacy Policy',
+  'Privacybeleid & Gegevensbescherming': 'Privacy Policy & Data Protection',
+  'Juridisch': 'Legal',
+  'Op vers bereide warme snacks geldt geen herroepingsrecht.': 'Perishable warm snacks are exempt from statutory withdrawal rights.'
 };
 
 interface LanguageContextType {
@@ -443,6 +512,18 @@ export const LanguageProvider: React.FC<{
     const trimmed = dutchText.trim();
     const lower = trimmed.toLowerCase();
 
+    // 0. If dutchText is already one of the translated values, keep it as is
+    for (const v of Object.values(customTranslations)) {
+      if (typeof v === 'string' && (v.trim() === trimmed || v.trim().toLowerCase() === lower)) {
+        return trimmed;
+      }
+    }
+    for (const v of Object.values(STATIC_DICTIONARY)) {
+      if (typeof v === 'string' && (v.trim() === trimmed || v.trim().toLowerCase() === lower)) {
+        return trimmed;
+      }
+    }
+
     // 1. Moderator custom translation overrides
     if (customTranslations[trimmed]) {
       return String(customTranslations[trimmed]);
@@ -486,16 +567,21 @@ export const LanguageProvider: React.FC<{
     const pageContent = storeSettings.page_content || {};
     const translatedContent: Record<string, any> = { ...pageContent };
 
+    // 1. First, map all explicit English overrides configured in moderator dashboard (e.g. hero_subtitle_en, hero_btn_order_en)
+    for (const [key, val] of Object.entries(pageContent)) {
+      if (key.endsWith('_en') && typeof val === 'string' && val.trim()) {
+        const baseKey = key.slice(0, -3);
+        translatedContent[baseKey] = val.trim();
+      }
+    }
+
+    // 2. For remaining keys without an explicit English override, translate their Dutch value via t(val)
     for (const [key, val] of Object.entries(pageContent)) {
       if (key.endsWith('_en') || key === 'custom_translations' || key === 'section_order') {
         continue;
       }
 
-      // Check explicit English override configured in the moderator dashboard (e.g. hero_title_en)
-      const explicitOverride = pageContent[`${key}_en`];
-      if (typeof explicitOverride === 'string' && explicitOverride.trim()) {
-        translatedContent[key] = explicitOverride.trim();
-      } else if (typeof val === 'string' && val.trim()) {
+      if (!translatedContent[key] && typeof val === 'string' && val.trim()) {
         translatedContent[key] = t(val);
       }
     }

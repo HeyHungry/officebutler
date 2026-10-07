@@ -16,6 +16,8 @@ import { GuestOrdering } from "./pages/GuestOrdering";
 import { Footer } from "./components/Footer";
 import { ModeratorPanel } from "./components/ModeratorPanel";
 import { WhatsAppWidget } from "./components/WhatsAppWidget";
+import { PrivacyModal } from "./components/PrivacyModal";
+import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
 
 import { Home } from "./pages/Home";
 import { Auth } from "./pages/Auth";
@@ -34,6 +36,7 @@ function AppContent({
   setStoreSettings: (s: StoreSettings) => void;
 }) {
   const [isModPanelOpen, setIsModPanelOpen] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const { getTranslatedStoreSettings, getTranslatedSharedSettings } = useLanguage();
 
   const activeStoreSettings = getTranslatedStoreSettings(storeSettings) || storeSettings;
@@ -49,11 +52,21 @@ function AppContent({
         <Route path="/dashboard" element={<CompanyDashboard />} />
         <Route path="/order" element={<EmployeeOrdering />} />
         <Route path="/guest-order" element={<GuestOrdering />} />
+        <Route path="/privacy" element={<PrivacyPolicyPage />} />
       </Routes>
 
-      <Footer onOpenModPanel={() => setIsModPanelOpen(true)} />
+      <Footer 
+        onOpenModPanel={() => setIsModPanelOpen(true)} 
+        onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
+      />
 
       <WhatsAppWidget />
+
+      <PrivacyModal
+        isOpen={isPrivacyModalOpen}
+        onClose={() => setIsPrivacyModalOpen(false)}
+        pageContent={storeSettings?.page_content}
+      />
 
       <ModeratorPanel
         isOpen={isModPanelOpen}
