@@ -4,6 +4,7 @@ import { ArrowRight, Utensils, CalendarClock } from 'lucide-react';
 import { useOrderModal } from '../contexts/OrderModalContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
+import { EditableText } from './EditableText';
 
 export function Hero({ content }: { content?: any }) {
   const { openStep2 } = useOrderModal();
@@ -41,27 +42,40 @@ export function Hero({ content }: { content?: any }) {
         >
           <div className="flex items-center justify-center gap-3 mb-6">
             <span className="h-[1px] w-12 bg-white/50"></span>
-            <span 
+            <EditableText
+              contentKey="hero_pre_title"
+              label="Hero Subkop"
+              value={content?.hero_pre_title}
+              defaultValue={t("Exclusief in Amsterdam", "Exclusively in Amsterdam")}
+              as="span"
               className="text-white/90 tracking-[0.2em] uppercase text-sm font-semibold"
               style={getTypographyStyle('heading', content?.hero_pre_title_font, content?.hero_pre_title_size)}
-            >
-              {content?.hero_pre_title || t("Exclusief in Amsterdam", "Exclusively in Amsterdam")}
-            </span>
+            />
             <span className="h-[1px] w-12 bg-white/50"></span>
           </div>
           
-          <h1 
-            className="text-5xl md:text-7xl lg:text-8xl text-white mb-8 leading-tight font-title-default" 
-            style={getTypographyStyle('title', content?.hero_title_font, content?.hero_title_size)} 
+          <EditableText
+            contentKey="hero_title"
+            label="Hero Titel"
+            value={rawTitle}
+            defaultValue={defaultTitle}
+            allowHtml
+            as="h1"
+            className="text-5xl md:text-7xl lg:text-8xl text-white mb-8 leading-tight font-title-default"
+            style={getTypographyStyle('title', content?.hero_title_font, content?.hero_title_size)}
             dangerouslySetInnerHTML={{ __html: formattedTitle }}
-          ></h1>
+          />
           
-          <p 
-            className="text-lg md:text-xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed font-subtitle-default" 
+          <EditableText
+            contentKey="hero_subtitle"
+            label="Hero Ondertitel"
+            value={content?.hero_subtitle}
+            defaultValue={t('Onze butlers leveren de lekkerste snacks voor jouw kantoorborrel.', 'Our butlers deliver the finest hot snacks for your office event.')}
+            multiline
+            as="p"
+            className="text-lg md:text-xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed font-subtitle-default"
             style={getTypographyStyle('subtitle', content?.hero_subtitle_font, content?.hero_subtitle_size)}
-          >
-            {content?.hero_subtitle || t('Onze butlers leveren de lekkerste snacks voor jouw kantoorborrel.', 'Our butlers deliver the finest hot snacks for your office event.')}
-          </p>
+          />
           
           <div className="flex flex-col items-center justify-center gap-6">
             <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto justify-center">
@@ -69,12 +83,16 @@ export function Hero({ content }: { content?: any }) {
                 onClick={() => window.location.href = '/guest-order'} 
                 className="group bg-[#5170ff] text-white border border-transparent px-8 py-4 flex items-center gap-3 hover:bg-[#4060ee] hover:shadow-[0_0_25px_rgba(81,112,255,0.6)] hover:-translate-y-1 transition-all duration-300 shadow-lg w-full sm:w-[260px] justify-center h-[56px] cursor-pointer"
               >
-                <span 
-                  className="font-button-default text-sm font-semibold" 
+                <EditableText
+                  contentKey="hero_btn_order"
+                  label="Hero Knop 'Bestel nu'"
+                  value={content?.hero_btn_order}
+                  defaultValue={t("Bestel nu", "Order now")}
+                  inline
+                  as="span"
+                  className="font-button-default text-sm font-semibold"
                   style={getTypographyStyle('button', content?.hero_btn_order_font, content?.hero_btn_order_size)}
-                >
-                  {content?.hero_btn_order || t("Bestel nu", "Order now")}
-                </span>
+                />
                 <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
               </button>
             </div>
@@ -83,12 +101,16 @@ export function Hero({ content }: { content?: any }) {
               href="#menu"
               className="group border-2 border-[#5170ff] text-white px-8 py-4 flex items-center gap-3 hover:bg-[#5170ff] hover:text-white hover:shadow-[0_0_20px_rgba(81,112,255,0.5)] hover:-translate-y-1 transition-all duration-300 w-full sm:w-[260px] justify-center h-[56px] cursor-pointer"
             >
-              <span 
-                className="font-button-default text-sm font-semibold" 
+              <EditableText
+                contentKey="hero_btn_offer"
+                label="Hero Knop 'Bekijk aanbod'"
+                value={content?.hero_btn_offer}
+                defaultValue={t("Bekijk aanbod", "View assortment")}
+                inline
+                as="span"
+                className="font-button-default text-sm font-semibold"
                 style={getTypographyStyle('button', content?.hero_btn_offer_font, content?.hero_btn_offer_size)}
-              >
-                {content?.hero_btn_offer || t("Bekijk aanbod", "View assortment")}
-              </span>
+              />
               <Utensils size={18} className="group-hover:scale-110 transition-transform" />
             </a>
           </div>

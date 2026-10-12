@@ -61,6 +61,26 @@ export type DiscountCode = {
   min_order_amount?: number;
   description?: string;
   created_at?: string;
+  max_uses_total?: number;
+  max_uses_per_person?: number;
+  used_count?: number;
+  used_by?: Record<string, number>;
+};
+
+export type PackagingOption = {
+  id: string;
+  name: string;
+  name_en?: string;
+  description?: string;
+  description_en?: string;
+  image_url?: string;
+  price?: number;
+  is_active: boolean;
+  available_for_guests: boolean;
+  available_for_all_companies: boolean;
+  allowed_company_ids?: string[];
+  sort_order?: number;
+  created_at?: string;
 };
 
 export type StoreSettings = {
@@ -82,6 +102,7 @@ export type StoreSettings = {
       prep_instructions?: string;
     }>;
     discount_codes?: DiscountCode[];
+    packaging_options?: PackagingOption[];
 
     // HERO
     hero_background_image?: string;
@@ -353,6 +374,97 @@ export function sortVariantsByCategory(
   });
 }
 
+export function validateDiscountCode(
+  code: DiscountCode,
+  totalOrderPrice: number,
+  userIdentifier?: string
+): { valid: boolean; error?: string } {
+  if (code.is_active === false) {
+    return { valid: false, error: 'Deze kortingscode is momenteel inactief.' };
+  }
+
+  // 1. Minimaal orderbedrag
+  if (code.min_order_amount && code.min_order_amount > 0 && totalOrderPrice < code.min_order_amount) {
+    return {
+      valid: false,
+      error: `Deze kortingscode is pas geldig vanaf een bestelbedrag van €${Number(code.min_order_amount).toFixed(2)}.`
+    };
+  }
+
+  // 2. Maximaal aantal keren totaal
+  const totalUsed = code.used_count || 0;
+  if (code.max_uses_total && code.max_uses_total > 0 && totalUsed >= code.max_uses_total) {
+    return {
+      valid: false,
+      error: `Deze kortingscode is niet meer geldig: het maximaal aantal keren gebruik (${code.max_uses_total}x) is bereikt.`
+    };
+  }
+
+  // 3. Maximaal aantal keren per persoon
+  if (code.max_uses_per_person && code.max_uses_per_person > 0 && userIdentifier) {
+    const cleanId = userIdentifier.trim().toLowerCase();
+    const userUses = (code.used_by && code.used_by[cleanId]) || 0;
+    if (userUses >= code.max_uses_per_person) {
+      return {
+        valid: false,
+        error: `U heeft deze kortingscode al het maximaal aantal toegestane keren (${code.max_uses_per_person}x) gebruikt.`
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+export async function recordDiscountCodeUsage(
+  codeIdOrCode: string,
+  userIdentifier?: string
+) {
+  if (!supabase) return;
+  try {
+    const { data: storeData } = await supabase
+      .from('store_settings')
+      .select('id, page_content')
+      .eq('id', 1)
+      .maybeSingle();
+
+    const currentCodes: DiscountCode[] = storeData?.page_content?.discount_codes || [];
+    const cleanTarget = codeIdOrCode.trim().toUpperCase();
+    const cleanUser = (userIdentifier || '').trim().toLowerCase();
+
+    let updated = false;
+    const updatedCodes = currentCodes.map(c => {
+      if (c.id === codeIdOrCode || (c.code && c.code.toUpperCase() === cleanTarget)) {
+        updated = true;
+        const newUsedCount = (c.used_count || 0) + 1;
+        const currentUsedBy = { ...(c.used_by || {}) };
+        if (cleanUser) {
+          currentUsedBy[cleanUser] = (currentUsedBy[cleanUser] || 0) + 1;
+        }
+        return {
+          ...c,
+          used_count: newUsedCount,
+          used_by: currentUsedBy
+        };
+      }
+      return c;
+    });
+
+    if (updated) {
+      await supabase
+        .from('store_settings')
+        .update({
+          page_content: {
+            ...(storeData?.page_content || {}),
+            discount_codes: updatedCodes
+          }
+        })
+        .eq('id', storeData?.id || 1);
+    }
+  } catch (err) {
+    console.error("Fout bij registreren kortingscode gebruik:", err);
+  }
+}
+
 
 export type ObCompany = {
   id: string;
@@ -444,3 +556,114 @@ export const fallbackStoreSettings: StoreSettings = {
     faq_a3: "Voor reguliere bestellingen vragen wij u minimaal 2 uur van tevoren te bestellen. Voor grote groepen (>30 personen) of een compleet assortiment horen wij dit graag minimaal 24 uur van tevoren."
   }
 };
+
+// ==========================================
+// MULTI-BRAND (ZUSTERBEDRIJVEN) ONDERSTEUNING
+// ==========================================
+export type BrandId = 'office_butler' | 'canal_butler' | 'snack_butler';
+
+export interface BrandConfig {
+  id: BrandId;
+  name: string;
+  badge: string;
+  description: string;
+}
+
+export const AVAILABLE_BRANDS: BrandConfig[] = [
+  { 
+    id: 'office_butler', 
+    name: 'Office Butler', 
+    badge: '🏢 Office Butler', 
+    description: 'Kantoorborrels en zakelijke levering' 
+  },
+  { 
+    id: 'canal_butler', 
+    name: 'Canal Butler', 
+    badge: '🚤 Canal Butler', 
+    description: 'Rederijen, sloepen en grachten' 
+  },
+  { 
+    id: 'snack_butler', 
+    name: 'Snack Butler', 
+    badge: '🍻 Snack Butler', 
+    description: 'Cafés, bars en horeca' 
+  },
+];
+
+/**
+ * Het actieve merk voor deze specifieke website installatie.
+ * Standaard 'office_butler'.
+ * Op de Canal Butler remix kan dit worden overschreven met VITE_BRAND_ID='canal_butler'.
+ */
+export const CURRENT_BRAND: BrandId = 
+  ((import.meta.env.VITE_BRAND_ID as string) as BrandId) || 'office_butler';
+
+/**
+ * Optionele URL naar het centrale Moderator Dashboard (van Office Butler).
+ * Als dit is ingesteld op een zusterwebsite (zoals Canal Butler),
+ * wordt de beheerder bij het openen van het Moderator Dashboard direct
+ * doorgestuurd naar het centrale dashboard van Office Butler.
+ */
+export const CENTRAL_MODERATOR_URL: string = 
+  (import.meta.env.VITE_CENTRAL_MODERATOR_URL as string) || '';
+
+export interface BrandPageContentRow {
+  brand_id: BrandId;
+  page_content: Record<string, any>;
+  updated_at?: string;
+}
+
+/**
+ * Haalt de pagina-inhoud / teksten op voor een specifiek merk uit de tabel brand_page_content.
+ */
+export async function fetchBrandPageContent(brandId: BrandId): Promise<Record<string, any> | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('brand_page_content')
+      .select('page_content')
+      .eq('brand_id', brandId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn(`[Supabase] Kon brand_page_content niet ophalen voor ${brandId}:`, error.message);
+      return null;
+    }
+    return (data?.page_content as Record<string, any>) || null;
+  } catch (err) {
+    console.warn(`[Supabase] Fout bij fetchBrandPageContent voor ${brandId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Haalt de pagina-inhoud op voor het huidige actieve merk.
+ */
+export async function fetchCurrentBrandPageContent(): Promise<Record<string, any> | null> {
+  return fetchBrandPageContent(CURRENT_BRAND);
+}
+
+/**
+ * Slaat de pagina-inhoud / teksten op voor een specifiek merk in de tabel brand_page_content.
+ */
+export async function saveBrandPageContent(brandId: BrandId, content: Record<string, any>): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('brand_page_content')
+      .upsert({
+        brand_id: brandId,
+        page_content: content,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'brand_id' });
+
+    if (error) {
+      console.error(`[Supabase] Fout bij opslaan brand_page_content voor ${brandId}:`, error);
+      throw error;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[Supabase] Fout bij saveBrandPageContent voor ${brandId}:`, err);
+    throw err;
+  }
+}

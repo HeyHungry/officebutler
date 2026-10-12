@@ -6,6 +6,7 @@ import { ShoppingBag, Info } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 import { getSnackExtraInfo, hasSnackExtraInfo } from '../lib/translationFallbacks';
+import { EditableText } from './EditableText';
 
 type MenuItem = {
   id?: string;
@@ -143,18 +144,25 @@ export function Menu({ content }: { content?: any }) {
     <section id="menu" className="py-24 bg-ob-cream">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="text-center mb-20">
-          <h2 
+          <EditableText
+            contentKey="menu_title"
+            label="Menu Titel"
+            value={content?.menu_title}
+            defaultValue="Onze Selectie"
+            as="h2"
             className="text-3xl md:text-5xl text-ob-text mb-4 font-title-default"
             style={getTypographyStyle('title', content?.menu_title_font, content?.menu_title_size)}
-          >
-            {content?.menu_title || "Onze Selectie"}
-          </h2>
-          <p 
+          />
+          <EditableText
+            contentKey="menu_subtitle"
+            label="Menu Ondertitel"
+            value={content?.menu_subtitle}
+            defaultValue="Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen."
+            multiline
+            as="p"
             className="text-ob-text-light max-w-2xl mx-auto font-subtitle-default"
             style={getTypographyStyle('subtitle', content?.menu_subtitle_font, content?.menu_subtitle_size)}
-          >
-            {content?.menu_subtitle || "Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen."}
-          </p>
+          />
           <div className="w-16 h-[1px] bg-ob-accent mx-auto mt-6"></div>
         </div>
 
@@ -199,11 +207,11 @@ export function Menu({ content }: { content?: any }) {
                   
                   <div className="flex flex-col md:flex-row gap-8">
                     {itemChunks.map((chunk, chunkIndex) => (
-                      <div key={`menu-chunk-${chunkIndex}`} className="flex flex-col gap-6 flex-1 min-w-[250px]">
+                      <div key={`menu-chunk-${category.title || catIndex}-${chunkIndex}`} className="flex flex-col gap-6 flex-1 min-w-[250px]">
                         {chunk.map((item: any, itemIdx: number) => {
                           const hasVisibleImage = !item.hide_image && Boolean(item.image_url);
                           return (
-                            <div key={`menu-item-${item.id || item.name}-${chunkIndex}-${itemIdx}`} className={`flex items-center ${hasVisibleImage ? 'gap-4 pb-4' : 'gap-3 pb-2.5'} group cursor-pointer border-b border-black/5 last:border-0 last:pb-0`} onClick={() => setInfoModalProduct(item)}>
+                            <div key={`menu-item-${category.title || catIndex}-${item.id || item.name}-${chunkIndex}-${itemIdx}`} className={`flex items-center ${hasVisibleImage ? 'gap-4 pb-4' : 'gap-3 pb-2.5'} group cursor-pointer border-b border-black/5 last:border-0 last:pb-0`} onClick={() => setInfoModalProduct(item)}>
                               {hasVisibleImage && (
                                 <div className="w-16 h-16 shrink-0 overflow-hidden bg-white shadow-sm p-1 rounded-sm relative">
                                   <img 

@@ -1,12 +1,14 @@
 import React, { useState, useEffect, FormEvent, MouseEvent } from 'react';
-import { supabase, sortVariantsByCategory } from '../lib/supabase';
+import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
 import { useNavigate } from 'react-router-dom';
-import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck, X, Info, Utensils, ShieldCheck } from 'lucide-react';
+import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck, X, Info, Utensils, ShieldCheck, Tag, Percent, Gift, CheckCircle, Package, ArrowDown, Compass, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { PrivacyModal } from '../components/PrivacyModal';
+import { useModerator } from '../contexts/ModeratorContext';
+import { EditableText } from '../components/EditableText';
 
 const PRODUCT_IMAGES: Record<string, string> = {
   'Snack Mix': 'https://imagedelivery.net/xS_5nksgKmcoB2_mcBGUmA/img_0743d367c64afbf145e9c0fea03ba65553996e64ffef54a95252060ee7ac758c/responsive320',
@@ -37,6 +39,7 @@ type PriceMap = Record<string, number>;
 
 export function EmployeeOrdering() {
   const { t, language } = useLanguage();
+  const { storeSettings } = useModerator();
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -56,6 +59,18 @@ export function EmployeeOrdering() {
   const [categoryDescriptions, setCategoryDescriptions] = useState<Record<string, string>>({});
   const [categoryRestrictions, setCategoryRestrictions] = useState<Record<string, string[]>>({});
   const [pageContent, setPageContent] = useState<any>({});
+
+  const activeContent = storeSettings?.page_content || pageContent;
+
+  const getDynamicText = (key: string, defaultNl: string, defaultEn?: string) => {
+    if (language === 'en' && activeContent?.[`${key}_en`]) {
+      return activeContent[`${key}_en`];
+    }
+    if (activeContent?.[key]) {
+      return activeContent[key];
+    }
+    return t(defaultNl, defaultEn || defaultNl);
+  };
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [prices, setPrices] = useState<PriceMap>({});
   
@@ -77,6 +92,63 @@ export function EmployeeOrdering() {
   const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>(initialDeliveryMode);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
+
+  // Discount / Coupon states for companies
+  const [discountCodes, setDiscountCodes] = useState<DiscountCode[]>([]);
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCode | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState('');
+
+  // Packaging option state
+  const [selectedPackagingOption, setSelectedPackagingOption] = useState<PackagingOption | null>(null);
+
+  const handleApplyCoupon = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setCouponError(null);
+    setCouponSuccess(null);
+
+    const clean = couponInput.trim().toUpperCase().replace(/\s+/g, '');
+    if (!clean) {
+      setCouponError('Vul a.u.b. een kortingscode in.');
+      return;
+    }
+
+    // Geen stacking: als er al een code actief is
+    if (appliedDiscount) {
+      setCouponError(`Er is al een kortingscode actief (${appliedDiscount.code}). Kortingscodes kunnen niet gestapeld worden. Verwijder eerst de huidige code.`);
+      return;
+    }
+
+    const found = discountCodes.find(c => c.code.toUpperCase() === clean);
+    if (!found) {
+      setCouponError('Deze kortingscode is ongeldig.');
+      return;
+    }
+
+    // Validatie op actief, minimum orderbedrag, max_uses_total en max_uses_per_person
+    const validation = validateDiscountCode(found, totalOrderPrice, userEmail || userId);
+    if (!validation.valid) {
+      setCouponError(validation.error || 'Deze kortingscode kan niet worden toegepast.');
+      return;
+    }
+
+    setAppliedDiscount(found);
+    if (found.type === 'percentage') {
+      const disc = (totalOrderPrice * found.value) / 100;
+      setCouponSuccess(`Code "${found.code}" toegepast: ${found.value}% korting (-€${disc.toFixed(2)})!`);
+    } else {
+      setCouponSuccess(`Code "${found.code}" toegepast: Gratis ${found.free_product?.portion_size} stuks ${found.free_product?.product_name}!`);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedDiscount(null);
+    setCouponInput('');
+    setCouponError(null);
+    setCouponSuccess(null);
+  };
 
 
   useEffect(() => {
@@ -150,6 +222,59 @@ export function EmployeeOrdering() {
     return sum + prodSum;
   }, 0);
 
+  const selectedItemsList = Object.entries(selections).flatMap(([prod, sizes]) => {
+    const cleanProd = (prod || '').trim();
+    return Object.entries(sizes as Record<string, number>).map(([s, qty]) => {
+      const parts = String(s).split('_');
+      const sizeNum = parts[0];
+      const variant = parts[1] || '';
+      const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
+      const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+      const unitPrice = basePrice + surcharge;
+      const itemTotal = unitPrice * (qty as number);
+      return {
+        product: prod,
+        size: Number(sizeNum),
+        variant,
+        qty: Number(qty),
+        unitPrice,
+        itemTotal,
+        key: `${prod}_${s}`
+      };
+    });
+  });
+
+  const discountAmount = (appliedDiscount && appliedDiscount.type === 'percentage')
+    ? (totalOrderPrice * (appliedDiscount.value || 0)) / 100
+    : 0;
+
+  const rawPackagingOptions: PackagingOption[] = pageContent?.packaging_options || [];
+  const availablePackagingOptions = rawPackagingOptions.filter((opt: PackagingOption) => {
+    if (!opt.is_active) return false;
+    if (opt.available_for_all_companies) return true;
+    if (opt.allowed_company_ids && companyId && (
+      opt.allowed_company_ids.includes(companyId) || 
+      (companyName && opt.allowed_company_ids.includes(companyName))
+    )) return true;
+    return false;
+  });
+
+  const packagingPrice = Number(selectedPackagingOption?.price) || 0;
+  const deliveryPrice = Number(selectedDeliveryMethod?.price) || 0;
+  const finalTotalAmount = Math.max(0, totalOrderPrice - discountAmount) + deliveryPrice + packagingPrice;
+
+  useEffect(() => {
+    if (availablePackagingOptions.length > 0) {
+      if (!selectedPackagingOption || !availablePackagingOptions.some(o => o.id === selectedPackagingOption.id)) {
+        setSelectedPackagingOption(availablePackagingOptions[0]);
+      }
+    } else {
+      if (selectedPackagingOption) {
+        setSelectedPackagingOption(null);
+      }
+    }
+  }, [pageContent?.packaging_options, companyId, companyName]);
+
   const fetchData = async () => {
     if (!supabase) {
       setAssortment(['Snack Mix', 'Bitterballen']);
@@ -172,6 +297,7 @@ export function EmployeeOrdering() {
       setUserId(session.user.id);
 
       const { data: profile } = await supabase.from('ob_user_profiles').select('*').eq('id', session.user.id).single();
+      setUserEmail(session.user.email || profile?.billing_email || profile?.email || '');
       
       if (!profile || (profile.role !== 'employee' && profile.role !== 'office_manager' && profile.role !== 'admin')) {
         navigate('/'); 
@@ -216,6 +342,8 @@ export function EmployeeOrdering() {
         setCategoryRestrictions(catRestrictionsMap);
         if (storeRes?.data?.page_content) {
           setPageContent(storeRes.data.page_content);
+          const loadedCodes: DiscountCode[] = storeRes.data.page_content.discount_codes || [];
+          setDiscountCodes(loadedCodes);
         }
         if (prodsRes.data) {
           prods = prodsRes.data.map((p: any) => ({
@@ -338,16 +466,48 @@ export function EmployeeOrdering() {
       }
       return sum + prodSum;
     }, 0);
+
+    if (appliedDiscount) {
+      const validation = validateDiscountCode(appliedDiscount, totalOrderPrice, userEmail || userId);
+      if (!validation.valid) {
+        setError(`Kortingscode fout: ${validation.error}`);
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
+    const calculatedDiscountAmount = (appliedDiscount && appliedDiscount.type === 'percentage')
+      ? (totalOrderPrice * (appliedDiscount.value || 0)) / 100
+      : 0;
     
-    if (maxSpendLimit !== null && totalOrderPrice > maxSpendLimit) {
-      const defaultLimitMsg = `Het maximaal toegestane bedrag per bestelling is €${maxSpendLimit.toFixed(2)}. Het totaalbedrag is nu €${totalOrderPrice.toFixed(2)}.`;
+    const effectiveSpend = Math.max(0, totalOrderPrice - calculatedDiscountAmount);
+    if (maxSpendLimit !== null && effectiveSpend > maxSpendLimit) {
+      const defaultLimitMsg = `Het maximaal toegestane bedrag per bestelling is €${maxSpendLimit.toFixed(2)}. Het totaalbedrag is nu €${effectiveSpend.toFixed(2)}.`;
       const configuredLimitMsg = pageContent?.emp_error_max_spend
-        ? pageContent.emp_error_max_spend.replace('{limit}', maxSpendLimit.toFixed(2)).replace('{total}', totalOrderPrice.toFixed(2))
+        ? pageContent.emp_error_max_spend.replace('{limit}', maxSpendLimit.toFixed(2)).replace('{total}', effectiveSpend.toFixed(2))
         : defaultLimitMsg;
       setError(configuredLimitMsg);
       setIsSubmitting(false);
       return;
     }
+
+    let discountNote = '';
+    if (appliedDiscount) {
+      if (appliedDiscount.type === 'percentage') {
+        discountNote = `Kortingscode: ${appliedDiscount.code} (${appliedDiscount.value}% korting, -€${calculatedDiscountAmount.toFixed(2)})`;
+      } else if (appliedDiscount.type === 'free_product' && appliedDiscount.free_product) {
+        const fp = appliedDiscount.free_product;
+        discountNote = `Kortingscode: ${appliedDiscount.code} (Gratis product: ${fp.portion_size} stuks ${fp.product_name}${fp.variant ? ` (${fp.variant})` : ''})`;
+      }
+    }
+
+    const packagingNote = selectedPackagingOption
+      ? `Verpakkingswijze: ${selectedPackagingOption.name}${Number(selectedPackagingOption.price) > 0 ? ` (+€${Number(selectedPackagingOption.price).toFixed(2)})` : ''}`
+      : '';
+
+    const fullNotes = `
+${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n` : ''}${notes || ''}
+    `.trim();
 
     if (supabase) {
       try {
@@ -386,13 +546,40 @@ export function EmployeeOrdering() {
                 total_price: price,
                 address_id: selectedAddress,
                 phone: phone,
-                notes: notes,
+                notes: fullNotes,
                 delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
                 delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
               }));
             }
           });
         });
+
+        // Add free product if applicable
+        if (appliedDiscount && appliedDiscount.type === 'free_product' && appliedDiscount.free_product) {
+          const fp = appliedDiscount.free_product;
+          const freeProdName = fp.variant ? `${fp.product_name} (${fp.variant})` : fp.product_name;
+          const labeledName = `[GRATIS VIA CODE ${appliedDiscount.code}] ${freeProdName}`;
+          orderLines.push({
+            product_name: labeledName,
+            portion_size: fp.portion_size,
+            price: 0,
+            qty: 1,
+            lineTotal: 0
+          });
+          orderPromises.push(supabase.from('ob_orders').insert({
+            company_id: companyId,
+            user_id: userId || null,
+            product_name: labeledName,
+            portion_size: fp.portion_size,
+            price: 0,
+            total_price: 0,
+            address_id: selectedAddress,
+            phone: phone,
+            notes: fullNotes,
+            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+          }));
+        }
 
         if (selectedDeliveryMethod && selectedDeliveryMethod.price > 0) {
           orderPromises.push(supabase.from('ob_orders').insert({
@@ -404,7 +591,7 @@ export function EmployeeOrdering() {
             total_price: selectedDeliveryMethod.price,
             address_id: selectedAddress,
             phone: phone,
-            notes: notes,
+            notes: fullNotes,
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
             delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
           }));
@@ -418,12 +605,42 @@ export function EmployeeOrdering() {
           });
         }
 
-        
+        if (selectedPackagingOption && packagingPrice > 0) {
+          orderPromises.push(supabase.from('ob_orders').insert({
+            company_id: companyId,
+            user_id: userId || null,
+            product_name: 'Verpakking: ' + selectedPackagingOption.name,
+            portion_size: 1,
+            price: packagingPrice,
+            total_price: packagingPrice,
+            address_id: selectedAddress,
+            phone: phone,
+            notes: fullNotes,
+            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+          }));
+
+          orderLines.push({
+            product_name: 'Verpakking: ' + selectedPackagingOption.name,
+            portion_size: 1,
+            price: packagingPrice,
+            qty: 1,
+            lineTotal: packagingPrice
+          });
+        }
+
         const results = await Promise.all(orderPromises);
         const errors = results.filter(r => r.error);
         if (errors.length > 0) throw errors[0].error;
 
-        const calculatedFinalTotal = totalOrderPrice + (Number(selectedDeliveryMethod?.price) || 0);
+        const calculatedFinalTotal = Math.max(0, totalOrderPrice - calculatedDiscountAmount) + (Number(selectedDeliveryMethod?.price) || 0) + packagingPrice;
+
+        // Record discount code usage
+        if (appliedDiscount) {
+          recordDiscountCodeUsage(appliedDiscount.id || appliedDiscount.code, userEmail || userId).catch(err => {
+            console.error("Fout bij bijwerken kortingscode teller:", err);
+          });
+        }
 
         // Try to send the invoice email
         try {
@@ -443,12 +660,22 @@ export function EmployeeOrdering() {
               orderLines,
               addressId: selectedAddress,
               phone,
-              notes,
+              notes: fullNotes,
               totalOrderPrice: calculatedFinalTotal,
               deliveryDate: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
               deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
               deliveryMethod: selectedDeliveryMethod?.name || 'Standaard Bezorging',
-              deliveryMethodPrice: Number(selectedDeliveryMethod?.price) || 0
+              deliveryMethodPrice: Number(selectedDeliveryMethod?.price) || 0,
+              packagingOption: selectedPackagingOption?.name || null,
+              packagingPrice: packagingPrice,
+              discountCode: appliedDiscount?.code || null,
+              discountType: appliedDiscount?.type || null,
+              discountValue: appliedDiscount?.value || 0,
+              discountAmount: calculatedDiscountAmount,
+              freeProductInfo: (appliedDiscount?.type === 'free_product' && appliedDiscount.free_product)
+                ? `${appliedDiscount.free_product.portion_size} stuks ${appliedDiscount.free_product.product_name}${appliedDiscount.free_product.variant ? ` (${appliedDiscount.free_product.variant})` : ''}`
+                : null,
+              finalTotal: calculatedFinalTotal
             })
 
           });
@@ -525,155 +752,287 @@ export function EmployeeOrdering() {
     );
   }
 
+  const itemsToRender = dbProducts.length > 0 
+    ? dbProducts.filter(p => {
+        if (!assortment.includes(p.name)) return false;
+        if (['inactive', 'inactief', 'verborgen'].includes((p.status || '').toLowerCase())) return false;
+        
+        const cat = (p.category || '').trim();
+        if (cat && categoryRestrictions[cat] && Array.isArray(categoryRestrictions[cat]) && categoryRestrictions[cat].length > 0) {
+          if (!categoryRestrictions[cat].includes(companyId)) return false;
+        }
+
+        if (p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0) {
+          if (!p.allowed_company_ids.includes(companyId)) return false;
+        }
+        return true;
+      })
+    : assortment.map(name => ({ name, status: 'Actief' }));
+
+  const groupedCategories = itemsToRender.reduce((acc: any, item: any) => {
+    const itemCats = item.additional_categories && item.additional_categories.length > 0 
+      ? Array.from(new Set([item.category, ...item.additional_categories])) 
+      : [item.category || 'Assortiment'];
+    itemCats.forEach((cat: string) => {
+      if (categoryRestrictions[cat] && Array.isArray(categoryRestrictions[cat]) && categoryRestrictions[cat].length > 0) {
+        if (!categoryRestrictions[cat].includes(companyId)) return;
+      }
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(item);
+    });
+    return acc;
+  }, {});
+
+  const categoryList = Object.keys(groupedCategories)
+    .filter(key => {
+      if (categoryRestrictions[key] && Array.isArray(categoryRestrictions[key]) && categoryRestrictions[key].length > 0) {
+        return categoryRestrictions[key].includes(companyId);
+      }
+      return true;
+    })
+    .map(key => {
+    const primaryItems = itemsToRender.filter(
+      (i: any) => (i.category || 'Assortiment').trim().toLowerCase() === key.trim().toLowerCase()
+    );
+    const minSortOrder = primaryItems.length > 0
+      ? Math.min(...primaryItems.map((i: any) => i.sort_order ?? 9999))
+      : Math.min(...groupedCategories[key].map((i: any) => i.sort_order ?? 9999));
+
+    return {
+      title: key,
+      items: groupedCategories[key],
+      minSortOrder
+    };
+  });
+  categoryList.sort((a, b) => a.minSortOrder - b.minSortOrder);
+
+  const totalSelectedItems = Object.keys(selections).length;
+  const [activeCategory, setActiveCategory] = useState<string>('');
+
+  const scrollToCategory = (catTitle: string) => {
+    setActiveCategory(catTitle);
+    const target = document.getElementById(`emp-cat-${encodeURIComponent(catTitle)}`);
+    if (target) {
+      const offset = 120;
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = target.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const scrollToOrder = () => {
+    const target = document.getElementById('emp-order-details-section');
+    if (target) {
+      const offset = 110;
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = target.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (categoryList.length === 0) return;
+    if (!activeCategory && categoryList[0]) {
+      setActiveCategory(categoryList[0].title);
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const catTitle = entry.target.getAttribute('data-category-title');
+            if (catTitle) {
+              setActiveCategory(catTitle);
+            }
+          }
+        });
+      },
+      { rootMargin: '-20% 0px -65% 0px', threshold: 0 }
+    );
+
+    categoryList.forEach((cat) => {
+      const el = document.getElementById(`emp-cat-${encodeURIComponent(cat.title)}`);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [categoryList]);
+
   return (
     <div className="min-h-screen bg-[#f4f6f9] pt-28 pb-20 font-serif">
-      <div className="max-w-4xl mx-auto px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-ob-text mb-1">{pageContent?.emp_order_title || "Nieuwe Bestelling"}</h1>
-            <p className="text-gray-500">
+            <EditableText
+              contentKey="emp_order_title"
+              label="Titel 'Nieuwe Bestelling'"
+              value={getDynamicText('emp_order_title', 'Nieuwe Bestelling', 'New Order')}
+              defaultValue="Nieuwe Bestelling"
+              as="h1"
+              className="text-3xl font-bold text-ob-text mb-1 font-title-default"
+            />
+            <p className="text-gray-500 font-paragraph-default">
               {pageContent?.emp_order_subtitle 
                 ? pageContent.emp_order_subtitle.replace('{companyName}', companyName) 
                 : <>Bestel via het account van <strong className="text-ob-blue">{companyName}</strong></>}
             </p>
           </div>
-          <button onClick={handleLogout} className="text-sm font-semibold text-red-600 hover:text-red-800 transition-colors">
+          <button onClick={handleLogout} className="text-sm font-semibold text-red-600 hover:text-red-800 transition-colors font-button-default">
             Uitloggen
           </button>
         </div>
 
         {error && (
-          <div className="mb-8 bg-red-50 text-red-700 p-4 rounded-lg border border-red-200">
+          <div className="mb-8 bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 font-paragraph-default">
             {error}
           </div>
         )}
 
-        
-        <form onSubmit={handleSubmit} className="space-y-8">
-          
-          {deliveryMethods.length > 0 && (
-            <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-              <div className="mb-6">
-                <h2 className="text-xl font-bold text-ob-text flex items-center gap-2 font-heading-default">
-                  <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs"><Truck size={16} /></span> 
-                  {t('Kies je bezorgmethode', 'Choose your delivery method')}
-                </h2>
-                <p className="text-gray-500 mt-2 ml-10 font-paragraph-default">{t('Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}</p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {deliveryMethods.map((method, mIdx) => (
-                  <label key={`emp-del-${method.id || mIdx}-${mIdx}`} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
-                    <div className="w-full h-32 rounded-lg overflow-hidden bg-gray-100 mb-4 shrink-0">
-                      <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <input 
-                        type="radio" 
-                        name="delivery_method_emp"
-                        checked={selectedDeliveryMethod?.id === method.id}
-                        onChange={() => setSelectedDeliveryMethod(method)}
-                        className="w-5 h-5 mt-0.5 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0" 
+        <form onSubmit={handleSubmit}>
+          <div className="xl:grid xl:grid-cols-12 xl:gap-8 items-start">
+            
+            {/* Linkerkolom: Bestelstappen */}
+            <div className="xl:col-span-8 2xl:col-span-9 space-y-8 min-w-0">
+              
+              {deliveryMethods.length > 0 && (
+                <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                  <div className="mb-6">
+                    <h2 className="text-2xl font-normal text-ob-text flex items-center gap-2.5 font-title-default">
+                      <Truck size={22} className="text-ob-accent" />
+                      <EditableText
+                        contentKey="order_delivery_section_title"
+                        label="Titel 'Kies je bezorgmethode'"
+                        value={getDynamicText('order_delivery_section_title', 'Kies je bezorgmethode', 'Choose your delivery method')}
+                        defaultValue={t('Kies je bezorgmethode', 'Choose your delivery method')}
+                        inline
+                        as="span"
                       />
-                      <div>
-                        <span className="font-semibold text-gray-900 block text-lg font-heading-default">
-                          {getDeliveryMethodName(method, language, t)}
-                        </span>
-                        <span className="text-xs text-gray-500 block mb-2 font-paragraph-default leading-relaxed">
-                          {getDeliveryMethodDescription(method, language, t)}
-                        </span>
-                        <span className="font-bold text-[#05053D] block font-button-default text-xs tracking-wider">
-                          {method.price === 0 ? t('Gratis', 'Free') : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ` ${t('/ uur (uurtarief)', '/ hour (hourly rate)')}` : ''}`}
-                        </span>
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </section>
-          )}
+                    </h2>
+                    <EditableText
+                      contentKey="order_delivery_section_subtitle"
+                      label="Ondertitel 'Selecteer hoe je je bestelling wilt ontvangen...'"
+                      value={getDynamicText('order_delivery_section_subtitle', 'Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}
+                      defaultValue={t('Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}
+                      as="p"
+                      className="text-gray-500 mt-1 font-paragraph-default"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {deliveryMethods.map((method, mIdx) => (
+                      <label 
+                        key={`emp-del-${method.id || mIdx}-${mIdx}`} 
+                        className={`flex flex-col p-4 sm:p-5 border rounded-2xl cursor-pointer transition-all overflow-hidden ${
+                          selectedDeliveryMethod?.id === method.id 
+                            ? 'border-ob-blue bg-blue-50/30 ring-2 ring-ob-blue shadow-xs' 
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 shadow-2xs'
+                        }`}
+                      >
+                        <div className="w-full h-32 sm:h-36 rounded-xl overflow-hidden bg-gray-100 mb-3.5 shrink-0 border border-gray-150">
+                          <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="flex items-start gap-3 min-w-0 flex-1">
+                          <input 
+                            type="radio" 
+                            name="delivery_method_emp"
+                            checked={selectedDeliveryMethod?.id === method.id}
+                            onChange={() => setSelectedDeliveryMethod(method)}
+                            className="w-5 h-5 mt-0.5 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0 cursor-pointer" 
+                          />
+                          <div className="min-w-0 flex-1 flex flex-col justify-between">
+                            <span className="font-bold text-gray-900 block text-sm sm:text-base font-heading-default break-words leading-snug mb-1">
+                              {getDeliveryMethodName(method, language, t)}
+                            </span>
+                            {getDeliveryMethodDescription(method, language, t) && (
+                              <span className="text-xs text-gray-500 block mb-2 font-paragraph-default leading-relaxed break-words">
+                                {getDeliveryMethodDescription(method, language, t)}
+                              </span>
+                            )}
+                            <span className="font-bold text-[#05053D] inline-block font-button-default text-xs tracking-wider mt-auto pt-1">
+                              {method.price === 0 ? t('Gratis', 'Free') : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ` ${t('/ uur (uurtarief)', '/ hour (hourly rate)')}` : ''}`}
+                            </span>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              )}
 
-          {/* Step 1: Producten & Porties */}
-
-          <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-bold text-ob-text flex items-center gap-2">
-                <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs">1</span> 
-                Kies uw Snacks & Porties
-              </h2>
-              {maxSpendLimit !== null && (
-                <div className={`text-sm font-medium px-3 py-1 rounded-lg ${totalOrderPrice > maxSpendLimit ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-ob-blue'}`}>
-                  Budget: €{maxSpendLimit.toFixed(2)} {totalOrderPrice > 0 && `(Gekozen: €${totalOrderPrice.toFixed(2)})`}
+              {/* Mobiele / Tablet Snelle Categorie Chips Balk */}
+              {categoryList.length > 1 && (
+                <div className="xl:hidden sticky top-20 z-20 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-sm border border-gray-200/80">
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth">
+                    {categoryList.map((category, catIdx) => {
+                      const isCatActive = activeCategory === category.title;
+                      const countInCat = category.items.reduce((sum: number, item: any) => sum + (selections[item.name] ? 1 : 0), 0);
+                      return (
+                        <button
+                          key={`emp-mobile-chip-${category.title}-${catIdx}`}
+                          type="button"
+                          onClick={() => scrollToCategory(category.title)}
+                          className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isCatActive
+                              ? 'bg-ob-blue text-white shadow-xs font-bold'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span className="font-paragraph-default">{category.title}</span>
+                          {countInCat > 0 && (
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isCatActive ? 'bg-white/20 text-white' : 'bg-[#5170ff] text-white'}`}>
+                              {countInCat}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={scrollToOrder}
+                      className="shrink-0 ml-auto px-3 py-1.5 bg-[#5170ff] hover:bg-[#4060ee] text-white rounded-full text-xs font-bold font-button-default tracking-wide flex items-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <span>{t('Bestellen', 'Order')}</span>
+                      <ArrowDown size={12} />
+                    </button>
+                  </div>
                 </div>
               )}
-            </div>
-            
-            {assortment.length === 0 ? (
-              <p className="text-gray-500 italic">Uw kantoor heeft momenteel geen assortiment geselecteerd. Neem contact op met uw office manager.</p>
-            ) : (
-              <div className="flex flex-col gap-10">
-                {(() => {
-                  const itemsToRender = dbProducts.length > 0 
-                    ? dbProducts.filter(p => {
-                        if (!assortment.includes(p.name)) return false;
-                        if (['inactive', 'inactief', 'verborgen'].includes((p.status || '').toLowerCase())) return false;
-                        
-                        // Check if primary category is restricted to specific companies
-                        const cat = (p.category || '').trim();
-                        if (cat && categoryRestrictions[cat] && Array.isArray(categoryRestrictions[cat]) && categoryRestrictions[cat].length > 0) {
-                          if (!categoryRestrictions[cat].includes(companyId)) return false;
-                        }
 
-                        // Check if product is restricted to specific companies
-                        if (p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0) {
-                          if (!p.allowed_company_ids.includes(companyId)) return false;
-                        }
-                        return true;
-                      })
-                    : assortment.map(name => ({ name, status: 'Actief' }));
-
-                  // Group items by category if available, maintaining category sort order
-                  const grouped = itemsToRender.reduce((acc: any, item: any) => {
-                    const itemCats = item.additional_categories && item.additional_categories.length > 0 
-                      ? Array.from(new Set([item.category, ...item.additional_categories])) 
-                      : [item.category || 'Assortiment'];
-                    itemCats.forEach((cat: string) => {
-                      // Check category permission
-                      if (categoryRestrictions[cat] && Array.isArray(categoryRestrictions[cat]) && categoryRestrictions[cat].length > 0) {
-                        if (!categoryRestrictions[cat].includes(companyId)) return;
-                      }
-                      if (!acc[cat]) acc[cat] = [];
-                      acc[cat].push(item);
-                    });
-                    return acc;
-                  }, {});
-
-                  const categoryList = Object.keys(grouped)
-                    .filter(key => {
-                      if (categoryRestrictions[key] && Array.isArray(categoryRestrictions[key]) && categoryRestrictions[key].length > 0) {
-                        return categoryRestrictions[key].includes(companyId);
-                      }
-                      return true;
-                    })
-                    .map(key => {
-                    const primaryItems = itemsToRender.filter(
-                      (i: any) => (i.category || 'Assortiment').trim().toLowerCase() === key.trim().toLowerCase()
-                    );
-                    const minSortOrder = primaryItems.length > 0
-                      ? Math.min(...primaryItems.map((i: any) => i.sort_order ?? 9999))
-                      : Math.min(...grouped[key].map((i: any) => i.sort_order ?? 9999));
-
-                    return {
-                      title: key,
-                      items: grouped[key],
-                      minSortOrder
-                    };
-                  });
-                  categoryList.sort((a, b) => a.minSortOrder - b.minSortOrder);
-
-                  return categoryList.map((category, catIdx) => (
-                    <div key={`emp-cat-${category.title || catIdx}-${catIdx}`}>
+              {/* Step 1: Producten & Porties */}
+              <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-normal text-ob-text flex items-center gap-2.5 font-title-default">
+                    <Utensils size={22} className="text-ob-accent" />
+                    Kies uw Snacks & Porties
+                  </h2>
+                  {maxSpendLimit !== null && (
+                    <div className={`text-sm font-medium px-3 py-1 rounded-lg ${totalOrderPrice > maxSpendLimit ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-blue-50 text-ob-blue'}`}>
+                      Budget: €{maxSpendLimit.toFixed(2)} {totalOrderPrice > 0 && `(Gekozen: €${totalOrderPrice.toFixed(2)})`}
+                    </div>
+                  )}
+                </div>
+                
+                {assortment.length === 0 ? (
+                  <p className="text-gray-500 italic font-paragraph-default">Uw kantoor heeft momenteel geen assortiment geselecteerd. Neem contact op met uw office manager.</p>
+                ) : (
+                  <div className="flex flex-col gap-10">
+                    {categoryList.map((category, catIdx) => (
+                      <div 
+                        key={`emp-cat-${category.title || catIdx}-${catIdx}`}
+                        id={`emp-cat-${encodeURIComponent(category.title)}`}
+                        data-category-title={category.title}
+                        className="scroll-mt-28"
+                      >
                       {categoryList.length > 1 && category.title !== 'Assortiment' && (
                         <h3 
                           className="text-2xl font-bold text-ob-blue mb-2 border-b pb-2 font-title-default"
@@ -683,8 +1042,8 @@ export function EmployeeOrdering() {
                         </h3>
                       )}
                       {categoryDescriptions[category.title] && (
-                        <p className="text-sm text-gray-600 mb-5 italic bg-blue-50/50 p-3 rounded-lg border border-blue-100/70">
-                          ℹ️ {categoryDescriptions[category.title]}
+                        <p className="text-sm text-gray-600 mb-5 bg-blue-50/50 p-3 rounded-lg border border-blue-100/70 font-normal">
+                          {categoryDescriptions[category.title]}
                         </p>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -916,10 +1275,9 @@ export function EmployeeOrdering() {
                         })}
                       </div>
                     </div>
-                  ));
-                })()}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
             
             {Object.keys(selections).length > 0 && (
               <div className="mt-8 pt-6 border-t border-gray-100 flex justify-between items-center">
@@ -932,9 +1290,9 @@ export function EmployeeOrdering() {
           </section>
 
           {/* Step 2: Delivery Details */}
-          <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-            <h2 className="text-xl font-bold text-ob-text mb-6 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs">2</span> 
+          <section id="emp-order-details-section" className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200 scroll-mt-28">
+            <h2 className="text-2xl font-normal text-ob-text mb-6 flex items-center gap-2.5 font-title-default">
+              <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs font-bold font-heading-default">2</span> 
               Aflevergegevens
             </h2>
             
@@ -1051,6 +1409,158 @@ export function EmployeeOrdering() {
             </div>
           </section>
 
+          {/* Verpakkingsopties Sectie */}
+          {availablePackagingOptions.length > 0 && (
+            <section className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="mb-6">
+                <h2 className="text-2xl font-normal text-ob-text flex items-center gap-2.5 font-title-default">
+                  <Package size={22} className="text-ob-accent" />
+                  {t('Verpakking van uw bestelling', 'Order packaging')}
+                </h2>
+                <p className="text-gray-500 mt-1 font-paragraph-default">
+                  {t('Kies hoe u wilt dat uw bestelling verpakt en gepresenteerd wordt.', 'Choose how you would like your order packaged and presented.')}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {availablePackagingOptions.map((opt) => {
+                  const isSelected = selectedPackagingOption?.id === opt.id;
+                  const optName = (language === 'en' && opt.name_en) ? opt.name_en : opt.name;
+                  const optDesc = (language === 'en' && opt.description_en) ? opt.description_en : opt.description;
+                  return (
+                    <label
+                      key={`emp-pack-${opt.id}`}
+                      className={`flex flex-col p-4 sm:p-5 border rounded-2xl cursor-pointer transition-all overflow-hidden ${
+                        isSelected
+                          ? 'border-[#05053D] bg-blue-50/30 ring-2 ring-[#05053D] shadow-xs'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 shadow-2xs'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <input
+                          type="radio"
+                          name="packaging_option_emp"
+                          checked={isSelected}
+                          onChange={() => setSelectedPackagingOption(opt)}
+                          className="w-5 h-5 mt-1 rounded-full border-gray-300 text-[#05053D] focus:ring-[#05053D] shrink-0 cursor-pointer"
+                        />
+                        {opt.image_url && (
+                          <img
+                            src={opt.image_url}
+                            alt={optName}
+                            className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-gray-200 shrink-0 shadow-2xs"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = 'none';
+                            }}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0 flex flex-col justify-between">
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-1">
+                            <span className="font-bold text-gray-900 text-sm sm:text-base font-heading-default break-words leading-snug">
+                              {optName}
+                            </span>
+                            <span className="font-bold text-[#05053D] text-xs shrink-0 font-button-default">
+                              {opt.price && Number(opt.price) > 0 ? `+ €${Number(opt.price).toFixed(2)}` : t('Inbegrepen', 'Included')}
+                            </span>
+                          </div>
+                          {optDesc && (
+                            <span className="text-xs text-gray-500 block font-paragraph-default leading-relaxed break-words">
+                              {optDesc}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Kortingscode Sectie */}
+          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <h2 className="text-2xl font-normal text-ob-blue flex items-center gap-2.5 font-title-default">
+                <Tag size={22} className="text-ob-accent" /> {t('Kortingscode', 'Discount code')}
+              </h2>
+              {appliedDiscount && (
+                <span className="text-xs bg-green-100 text-green-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
+                  <CheckCircle size={14} /> Toegepast
+                </span>
+              )}
+            </div>
+
+            <div className="p-6 space-y-4">
+              {!appliedDiscount ? (
+                <div>
+                  <label className="block text-sm font-semibold text-ob-text mb-2">
+                    Heeft uw bedrijf een kortingscode?
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                      placeholder="VOER KORTINGSCODE IN..."
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:border-ob-blue font-mono uppercase tracking-wider text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      className="px-6 py-3 bg-[#5170ff] hover:bg-blue-600 text-white rounded-xl font-bold text-sm transition-colors cursor-pointer shadow-sm"
+                    >
+                      Toepassen
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1.5">
+                    Let op: er kan maximaal één kortingscode per bestelling worden toegepast (kortingen stapelen niet).
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-green-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                      {appliedDiscount.type === 'percentage' ? <Percent size={18} /> : <Gift size={18} />}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-sm bg-white px-2 py-0.5 rounded border border-green-300 text-green-900">
+                          {appliedDiscount.code}
+                        </span>
+                        <span className="text-xs text-green-700 font-semibold">Actief</span>
+                      </div>
+                      <p className="text-sm font-medium text-green-800 mt-1">
+                        {appliedDiscount.type === 'percentage' 
+                          ? `${appliedDiscount.value}% korting op uw bestelling (-€${discountAmount.toFixed(2)})`
+                          : `Gratis product: ${appliedDiscount.free_product?.portion_size} stuks ${appliedDiscount.free_product?.product_name}${appliedDiscount.free_product?.variant ? ` (${appliedDiscount.free_product?.variant})` : ''}`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="text-xs text-red-600 hover:text-red-800 font-semibold px-3 py-1.5 rounded-lg border border-red-200 hover:bg-red-50 bg-white cursor-pointer transition-colors"
+                  >
+                    Verwijderen
+                  </button>
+                </div>
+              )}
+
+              {couponError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                  {couponError}
+                </div>
+              )}
+
+              {couponSuccess && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-800 font-medium">
+                  {couponSuccess}
+                </div>
+              )}
+            </div>
+          </section>
+
           {/* Overzicht en Totaalbedrag inclusief Bezorging */}
           {Object.keys(selections).length > 0 && (
             <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm space-y-3">
@@ -1067,10 +1577,32 @@ export function EmployeeOrdering() {
                     : 'Gratis'}
                 </span>
               </div>
+              {selectedPackagingOption && (
+                <div className="flex justify-between text-sm text-gray-600">
+                  <span>{t('Verpakking', 'Packaging')} ({(language === 'en' && selectedPackagingOption.name_en) ? selectedPackagingOption.name_en : selectedPackagingOption.name}):</span>
+                  <span className="font-semibold text-gray-900">
+                    {selectedPackagingOption.price && Number(selectedPackagingOption.price) > 0
+                      ? `€${Number(selectedPackagingOption.price).toFixed(2)}`
+                      : t('Inbegrepen', 'Included')}
+                  </span>
+                </div>
+              )}
+              {appliedDiscount && appliedDiscount.type === 'percentage' && discountAmount > 0 && (
+                <div className="flex justify-between text-green-700 font-medium text-sm">
+                  <span>Korting ({appliedDiscount.code} &mdash; {appliedDiscount.value}%)</span>
+                  <span>-€${discountAmount.toFixed(2)}</span>
+                </div>
+              )}
+              {appliedDiscount && appliedDiscount.type === 'free_product' && appliedDiscount.free_product && (
+                <div className="flex justify-between text-green-700 font-medium text-sm">
+                  <span>🎁 Gratis: {appliedDiscount.free_product.portion_size}x {appliedDiscount.free_product.product_name}</span>
+                  <span className="font-bold">GRATIS</span>
+                </div>
+              )}
               <div className="pt-3 border-t border-gray-200 flex justify-between items-center">
                 <span className="font-bold text-base text-gray-900">Totaalbedrag:</span>
                 <span className="text-2xl font-bold text-ob-blue">
-                  €{(totalOrderPrice + (Number(selectedDeliveryMethod?.price) || 0)).toFixed(2)}
+                  €{finalTotalAmount.toFixed(2)}
                 </span>
               </div>
             </div>
@@ -1106,12 +1638,191 @@ export function EmployeeOrdering() {
               disabled={isSubmitting || Object.keys(selections).length === 0 || !selectedAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
               className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg font-button-default cursor-pointer"
             >
-              {isSubmitting ? (pageContent?.btn_submitting || t('Bezig met plaatsen...', 'Placing order...')) : <><ShoppingBag size={20} /> {(language === 'en' && pageContent?.emp_btn_submit_en) ? pageContent.emp_btn_submit_en : (pageContent?.emp_btn_submit ? t(pageContent.emp_btn_submit) : t('Bestelling Plaatsen', 'Place Order'))}</>}
+              {isSubmitting ? (pageContent?.btn_submitting || t('Bezig met plaatsen...', 'Placing order...')) : <><ShoppingBag size={20} /> {(language === 'en' && pageContent?.emp_btn_submit_en) ? pageContent.emp_btn_submit_en : (pageContent?.emp_btn_submit ? t(pageContent.emp_btn_submit) : t('Bestelling Plaatsen', 'Place Order'))} (€{finalTotalAmount.toFixed(2)})</>}
             </button>
           </div>
 
+            </div>{/* Einde Linkerkolom */}
+
+            {/* Rechterkolom: Sticky Zijbalk met Categorie Navigatie & Direct Naar Bestellen */}
+            <aside className="hidden xl:block xl:col-span-4 2xl:col-span-3 sticky top-28 space-y-4">
+              
+              {/* Categorie Navigatie Card */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
+                  <div className="flex items-center gap-2">
+                    <Compass size={18} className="text-ob-accent" />
+                    <h3 className="font-bold text-ob-blue text-sm font-heading-default uppercase tracking-wider">
+                      <EditableText
+                        contentKey="order_sidebar_categories_title"
+                        label="Zijbalk Titel 'Categorieën'"
+                        value={getDynamicText('order_sidebar_categories_title', 'Categorieën', 'Categories')}
+                        defaultValue={t('Categorieën', 'Categories')}
+                        inline
+                        as="span"
+                      />
+                    </h3>
+                  </div>
+                  <span className="text-xs text-gray-400 font-paragraph-default">
+                    {categoryList.length} {t('secties', 'sections')}
+                  </span>
+                </div>
+
+                <nav className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                  {categoryList.map((category, catIdx) => {
+                    const isCatActive = activeCategory === category.title;
+                    return (
+                      <button
+                        key={`emp-side-cat-${category.title}-${catIdx}`}
+                        type="button"
+                        onClick={() => scrollToCategory(category.title)}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all flex items-center justify-between group cursor-pointer ${
+                          isCatActive
+                            ? 'bg-ob-blue text-white shadow-xs font-bold'
+                            : 'text-gray-700 hover:bg-gray-100/80 hover:text-ob-blue'
+                        }`}
+                      >
+                        <span className="truncate pr-2 font-paragraph-default">{category.title}</span>
+                        <ChevronRight size={14} className={`shrink-0 transition-transform ${isCatActive ? 'text-white' : 'text-gray-400 group-hover:translate-x-0.5'}`} />
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+
+              {/* Direct Naar Bestellen CTA Card */}
+              <div className="bg-gradient-to-br from-white to-blue-50/40 rounded-2xl shadow-sm border border-blue-100/80 p-5 space-y-3.5">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-150">
+                  <span className="text-xs uppercase tracking-wider font-bold text-gray-500 font-button-default">
+                    <EditableText
+                      contentKey="order_summary_selection_title"
+                      label="Zijbalk 'Uw selectie'"
+                      value={getDynamicText('order_summary_selection_title', 'Uw selectie', 'Your selection')}
+                      defaultValue={t('Uw selectie', 'Your selection')}
+                      inline
+                      as="span"
+                    />
+                  </span>
+                  {selectedItemsList.length > 0 && (
+                    <span className="text-[11px] font-semibold text-[#5170ff] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                      {selectedItemsList.reduce((acc, i) => acc + i.qty, 0)} {selectedItemsList.reduce((acc, i) => acc + i.qty, 0) === 1 ? t('portie', 'portion') : t('porties', 'portions')}
+                    </span>
+                  )}
+                </div>
+
+                {/* Kort Bonnet / Overzicht van geselecteerde artikelen */}
+                {selectedItemsList.length === 0 ? (
+                  <div className="py-3 px-3 text-center text-xs text-gray-400 italic bg-white/70 rounded-xl border border-dashed border-gray-200">
+                    {t('Selecteer snacks uit het assortiment hiernaast', 'Select snacks from the assortment')}
+                  </div>
+                ) : (
+                  <div className="bg-white/90 rounded-xl p-3 border border-blue-100/80 shadow-2xs space-y-2 max-h-52 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
+                    {selectedItemsList.map((item) => (
+                      <div key={item.key} className="pt-2 first:pt-0 flex items-start justify-between text-xs gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-gray-900 truncate">
+                            <span className="text-[#5170ff] font-bold mr-1">{item.qty}x</span>
+                            {item.product}
+                          </div>
+                          <div className="text-[11px] text-gray-500 font-normal">
+                            {item.size} st.{item.variant ? ` • ${item.variant}` : ''}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 font-bold text-ob-blue font-heading-default">
+                          €{item.itemTotal.toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-baseline justify-between pt-1">
+                  <span className="text-sm font-medium text-gray-600 font-paragraph-default inline-flex items-center">
+                    <EditableText
+                      contentKey="order_summary_total_label"
+                      label="Label 'Geschat totaal'"
+                      value={getDynamicText('order_summary_total_label', 'Geschat totaal', 'Estimated total')}
+                      defaultValue={t('Geschat totaal', 'Estimated total')}
+                      inline
+                      as="span"
+                    />
+                    <span>:</span>
+                  </span>
+                  <span className="text-2xl font-bold text-ob-blue font-heading-default">
+                    €{finalTotalAmount.toFixed(2)}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={scrollToOrder}
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all font-button-default text-xs tracking-wider cursor-pointer"
+                >
+                  <ArrowDown size={16} />
+                  <EditableText
+                    contentKey="order_summary_btn_scroll"
+                    label="Knop 'Naar Bestellen'"
+                    value={getDynamicText('order_summary_btn_scroll', 'Naar Bestellen', 'Go to Order Details')}
+                    defaultValue={t('Naar Bestellen', 'Go to Order Details')}
+                    inline
+                    as="span"
+                  />
+                </button>
+                <EditableText
+                  contentKey="emp_order_summary_btn_subtitle"
+                  label="Onderschrift 'Direct door naar afleverlocatie...'"
+                  value={getDynamicText('emp_order_summary_btn_subtitle', 'Direct door naar afleverlocatie & afronden', 'Jump directly to delivery location & submit')}
+                  defaultValue={t('Direct door naar afleverlocatie & afronden', 'Jump directly to delivery location & submit')}
+                  as="p"
+                  className="text-[11px] text-gray-500 text-center font-paragraph-default"
+                />
+              </div>
+            </aside>
+
+          </div>{/* Einde xl:grid */}
         </form>
       </div>
+
+      {/* Zwevende Mobiele / Tablet Quick-Bar naar Bestellen */}
+      {totalSelectedItems > 0 && (
+        <div className="xl:hidden fixed bottom-5 left-4 right-4 z-40 max-w-md mx-auto animate-in slide-in-from-bottom duration-300">
+          <button
+            type="button"
+            onClick={scrollToOrder}
+            className="w-full bg-[#151f34] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 hover:bg-[#1e2a44] transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-xs font-bold font-heading-default">
+                {totalSelectedItems}
+              </div>
+              <div className="text-left">
+                <span className="text-[11px] font-medium text-gray-300 block font-paragraph-default">
+                  <EditableText
+                    contentKey="order_mobile_selected_label"
+                    label="Mobiel Label 'Geselecteerd'"
+                    value={getDynamicText('order_mobile_selected_label', 'Geselecteerd', 'Selected')}
+                    defaultValue={t('Geselecteerd', 'Selected')}
+                    inline
+                    as="span"
+                  />
+                </span>
+                <span className="text-sm font-bold text-white block font-heading-default">€{finalTotalAmount.toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 bg-[#5170ff] hover:bg-[#4060ee] px-3.5 py-2 rounded-xl text-xs font-bold font-button-default tracking-wider shadow-sm">
+              <EditableText
+                contentKey="order_mobile_btn_scroll"
+                label="Mobiele Knop 'Naar Bestellen'"
+                value={getDynamicText('order_mobile_btn_scroll', 'Naar Bestellen', 'Go to Order')}
+                defaultValue={t('Naar Bestellen', 'Go to Order')}
+                inline
+                as="span"
+              />
+              <ArrowDown size={14} />
+            </div>
+          </button>
+        </div>
+      )}
 
       <PrivacyModal 
         isOpen={isPrivacyModalOpen} 

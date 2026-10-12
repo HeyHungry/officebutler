@@ -6,11 +6,17 @@ import {
   fallbackStoreSettings,
   SharedSettings,
   StoreSettings,
+  CURRENT_BRAND,
+  CENTRAL_MODERATOR_URL,
+  fetchBrandPageContent,
 } from "./lib/supabase";
 
 import { Navbar } from "./components/Navbar";
 import { OrderModalProvider } from "./contexts/OrderModalContext";
 import { LanguageProvider, useLanguage } from "./contexts/LanguageContext";
+import { ModeratorProvider, useModerator } from "./contexts/ModeratorContext";
+import { ModeratorViewWidget } from "./components/ModeratorViewWidget";
+import { InlineTextEditModal } from "./components/InlineTextEditModal";
 import { OrderModal } from "./components/OrderModal";
 import { GuestOrdering } from "./pages/GuestOrdering";
 import { Footer } from "./components/Footer";
@@ -38,6 +44,40 @@ function AppContent({
   const [isModPanelOpen, setIsModPanelOpen] = useState(false);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const { getTranslatedStoreSettings, getTranslatedSharedSettings } = useLanguage();
+  const { setOpenModPanelHandler } = useModerator();
+
+  const handleOpenModPanel = () => {
+    if (CENTRAL_MODERATOR_URL) {
+      const separator = CENTRAL_MODERATOR_URL.includes('?') ? '&' : '?';
+      const targetUrl = `${CENTRAL_MODERATOR_URL}${separator}brand=${CURRENT_BRAND}&panel=open&tab=content`;
+      window.open(targetUrl, '_blank');
+      return;
+    }
+    setIsModPanelOpen(true);
+  };
+
+  useEffect(() => {
+    setOpenModPanelHandler(() => handleOpenModPanel());
+  }, [setOpenModPanelHandler]);
+
+  // Support opening moderator panel from URL query parameter (e.g. ?panel=open)
+  // or direct pathname (e.g. /moderator of /admin)
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const isQueryTrigger = 
+        searchParams.get('panel') === 'open' || 
+        searchParams.get('panel') === 'true' || 
+        searchParams.get('moderator') === 'open';
+      const isPathTrigger = 
+        window.location.pathname === '/moderator' || 
+        window.location.pathname === '/admin';
+
+      if (isQueryTrigger || isPathTrigger) {
+        setIsModPanelOpen(true);
+      }
+    } catch {}
+  }, []);
 
   const activeStoreSettings = getTranslatedStoreSettings(storeSettings) || storeSettings;
   const activeSettings = getTranslatedSharedSettings(settings) || settings;
@@ -56,11 +96,15 @@ function AppContent({
       </Routes>
 
       <Footer 
-        onOpenModPanel={() => setIsModPanelOpen(true)} 
+        onOpenModPanel={handleOpenModPanel} 
         onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
       />
 
       <WhatsAppWidget />
+
+      {/* Moderator View Widget (linksonder) & Inline Text Edit Modal */}
+      <ModeratorViewWidget />
+      <InlineTextEditModal />
 
       <PrivacyModal
         isOpen={isPrivacyModalOpen}
@@ -113,7 +157,28 @@ export default function App() {
             storeRes.error.message,
           );
         } else if (storeRes.data) {
-          setStoreSettings(storeRes.data as StoreSettings);
+          let sData = storeRes.data as StoreSettings;
+
+          // If this website is configured as a sister brand (e.g. canal_butler or snack_butler),
+          // load that brand's specific texts and banners from brand_page_content
+          if (CURRENT_BRAND !== 'office_butler') {
+            try {
+              const brandContent = await fetchBrandPageContent(CURRENT_BRAND);
+              if (brandContent && Object.keys(brandContent).length > 0) {
+                sData = {
+                  ...sData,
+                  page_content: {
+                    ...(sData.page_content || {}),
+                    ...brandContent
+                  }
+                };
+              }
+            } catch (bErr) {
+              console.warn(`[Supabase] Kon brand content voor ${CURRENT_BRAND} niet laden:`, bErr);
+            }
+          }
+
+          setStoreSettings(sData);
         }
       } catch (err) {
         console.error("Failed to fetch settings:", err);
@@ -127,12 +192,17 @@ export default function App() {
     <BrowserRouter>
       <LanguageProvider customTranslations={storeSettings?.page_content?.custom_translations}>
         <OrderModalProvider>
-          <AppContent
-            settings={settings}
-            setSettings={setSettings}
+          <ModeratorProvider
             storeSettings={storeSettings}
-            setStoreSettings={setStoreSettings}
-          />
+            onStoreSettingsUpdated={setStoreSettings}
+          >
+            <AppContent
+              settings={settings}
+              setSettings={setSettings}
+              storeSettings={storeSettings}
+              setStoreSettings={setStoreSettings}
+            />
+          </ModeratorProvider>
         </OrderModalProvider>
       </LanguageProvider>
     </BrowserRouter>

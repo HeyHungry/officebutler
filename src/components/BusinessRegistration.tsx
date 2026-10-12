@@ -5,6 +5,7 @@ import { CheckCircle2, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 import { PrivacyModal } from './PrivacyModal';
+import { EditableText } from './EditableText';
 
 export function BusinessRegistration({ content }: { content?: any }) {
   const { t } = useLanguage();
@@ -93,46 +94,74 @@ export function BusinessRegistration({ content }: { content?: any }) {
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
           >
-            <h2 
-              className="text-3xl md:text-5xl text-ob-text mb-6 font-title-default" 
+            <EditableText
+              contentKey="business_title"
+              label="Voor Bedrijven Titel"
+              value={content?.business_title}
+              defaultValue="Voor Bedrijven"
+              as="h2"
+              className="text-3xl md:text-5xl text-ob-text mb-6 font-title-default"
               style={getTypographyStyle('title', content?.business_title_font, content?.business_title_size)}
-            >
-              {content?.business_title || "Voor Bedrijven"}
-            </h2>
+            />
             <div className="w-16 h-[1px] bg-ob-accent mb-8"></div>
             
-            <h3 
-              className="text-2xl mb-4 text-ob-blue italic font-subtitle-default" 
+            <EditableText
+              contentKey="business_subtitle"
+              label="Voor Bedrijven Ondertitel"
+              value={content?.business_subtitle}
+              defaultValue="Een vaste partner voor uw kantoor."
+              as="h3"
+              className="text-2xl mb-4 text-ob-blue italic font-subtitle-default"
               style={getTypographyStyle('subtitle', content?.business_subtitle_font, content?.business_subtitle_size)}
-            >
-              {content?.business_subtitle || "Een vaste partner voor uw kantoor."}
-            </h3>
+            />
             
-            <p 
+            <EditableText
+              contentKey="business_desc"
+              label="Voor Bedrijven Beschrijving"
+              value={content?.business_desc}
+              defaultValue="Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers."
+              multiline
+              as="p"
               className="text-ob-text-light mb-6 leading-relaxed font-paragraph-default"
               style={getTypographyStyle('paragraph', content?.business_desc_font, content?.business_desc_size)}
-            >
-              {content?.business_desc || "Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers."}
-            </p>
+            />
             
             <ul className="space-y-4 mb-10 font-paragraph-default">
               <li className="flex items-center gap-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.business_point1_font, content?.business_point1_size)}>
-                  {content?.business_point1 || "Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)"}
-                </span>
+                <EditableText
+                  contentKey="business_point1"
+                  label="Bedrijven Voordeel 1"
+                  value={content?.business_point1}
+                  defaultValue="Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)"
+                  as="span"
+                  className="text-ob-text"
+                  style={getTypographyStyle('paragraph', content?.business_point1_font, content?.business_point1_size)}
+                />
               </li>
               <li className="flex items-center gap-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.business_point2_font, content?.business_point2_size)}>
-                  {content?.business_point2 || "Gepersonaliseerd assortiment naar wens"}
-                </span>
+                <EditableText
+                  contentKey="business_point2"
+                  label="Bedrijven Voordeel 2"
+                  value={content?.business_point2}
+                  defaultValue="Gepersonaliseerd assortiment naar wens"
+                  as="span"
+                  className="text-ob-text"
+                  style={getTypographyStyle('paragraph', content?.business_point2_font, content?.business_point2_size)}
+                />
               </li>
               <li className="flex items-center gap-3">
                 <span className="w-1.5 h-1.5 rounded-full bg-ob-accent shrink-0"></span>
-                <span className="text-ob-text" style={getTypographyStyle('paragraph', content?.business_point3_font, content?.business_point3_size)}>
-                  {content?.business_point3 || "Optie tot betalen op factuur"}
-                </span>
+                <EditableText
+                  contentKey="business_point3"
+                  label="Bedrijven Voordeel 3"
+                  value={content?.business_point3}
+                  defaultValue="Optie tot betalen op factuur"
+                  as="span"
+                  className="text-ob-text"
+                  style={getTypographyStyle('paragraph', content?.business_point3_font, content?.business_point3_size)}
+                />
               </li>
             </ul>
           </motion.div>
@@ -162,12 +191,15 @@ export function BusinessRegistration({ content }: { content?: any }) {
               </div>
             ) : (
               <>
-                <h3 
-                  className="text-2xl mb-8 text-center font-heading-default text-ob-text"
+                <EditableText
+                  contentKey="business_form_title"
+                  label="Bedrijf Aanmelden Formulier Titel"
+                  value={content?.business_form_title}
+                  defaultValue={t('Bedrijf Aanmelden')}
+                  as="h3"
+                  className="text-2xl mb-8 text-center font-heading-default text-ob-text block"
                   style={getTypographyStyle('heading', content?.business_form_title_font, content?.business_form_title_size)}
-                >
-                  {content?.business_form_title || t('Bedrijf Aanmelden')}
-                </h3>
+                />
                 <form className="space-y-5" onSubmit={handleSubmit}>
                   <div>
                     <input 

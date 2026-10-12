@@ -6,6 +6,7 @@ import { useOrderModal } from '../contexts/OrderModalContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 import { LOGO_DATA_URI } from '../assets/logoData';
+import { EditableText } from './EditableText';
 
 export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
   const content = storeSettings?.page_content;
@@ -122,10 +123,17 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
             <a 
               key={`desktop-nav-${link.href}-${idx}`} 
               href={link.href}
-              className="text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest whitespace-nowrap font-button-default"
+              className="text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest whitespace-nowrap font-button-default inline-flex items-center"
               style={getTypographyStyle('button', (content && content[`${link.key}_font`]) || content?.nav_links_font, (content && content[`${link.key}_size`]) || content?.nav_links_size)}
             >
-              {getNavLinkName(link)}
+              <EditableText
+                contentKey={link.key}
+                label={`Menu: ${link.defaultName}`}
+                value={getNavLinkName(link)}
+                defaultValue={link.defaultName}
+                inline
+                as="span"
+              />
             </a>
           ))}
         </nav>
@@ -160,17 +168,31 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
 
           <a 
             href="/auth"
-            className="text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap font-button-default"
+            className="text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap font-button-default inline-flex items-center"
             style={getTypographyStyle('button', content?.nav_btn_login_font, content?.nav_btn_login_size)}
           >
-            {content?.nav_btn_login || t('Inloggen')}
+            <EditableText
+              contentKey="nav_btn_login"
+              label="Header Knop 'Inloggen'"
+              value={content?.nav_btn_login}
+              defaultValue={t('Inloggen')}
+              inline
+              as="span"
+            />
           </a>
           <button 
             onClick={openStep1} 
-            className="bg-[#5170ff] hover:bg-[#4060ee] rounded-xl text-white px-6 py-2.5 shadow-[0_0_20px_rgba(81,112,255,0.5)] hover:shadow-[0_0_30px_rgba(81,112,255,0.8)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer font-button-default"
+            className="bg-[#5170ff] hover:bg-[#4060ee] rounded-xl text-white px-6 py-2.5 shadow-[0_0_20px_rgba(81,112,255,0.5)] hover:shadow-[0_0_30px_rgba(81,112,255,0.8)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer font-button-default inline-flex items-center"
             style={getTypographyStyle('button', content?.nav_btn_order_font, content?.nav_btn_order_size)}
           >
-            {content?.nav_btn_order || t('BESTEL NU')}
+            <EditableText
+              contentKey="nav_btn_order"
+              label="Header Knop 'BESTEL NU'"
+              value={content?.nav_btn_order}
+              defaultValue={t('BESTEL NU')}
+              inline
+              as="span"
+            />
           </button>
         </div>
 

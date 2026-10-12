@@ -1960,7 +1960,7 @@ export function MenuManager() {
                       </tr>
                     )}
                     {cat.items.map((p: any, pIdx: number) => (
-                      <SortableRow key={`sort-row-${p.id || pIdx}-${pIdx}`} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} handleToggleHideImage={handleToggleHideImage} companyNamesMap={companyNamesMap} />
+                      <SortableRow key={`sort-row-${cat.title || catIndex}-${p.id || pIdx}-${pIdx}`} p={p} editingId={editingId} renderEditRow={renderEditRow} handleEdit={handleEdit} handleDelete={handleDelete} handleToggleHideImage={handleToggleHideImage} companyNamesMap={companyNamesMap} />
                     ))}
                     {cat.items.length === 0 && (
                       <tr><td colSpan={5} className="p-4 text-center text-gray-500 italic">Geen producten in deze categorie.</td></tr>

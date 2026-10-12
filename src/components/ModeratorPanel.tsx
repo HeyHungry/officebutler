@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
-import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule, DEFAULT_SECTION_ORDER, SECTION_METADATA, HomepageSectionKey } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon, ShieldCheck, Eye } from 'lucide-react';
+import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule, DEFAULT_SECTION_ORDER, SECTION_METADATA, HomepageSectionKey, BrandId, AVAILABLE_BRANDS, fetchBrandPageContent, saveBrandPageContent } from '../lib/supabase';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, Package, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon, ShieldCheck, Eye } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
 import { DeliveryOptionsManager } from './DeliveryOptionsManager';
+import { PackagingOptionsManager } from './PackagingOptionsManager';
 import { DiscountCodesManager } from './DiscountCodesManager';
 import { DeadlinesManager } from './DeadlinesManager';
 import { InvoiceModal, MonthlyInvoiceData } from './InvoiceModal';
 import { ModificationRulesConfig, CompanyCustomDeadlines, DEFAULT_DEADLINE_TIERS } from '../lib/orderDeadlines';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useModerator } from '../contexts/ModeratorContext';
 import { FONT_OPTIONS } from '../lib/typography';
 import { PrivacyModal } from './PrivacyModal';
 import { DEFAULT_PRIVACY_POLICY_NL, DEFAULT_PRIVACY_POLICY_EN } from '../lib/privacyPolicyData';
@@ -54,15 +56,22 @@ const DAYS_OF_WEEK = [
   { id: '0', name: 'Zondag' }
 ];
 
-type Tab = 'store' | 'deadlines' | 'content' | 'registrations' | 'prices' | 'customers' | 'orders' | 'menu' | 'delivery' | 'translations' | 'discounts' | 'privacy';
+type Tab = 'store' | 'deadlines' | 'content' | 'registrations' | 'prices' | 'customers' | 'orders' | 'menu' | 'delivery' | 'packaging' | 'translations' | 'discounts' | 'privacy';
 
 export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSettingsUpdated, onStoreSettingsUpdated }: ModeratorPanelProps) {
   const navigate = useNavigate();
+  const modContext = useModerator();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (modContext.isAuthenticated) {
+      setIsAuthenticated(true);
+    }
+  }, [modContext.isAuthenticated]);
   
   const [localSettings, setLocalSettings] = useState<SharedSettings>(settings);
   const [localStoreSettings, setLocalStoreSettings] = useState<StoreSettings | undefined>(storeSettings);
@@ -74,8 +83,25 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const lastLoadedCompanyRef = useRef<string | null>(null);
 
   // New Tabs State
-  const [activeTab, setActiveTab] = useState<Tab>('store');
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') as Tab;
+      if (tabParam) return tabParam;
+      if (params.get('brand')) return 'content';
+    } catch {}
+    return 'store';
+  });
+  const [deliveryPackagingSubTab, setDeliveryPackagingSubTab] = useState<'delivery' | 'packaging'>('delivery');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'packaging') {
+      setDeliveryPackagingSubTab('packaging');
+    } else if (activeTab === 'delivery') {
+      setDeliveryPackagingSubTab('delivery');
+    }
+  }, [activeTab]);
   const [registrations, setRegistrations] = useState<ObCompany[]>([]);
   const [customers, setCustomers] = useState<ObCompany[]>([]);
   const [selectedCompanyForDeadlines, setSelectedCompanyForDeadlines] = useState<ObCompany | null>(null);
@@ -109,6 +135,25 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [translationSearch, setTranslationSearch] = useState('');
   const [editingCustomKey, setEditingCustomKey] = useState<string | null>(null);
   const [editingCustomVal, setEditingCustomVal] = useState<string>('');
+
+  // Multi-brand switcher state for Website Teksten tab
+  const [selectedBrand, setSelectedBrand] = useState<BrandId>(() => {
+    try {
+      const param = new URLSearchParams(window.location.search).get('brand') as BrandId;
+      if (param === 'canal_butler' || param === 'snack_butler' || param === 'office_butler') {
+        return param;
+      }
+    } catch {}
+    return 'office_butler';
+  });
+  const [brandContents, setBrandContents] = useState<Record<BrandId, Record<string, any>>>({
+    office_butler: {},
+    canal_butler: {},
+    snack_butler: {}
+  });
+  const [isLoadingBrandContent, setIsLoadingBrandContent] = useState<boolean>(false);
+  const [brandSaveSuccess, setBrandSaveSuccess] = useState<boolean>(false);
+  const officeButlerStoreContentRef = useRef<any>(null);
 
   const SUGGESTED_TRANSLATION_TERMS = [
     { term: 'Mini Kroket', defaultEn: 'Mini Dutch Croquettes (Crispy)', category: 'Product' },
@@ -202,6 +247,140 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     setLocalSettings(settings);
     setLocalStoreSettings(storeSettings);
   }, [settings, storeSettings]);
+
+  useEffect(() => {
+    if (storeSettings?.page_content) {
+      if (!officeButlerStoreContentRef.current) {
+        officeButlerStoreContentRef.current = storeSettings.page_content;
+      }
+      setBrandContents(prev => ({
+        ...prev,
+        office_butler: storeSettings.page_content || {}
+      }));
+    }
+  }, [storeSettings]);
+
+  // When leaving the 'content' tab, restore Office Butler's true content if a sister brand was active
+  useEffect(() => {
+    if (activeTab !== 'content' && selectedBrand !== 'office_butler' && localStoreSettings) {
+      setBrandContents(prev => ({
+        ...prev,
+        [selectedBrand]: localStoreSettings.page_content || {}
+      }));
+      if (officeButlerStoreContentRef.current) {
+        setLocalStoreSettings(prev => prev ? ({
+          ...prev,
+          page_content: officeButlerStoreContentRef.current
+        }) : prev);
+      }
+      setSelectedBrand('office_butler');
+    }
+  }, [activeTab]);
+
+  const handleSelectBrand = async (brandId: BrandId) => {
+    if (brandId === selectedBrand || !localStoreSettings) return;
+    setIsLoadingBrandContent(true);
+    setBrandSaveSuccess(false);
+
+    try {
+      // 1. Stash current content
+      const currentContent = localStoreSettings.page_content || {};
+      setBrandContents(prev => ({
+        ...prev,
+        [selectedBrand]: currentContent
+      }));
+      if (selectedBrand === 'office_butler') {
+        officeButlerStoreContentRef.current = currentContent;
+      }
+
+      // 2. Determine target brand's content
+      let targetContent = brandContents[brandId];
+      const hasInMemory = targetContent && Object.keys(targetContent).length > 0;
+
+      if (!hasInMemory) {
+        const remote = await fetchBrandPageContent(brandId);
+        if (remote && Object.keys(remote).length > 0) {
+          targetContent = remote;
+        } else {
+          // Initialize from template so inputs are pre-filled
+          const baseTemplate = officeButlerStoreContentRef.current || currentContent;
+          targetContent = { ...baseTemplate };
+        }
+        setBrandContents(prev => ({
+          ...prev,
+          [brandId]: targetContent
+        }));
+      }
+
+      // 3. Apply to localStoreSettings for immediate editing
+      setLocalStoreSettings({
+        ...localStoreSettings,
+        page_content: targetContent
+      });
+
+      setSelectedBrand(brandId);
+    } catch (err) {
+      console.error(`Fout bij wisselen naar merk ${brandId}:`, err);
+    } finally {
+      setIsLoadingBrandContent(false);
+    }
+  };
+
+  // Auto-load brand content when opened with a brand URL param (e.g. from Canal Butler)
+  useEffect(() => {
+    if (isOpen && localStoreSettings && selectedBrand !== 'office_butler') {
+      if (!brandContents[selectedBrand] || Object.keys(brandContents[selectedBrand]).length === 0) {
+        handleSelectBrand(selectedBrand);
+      }
+    }
+  }, [isOpen, selectedBrand, !!localStoreSettings]);
+
+  const handleSaveWebsiteTexts = async () => {
+    if (!localStoreSettings) return;
+    setIsSaving(true);
+    setBrandSaveSuccess(false);
+
+    try {
+      const activeContent = localStoreSettings.page_content || {};
+
+      // 1. Save to brand_page_content in Supabase for selectedBrand
+      if (supabase) {
+        await saveBrandPageContent(selectedBrand, activeContent);
+      }
+
+      // 2. Keep brandContents state updated
+      setBrandContents(prev => ({
+        ...prev,
+        [selectedBrand]: activeContent
+      }));
+
+      // 3. If office_butler, ALSO write to store_settings.page_content
+      if (selectedBrand === 'office_butler') {
+        officeButlerStoreContentRef.current = activeContent;
+        if (supabase) {
+          const { error: storeError } = await supabase
+            .from('store_settings')
+            .update({
+              page_content: activeContent
+            })
+            .eq('id', 1);
+
+          if (storeError) throw storeError;
+        }
+        if (onStoreSettingsUpdated) {
+          onStoreSettingsUpdated(localStoreSettings);
+        }
+      }
+
+      setBrandSaveSuccess(true);
+      setTimeout(() => setBrandSaveSuccess(false), 4000);
+    } catch (err: any) {
+      console.error(`Fout bij opslaan websiteteksten voor ${selectedBrand}:`, err);
+      alert(`Er is een fout opgetreden bij het opslaan van de websiteteksten voor ${selectedBrand}. Controleer of de tabel brand_page_content bestaat in Supabase.`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (dbProducts.length > 0 && selectedPriceProduct) {
@@ -445,12 +624,16 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
         setError('Ongeldige inloggegevens');
       } else {
         setIsAuthenticated(true);
+        modContext.setIsAuthenticated(true);
         setEmail('');
         setPassword('');
       }
     } else {
       setError('Supabase configuratie ontbreekt (Preview Modus)');
-      setTimeout(() => setIsAuthenticated(true), 500);
+      setTimeout(() => {
+        setIsAuthenticated(true);
+        modContext.setIsAuthenticated(true);
+      }, 500);
     }
     
     setIsLoading(false);
@@ -461,6 +644,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       await supabase.auth.signOut();
     }
     setIsAuthenticated(false);
+    modContext.setIsAuthenticated(false);
+    modContext.setIsModeratorView(false);
   };
 
   const handleSaveStoreSettings = async () => {
@@ -480,6 +665,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           .eq('id', 1);
 
         if (storeError) throw storeError;
+
+        // Also keep brand_page_content updated for office_butler
+        try {
+          await saveBrandPageContent('office_butler', localStoreSettings.page_content || {});
+        } catch (e) {
+          // silent fallback
+        }
 
         // Also synchronize shared_settings.opening_hours
         const scheduleLines = formatStoreSchedule(localStoreSettings.schedule);
@@ -936,11 +1128,12 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         <span>{!isSidebarCollapsed && <span>Menu & Producten</span>}</span>
                       </button>
                       <button
-                        onClick={() => { setActiveTab('delivery'); setImpersonating(null); }}
-                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${activeTab === 'delivery' && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        onClick={() => { setActiveTab('delivery'); setDeliveryPackagingSubTab('delivery'); setImpersonating(null); }}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors shrink-0 md:shrink ${(activeTab === 'delivery' || activeTab === 'packaging') && !impersonating ? 'bg-[#5170ff] text-white' : 'text-gray-600 hover:bg-gray-100'}`}
+                        title="Bezorging & Verpakking"
                       >
-                        <Truck size={18} className={activeTab === 'delivery' && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
-                        <span>{!isSidebarCollapsed && <span>Bezorgopties</span>}</span>
+                        <Truck size={18} className={(activeTab === 'delivery' || activeTab === 'packaging') && !impersonating ? 'text-white' : 'text-[#5170ff]'} />
+                        <span>{!isSidebarCollapsed && <span>Bezorging & Verpakking</span>}</span>
                       </button>
                       <button
                         onClick={() => { setActiveTab('discounts'); setImpersonating(null); }}
@@ -1024,23 +1217,121 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                               </p>
                             </div>
                             
-                            <div className="flex items-center gap-1.5 bg-gray-100 p-1.5 rounded-xl border border-gray-200 self-start sm:self-auto shadow-2xs">
+                            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setContentEditLang('nl')}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${contentEditLang === 'nl' ? 'bg-white text-ob-blue shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                                >
+                                  <span>🇳🇱</span> NL
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setContentEditLang('en')}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${contentEditLang === 'en' ? 'bg-[#5170ff] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                                >
+                                  <span>🇬🇧</span> EN
+                                </button>
+                              </div>
+
                               <button
                                 type="button"
-                                onClick={() => setContentEditLang('nl')}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${contentEditLang === 'nl' ? 'bg-white text-ob-blue shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                                onClick={handleSaveWebsiteTexts}
+                                disabled={isSaving || isLoadingBrandContent}
+                                className="bg-[#111827] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#1f2937] transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm cursor-pointer"
+                                title={`Teksten opslaan voor ${AVAILABLE_BRANDS.find(b => b.id === selectedBrand)?.name || 'dit merk'}`}
                               >
-                                <span className="text-base">🇳🇱</span> Nederlands
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setContentEditLang('en')}
-                                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${contentEditLang === 'en' ? 'bg-[#5170ff] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-                              >
-                                <span className="text-base">🇬🇧</span> Engels (English)
+                                <Save size={14} />
+                                {isSaving ? 'Bezig...' : 'Opslaan'}
                               </button>
                             </div>
                           </div>
+
+                          {/* BRAND SWITCHER CARD (Office Butler, Canal Butler, Snack Butler) */}
+                          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 p-4 sm:p-5 rounded-2xl text-white shadow-md mb-6 border border-slate-700/80">
+                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider uppercase bg-amber-400 text-slate-950 shadow-xs">
+                                    Merk Switcher
+                                  </span>
+                                  <h4 className="font-bold text-sm sm:text-base text-white">
+                                    Website Teksten per Zusterbedrijf
+                                  </h4>
+                                </div>
+                                <p className="text-xs text-slate-300 max-w-xl">
+                                  Kies het merk waarvan u de teksten wilt bewerken. Prijzen, menu, orders en verpakkingen blijven universeel gedeeld. Teksten worden opgeslagen in <code className="text-amber-300 bg-black/40 px-1 py-0.5 rounded font-mono text-[11px]">brand_page_content</code>.
+                                </p>
+                              </div>
+
+                              {/* Brand Selector Buttons */}
+                              <div className="flex flex-wrap items-center gap-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-700/80 shrink-0">
+                                {AVAILABLE_BRANDS.map(brand => {
+                                  const isSelected = selectedBrand === brand.id;
+                                  return (
+                                    <button
+                                      key={brand.id}
+                                      type="button"
+                                      disabled={isLoadingBrandContent}
+                                      onClick={() => handleSelectBrand(brand.id)}
+                                      className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
+                                        isSelected
+                                          ? 'bg-white text-[#05053D] shadow-md scale-[1.02]'
+                                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                                      }`}
+                                    >
+                                      <span>{brand.badge.split(' ')[0]}</span>
+                                      <span>{brand.name}</span>
+                                      {isSelected && (
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-300 animate-pulse"></span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Active brand info bar */}
+                            <div className="mt-3.5 pt-3 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-400">Actief geselecteerd:</span>
+                                <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                                  {AVAILABLE_BRANDS.find(b => b.id === selectedBrand)?.name}
+                                </span>
+                                <span className="text-slate-400 text-[11px] hidden sm:inline">
+                                  ({AVAILABLE_BRANDS.find(b => b.id === selectedBrand)?.description})
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isLoadingBrandContent ? (
+                                  <span className="text-amber-300 animate-pulse text-[11px]">Inhoud laden uit database...</span>
+                                ) : selectedBrand === 'office_butler' ? (
+                                  <span className="text-[11px] bg-blue-500/20 text-blue-200 px-2.5 py-0.5 rounded-full border border-blue-400/30">
+                                    Hoofdmerk (Office Butler & store_settings)
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] bg-amber-500/20 text-amber-200 px-2.5 py-0.5 rounded-full border border-amber-400/30 font-medium">
+                                    Zusterbedrijf (Alleen teksten in brand_page_content)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {brandSaveSuccess && (
+                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-xl flex items-center gap-3 text-xs font-medium animate-in fade-in mb-6 shadow-xs">
+                              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                              <div>
+                                <p className="font-bold text-emerald-900">
+                                  Websiteteksten voor {AVAILABLE_BRANDS.find(b => b.id === selectedBrand)?.name} succesvol opgeslagen!
+                                </p>
+                                <p className="text-emerald-700 mt-0.5">
+                                  Opgeslagen in tabel <code className="bg-emerald-100 px-1 py-0.5 rounded font-mono">brand_page_content</code>{selectedBrand === 'office_butler' ? ' en gesynchroniseerd met store_settings.' : '.'}
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
                           {contentEditLang === 'en' && (
                             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-start gap-3 text-sm text-blue-900">
@@ -2967,9 +3258,17 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                             </div>
                           </div>
 
-                          <div className="mt-8 flex justify-end">
-                            <button onClick={handleSaveStoreSettings} disabled={isSaving} className="bg-[#111827] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#1f2937] transition-colors disabled:opacity-50">
-                              {isSaving ? 'Opslaan...' : 'Teksten Opslaan'}
+                          <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                            <div className="text-xs text-gray-500">
+                              Actief merk: <strong className="text-[#05053D]">{AVAILABLE_BRANDS.find(b => b.id === selectedBrand)?.name}</strong> — Wordt opgeslagen in tabel <code className="bg-gray-200 text-gray-800 px-1.5 py-0.5 rounded font-mono text-[11px]">brand_page_content</code>
+                            </div>
+                            <button 
+                              onClick={handleSaveWebsiteTexts} 
+                              disabled={isSaving || isLoadingBrandContent} 
+                              className="w-full sm:w-auto bg-[#111827] text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-[#1f2937] transition-colors disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                            >
+                              <Save size={16} />
+                              {isSaving ? 'Opslaan...' : `Teksten Opslaan voor ${AVAILABLE_BRANDS.find(b => b.id === selectedBrand)?.name || 'Merk'}`}
                             </button>
                           </div>
                         </section>
@@ -4215,8 +4514,66 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                       </div>
                                         ) : activeTab === 'menu' ? (
                       <MenuManager />
-                    ) : activeTab === 'delivery' ? (
-                      <DeliveryOptionsManager />
+                    ) : (activeTab === 'delivery' || activeTab === 'packaging') ? (
+                      <div className="space-y-6 animate-in fade-in duration-200">
+                        {/* Sub-tabs header for Bezorgopties & Verpakkingsopties */}
+                        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                                <Truck size={20} className="text-[#05053D]" />
+                                Bezorging & Verpakkingsbeheer
+                              </h3>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                Beheer hier zowel de bezorgmethodes en tarieven als de verpakkingsopties voor bedrijven en gasten.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 p-1 bg-gray-100/90 rounded-lg border border-gray-200 self-start sm:self-auto shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryPackagingSubTab('delivery')}
+                                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                                  deliveryPackagingSubTab === 'delivery'
+                                    ? 'bg-[#05053D] text-white shadow-xs'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+                                }`}
+                              >
+                                <Truck size={14} />
+                                <span>Bezorgopties</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeliveryPackagingSubTab('packaging')}
+                                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                                  deliveryPackagingSubTab === 'packaging'
+                                    ? 'bg-[#05053D] text-white shadow-xs'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-white'
+                                }`}
+                              >
+                                <Package size={14} />
+                                <span>Verpakkingsopties</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Active sub-tab component */}
+                        {deliveryPackagingSubTab === 'delivery' ? (
+                          <DeliveryOptionsManager />
+                        ) : (
+                          <PackagingOptionsManager
+                            storeSettings={localStoreSettings}
+                            onStoreSettingsUpdated={(newSettings) => {
+                              setLocalStoreSettings(newSettings);
+                              if (onStoreSettingsUpdated) {
+                                onStoreSettingsUpdated(newSettings);
+                              }
+                            }}
+                            companies={customers}
+                          />
+                        )}
+                      </div>
                     ) : activeTab === 'discounts' ? (
                       <DiscountCodesManager
                         storeSettings={localStoreSettings}

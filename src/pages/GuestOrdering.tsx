@@ -1,15 +1,19 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
-import { supabase, sortVariantsByCategory, DiscountCode } from '../lib/supabase';
+import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
-import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X, Tag, Percent, Gift, ShieldCheck } from 'lucide-react';
+import { Utensils, CheckCircle, Info, ShoppingBag, ArrowLeft, Building, Mail, MapPin, Phone, Calendar, Clock, Truck, X, Tag, Percent, Gift, ShieldCheck, Package, ArrowDown, Compass, ChevronRight, Layers } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { PrivacyModal } from '../components/PrivacyModal';
+import { useModerator } from '../contexts/ModeratorContext';
+import { EditableText } from '../components/EditableText';
 
 export function GuestOrdering() {
   const { t, language } = useLanguage();
+  const { storeSettings } = useModerator();
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<string>('');
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -63,12 +67,27 @@ export function GuestOrdering() {
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponSuccess, setCouponSuccess] = useState<string | null>(null);
 
+  // Packaging option state
+  const [selectedPackagingOption, setSelectedPackagingOption] = useState<PackagingOption | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [emailFailed, setEmailFailed] = useState(false);
   const [error, setError] = useState('');
   const [infoModalProduct, setInfoModalProduct] = useState<any>(null);
   const [pageContent, setPageContent] = useState<any>({});
+
+  const activeContent = storeSettings?.page_content || pageContent;
+
+  const getDynamicText = (key: string, defaultNl: string, defaultEn?: string) => {
+    if (language === 'en' && activeContent?.[`${key}_en`]) {
+      return activeContent[`${key}_en`];
+    }
+    if (activeContent?.[key]) {
+      return activeContent[key];
+    }
+    return t(defaultNl, defaultEn || defaultNl);
+  };
 
   // Fetch prices if available
   useEffect(() => {
@@ -283,14 +302,22 @@ export function GuestOrdering() {
       return;
     }
 
-    const found = discountCodes.find(c => c.code.toUpperCase() === clean);
-    if (!found || found.is_active === false) {
-      setCouponError('Deze kortingscode is ongeldig of niet actief.');
+    // Geen stacking: als er al een code actief is
+    if (appliedDiscount) {
+      setCouponError(`Er is al een kortingscode actief (${appliedDiscount.code}). Kortingscodes kunnen niet gestapeld worden. Verwijder eerst de huidige code.`);
       return;
     }
 
-    if (found.min_order_amount && found.min_order_amount > 0 && totalOrderPrice < found.min_order_amount) {
-      setCouponError(`Deze kortingscode is pas geldig vanaf een bestelbedrag van €${Number(found.min_order_amount).toFixed(2)}.`);
+    const found = discountCodes.find(c => c.code.toUpperCase() === clean);
+    if (!found) {
+      setCouponError('Deze kortingscode is ongeldig.');
+      return;
+    }
+
+    // Validatie op actief, minimum orderbedrag, max_uses_total en max_uses_per_person
+    const validation = validateDiscountCode(found, totalOrderPrice, guestEmail);
+    if (!validation.valid) {
+      setCouponError(validation.error || 'Deze kortingscode kan niet worden toegepast.');
       return;
     }
 
@@ -348,13 +375,17 @@ export function GuestOrdering() {
       }
     }
 
+    const packagingNote = selectedPackagingOption
+      ? `Verpakkingswijze: ${selectedPackagingOption.name}${Number(selectedPackagingOption.price) > 0 ? ` (+€${Number(selectedPackagingOption.price).toFixed(2)})` : ''}`
+      : '';
+
     const fullNotes = `
 [GAST BESTELLING]
 Naam: ${guestName}
 Email: ${guestEmail}
 Factuuradres/KVK: ${guestBillingInfo}
 Bezorgadres: ${guestAddress}
-${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
+${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
     `.trim();
 
     if (supabase) {
@@ -444,11 +475,32 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
           });
         }
 
+        if (selectedPackagingOption && packagingPrice > 0) {
+          orderPromises.push(supabase.from('ob_orders').insert({
+            product_name: 'Verpakking: ' + selectedPackagingOption.name,
+            portion_size: 1,
+            price: packagingPrice,
+            total_price: packagingPrice,
+            phone: phone,
+            notes: fullNotes,
+            delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+          }));
+
+          orderLines.push({
+            product_name: 'Verpakking: ' + selectedPackagingOption.name,
+            portion_size: 1,
+            price: packagingPrice,
+            qty: 1,
+            lineTotal: packagingPrice
+          });
+        }
+
         const results = await Promise.all(orderPromises);
         const errors = results.filter(r => r.error);
         if (errors.length > 0) throw errors[0].error;
 
-        const calculatedFinalTotal = Math.max(0, totalOrderPrice - discountAmount) + (selectedDeliveryMethod?.price || 0);
+        const calculatedFinalTotal = Math.max(0, totalOrderPrice - discountAmount) + (selectedDeliveryMethod?.price || 0) + packagingPrice;
 
         try {
           const res = await fetch('/api/send-guest-invoice', {
@@ -469,6 +521,8 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
               deliveryTime: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
               deliveryMethod: selectedDeliveryMethod?.name || 'Standaard Bezorging',
               deliveryMethodPrice: selectedDeliveryMethod?.price || 0,
+              packagingOption: selectedPackagingOption?.name || null,
+              packagingPrice: packagingPrice,
               discountCode: appliedDiscount?.code || null,
               discountType: appliedDiscount?.type || null,
               discountValue: appliedDiscount?.value || 0,
@@ -485,6 +539,12 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
         } catch (emailErr) {
           console.error("Kon email niet verzenden:", emailErr);
           setEmailFailed(true);
+        }
+
+        if (appliedDiscount) {
+          recordDiscountCodeUsage(appliedDiscount.id || appliedDiscount.code, guestEmail).catch(err => {
+            console.error("Fout bij bijwerken kortingscode teller:", err);
+          });
         }
 
         setOrderSuccess(true);
@@ -543,90 +603,274 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
       return sum + prodSum;
     }, 0);
 
+  const selectedItemsList = Object.entries(selections).flatMap(([prod, sizes]) => {
+    const cleanProd = (prod || '').trim();
+    return Object.entries(sizes as Record<string, number>).map(([s, qty]) => {
+      const parts = s.split('_');
+      const sizeNum = parts[0];
+      const variant = parts[1] || '';
+      const basePrice = prices[`${cleanProd}_${sizeNum}`] ?? prices[`${prod}_${sizeNum}`] ?? 0;
+      const surcharge = getVariantSurcharge(prod, variant, sizeNum);
+      const unitPrice = basePrice + surcharge;
+      const itemTotal = unitPrice * (qty as number);
+      return {
+        product: prod,
+        size: Number(sizeNum),
+        variant,
+        qty: Number(qty),
+        unitPrice,
+        itemTotal,
+        key: `${prod}_${s}`
+      };
+    });
+  });
+
   const discountAmount = (appliedDiscount && appliedDiscount.type === 'percentage')
     ? (totalOrderPrice * (appliedDiscount.value || 0)) / 100
     : 0;
 
+  const rawPackagingOptions: PackagingOption[] = pageContent?.packaging_options || [];
+  const availablePackagingOptions = rawPackagingOptions.filter((opt: PackagingOption) => {
+    return opt.is_active && opt.available_for_guests;
+  });
+
+  const packagingPrice = Number(selectedPackagingOption?.price) || 0;
   const deliveryPrice = Number(selectedDeliveryMethod?.price) || 0;
-  const finalTotalAmount = Math.max(0, totalOrderPrice - discountAmount) + deliveryPrice;
+  const finalTotalAmount = Math.max(0, totalOrderPrice - discountAmount) + deliveryPrice + packagingPrice;
+
+  useEffect(() => {
+    if (availablePackagingOptions.length > 0) {
+      if (!selectedPackagingOption || !availablePackagingOptions.some(o => o.id === selectedPackagingOption.id)) {
+        setSelectedPackagingOption(availablePackagingOptions[0]);
+      }
+    } else {
+      if (selectedPackagingOption) {
+        setSelectedPackagingOption(null);
+      }
+    }
+  }, [pageContent?.packaging_options]);
+
+  const totalSelectedItems = Object.keys(selections).length;
+
+  const scrollToCategory = (catTitle: string) => {
+    setActiveCategory(catTitle);
+    const target = document.getElementById(`cat-${encodeURIComponent(catTitle)}`);
+    if (target) {
+      const offset = 120;
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = target.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const scrollToOrder = () => {
+    const target = document.getElementById('guest-order-details');
+    if (target) {
+      const offset = 110;
+      const bodyRect = document.body.getBoundingClientRect().top;
+      const elementRect = target.getBoundingClientRect().top;
+      const elementPosition = elementRect - bodyRect;
+      const offsetPosition = elementPosition - offset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (categories.length === 0) return;
+    if (!activeCategory && categories[0]) {
+      setActiveCategory(categories[0].title);
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const catTitle = entry.target.getAttribute('data-category-title');
+            if (catTitle) {
+              setActiveCategory(catTitle);
+            }
+          }
+        });
+      },
+      { rootMargin: '-20% 0px -65% 0px', threshold: 0 }
+    );
+
+    categories.forEach((cat) => {
+      const el = document.getElementById(`cat-${encodeURIComponent(cat.title)}`);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [categories]);
 
   return (
-    <div className="font-serif min-h-screen bg-gray-50 pb-20 pt-10">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6">
-        <Link to="/" className="inline-flex items-center gap-2 text-ob-blue hover:text-ob-accent font-semibold mb-6">
-          <ArrowLeft size={20} /> Terug naar home
+    <div className="font-serif min-h-screen bg-gray-50 pb-20 pt-24 sm:pt-28">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <Link to="/" className="inline-flex items-center gap-2 text-ob-blue hover:text-ob-accent font-semibold mb-6 font-paragraph-default text-sm">
+          <ArrowLeft size={18} /> {t('Terug naar home', 'Back to home')}
         </Link>
         
-        
-        <header className="mb-10 text-center">
-          <h1 className="text-3xl md:text-4xl font-bold text-ob-blue mb-3">{pageContent?.guest_order_title || "Eenmalig Bestellen"}</h1>
-          <p className="text-gray-600">{pageContent?.guest_order_subtitle || "Selecteer uw favoriete snacks en vul uw factuur- en bezorggegevens in."}</p>
+        <header className="mb-10 text-center max-w-3xl mx-auto">
+          <EditableText
+            contentKey="guest_order_title"
+            label="Titel 'Eenmalig Bestellen'"
+            value={getDynamicText('guest_order_title', 'Eenmalig Bestellen', 'One-time Ordering')}
+            defaultValue="Eenmalig Bestellen"
+            as="h1"
+            className="text-3xl md:text-4xl font-normal text-ob-blue mb-3 font-title-default"
+          />
+          <EditableText
+            contentKey="guest_order_subtitle"
+            label="Ondertitel 'Selecteer uw favoriete snacks...'"
+            value={getDynamicText('guest_order_subtitle', 'Selecteer uw favoriete snacks en vul uw factuur- en bezorggegevens in.', 'Select your favorite snacks and enter your invoice and delivery details.')}
+            defaultValue="Selecteer uw favoriete snacks en vul uw factuur- en bezorggegevens in."
+            as="p"
+            className="text-gray-600 font-paragraph-default text-base"
+          />
         </header>
 
         {error && (
-          <div className="mb-8 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-start gap-3">
+          <div className="mb-8 max-w-3xl mx-auto p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-start gap-3">
             <Info className="shrink-0 mt-0.5" size={20} />
-            <p className="text-sm font-medium">{error}</p>
+            <p className="text-sm font-medium font-paragraph-default">{error}</p>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          
-          {deliveryMethods.length > 0 && (
-            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-                <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2 font-heading-default">
-                  <Truck size={20} className="text-ob-accent" /> {t('Kies je bezorgmethode', 'Choose your delivery method')}
-                </h2>
-                <p className="text-gray-500 text-sm mt-1 font-paragraph-default">{t('Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}</p>
-              </div>
-              <div className="p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {deliveryMethods.map((method, mIdx) => (
-                    <label key={`guest-del-${method.id || mIdx}-${mIdx}`} className={`flex flex-col p-4 border rounded-xl cursor-pointer transition-colors ${selectedDeliveryMethod?.id === method.id ? 'border-ob-blue bg-blue-50/30 ring-1 ring-ob-blue' : 'border-gray-200 hover:bg-gray-50'}`}>
-                      <div className="w-full h-32 rounded-lg overflow-hidden bg-gray-100 mb-4 shrink-0">
-                        <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <input 
-                          type="radio" 
-                          name="delivery_method"
-                          checked={selectedDeliveryMethod?.id === method.id}
-                          onChange={() => setSelectedDeliveryMethod(method)}
-                          className="w-5 h-5 mt-0.5 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0" 
-                        />
-                        <div>
-                          <span className="font-semibold text-gray-900 block text-lg font-heading-default">
-                            {getDeliveryMethodName(method, language, t)}
-                          </span>
-                          <span className="text-xs text-gray-500 block mb-2 font-paragraph-default leading-relaxed">
-                            {getDeliveryMethodDescription(method, language, t)}
-                          </span>
-                          <span className="font-bold text-[#05053D] block font-button-default text-xs tracking-wider">
-                            {method.price === 0 ? t('Gratis', 'Free') : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ` ${t('/ uur (uurtarief)', '/ hour (hourly rate)')}` : ''}`}
-                          </span>
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </section>
-          )}
-
-          {/* Assortment */}
-
-          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2">
-                <Utensils size={20} className="text-ob-accent" /> Assortiment & Prijzen
-              </h2>
-            </div>
+        <form onSubmit={handleSubmit}>
+          <div className="xl:grid xl:grid-cols-12 xl:gap-8 items-start">
             
-            <div className="p-6">
-              <div className="flex flex-col gap-12">
-                {categories.map((category, catIdx) => (
-                  <div key={`guest-cat-${category.title || catIdx}-${catIdx}`}>
+            {/* Linkerkolom / Hoofdinhoud */}
+            <div className="xl:col-span-8 2xl:col-span-9 space-y-8 min-w-0">
+              
+              {deliveryMethods.length > 0 && (
+                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+                    <h2 className="text-2xl font-normal text-ob-blue flex items-center gap-2.5 font-title-default">
+                      <Truck size={22} className="text-ob-accent" />
+                      <EditableText
+                        contentKey="order_delivery_section_title"
+                        label="Titel 'Kies je bezorgmethode'"
+                        value={getDynamicText('order_delivery_section_title', 'Kies je bezorgmethode', 'Choose your delivery method')}
+                        defaultValue={t('Kies je bezorgmethode', 'Choose your delivery method')}
+                        inline
+                        as="span"
+                      />
+                    </h2>
+                    <EditableText
+                      contentKey="order_delivery_section_subtitle"
+                      label="Ondertitel 'Selecteer hoe je je bestelling wilt ontvangen...'"
+                      value={getDynamicText('order_delivery_section_subtitle', 'Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}
+                      defaultValue={t('Selecteer hoe je je bestelling wilt ontvangen of laten verzorgen.', 'Select how you would like to receive or have your order served.')}
+                      as="p"
+                      className="text-gray-500 text-sm mt-1 font-paragraph-default"
+                    />
+                  </div>
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {deliveryMethods.map((method, mIdx) => (
+                        <label 
+                          key={`guest-del-${method.id || mIdx}-${mIdx}`} 
+                          className={`flex flex-col p-4 sm:p-5 border rounded-2xl cursor-pointer transition-all overflow-hidden ${
+                            selectedDeliveryMethod?.id === method.id 
+                              ? 'border-ob-blue bg-blue-50/30 ring-2 ring-ob-blue shadow-xs' 
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 shadow-2xs'
+                          }`}
+                        >
+                          <div className="w-full h-32 sm:h-36 rounded-xl overflow-hidden bg-gray-100 mb-3.5 shrink-0 border border-gray-150">
+                            <img src={method.image_url} alt={method.name} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <input 
+                              type="radio" 
+                              name="delivery_method"
+                              checked={selectedDeliveryMethod?.id === method.id}
+                              onChange={() => setSelectedDeliveryMethod(method)}
+                              className="w-5 h-5 mt-0.5 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0 cursor-pointer" 
+                            />
+                            <div className="min-w-0 flex-1 flex flex-col justify-between">
+                              <span className="font-bold text-gray-900 block text-sm sm:text-base font-heading-default break-words leading-snug mb-1">
+                                {getDeliveryMethodName(method, language, t)}
+                              </span>
+                              {getDeliveryMethodDescription(method, language, t) && (
+                                <span className="text-xs text-gray-500 block mb-2 font-paragraph-default leading-relaxed break-words">
+                                  {getDeliveryMethodDescription(method, language, t)}
+                                </span>
+                              )}
+                              <span className="font-bold text-[#05053D] inline-block font-button-default text-xs tracking-wider mt-auto pt-1">
+                                {method.price === 0 ? t('Gratis', 'Free') : `+ €${Number(method.price).toFixed(2)}${method.name?.toLowerCase().includes('uitserveren') ? ` ${t('/ uur (uurtarief)', '/ hour (hourly rate)')}` : ''}`}
+                              </span>
+                            </div>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {/* Mobiele / Tablet Snelle Categorie Chips Balk */}
+              {categories.length > 1 && (
+                <div className="xl:hidden sticky top-20 z-20 bg-white/95 backdrop-blur-md p-2.5 rounded-2xl shadow-sm border border-gray-200/80">
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 px-1 scroll-smooth">
+                    {categories.map((category, catIdx) => {
+                      const isCatActive = activeCategory === category.title;
+                      const countInCat = category.items.reduce((sum: number, item: any) => sum + (selections[item.name] ? 1 : 0), 0);
+                      return (
+                        <button
+                          key={`mobile-chip-${category.title}-${catIdx}`}
+                          type="button"
+                          onClick={() => scrollToCategory(category.title)}
+                          className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isCatActive
+                              ? 'bg-ob-blue text-white shadow-xs font-bold'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span className="font-paragraph-default">{category.title}</span>
+                          {countInCat > 0 && (
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isCatActive ? 'bg-white/20 text-white' : 'bg-[#5170ff] text-white'}`}>
+                              {countInCat}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={scrollToOrder}
+                      className="shrink-0 ml-auto px-3 py-1.5 bg-[#5170ff] hover:bg-[#4060ee] text-white rounded-full text-xs font-bold font-button-default tracking-wide flex items-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <span>{t('Bestellen', 'Order')}</span>
+                      <ArrowDown size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Assortment */}
+              <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+                  <h2 className="text-2xl font-normal text-ob-blue flex items-center gap-2.5 font-title-default">
+                    <Utensils size={22} className="text-ob-accent" /> Assortiment & Prijzen
+                  </h2>
+                </div>
+                
+                <div className="p-6">
+                  <div className="flex flex-col gap-12">
+                    {categories.map((category, catIdx) => (
+                      <div 
+                        key={`guest-cat-${category.title || catIdx}-${catIdx}`}
+                        id={`cat-${encodeURIComponent(category.title)}`}
+                        data-category-title={category.title}
+                        className="scroll-mt-28"
+                      >
                     <h3 
                       className="text-2xl font-bold text-ob-blue mb-2 border-b pb-2 font-title-default"
                       style={getTypographyStyle('title', pageContent?.menu_category_title_font, pageContent?.menu_category_title_size)}
@@ -634,8 +878,8 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                       {category.title}
                     </h3>
                     {categoryDescriptions[category.title] && (
-                      <p className="text-sm text-gray-600 mb-6 italic bg-blue-50/50 p-3 rounded-lg border border-blue-100/70">
-                        ℹ️ {categoryDescriptions[category.title]}
+                      <p className="text-sm text-gray-600 mb-6 bg-blue-50/50 p-3 rounded-lg border border-blue-100/70 font-normal">
+                        {categoryDescriptions[category.title]}
                       </p>
                     )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -846,10 +1090,18 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
           </section>
 
           {/* Details Form */}
-          <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <section id="guest-order-details" className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden scroll-mt-28">
             <div className="p-6 border-b border-gray-100 bg-gray-50/50">
-              <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2">
-                <Building size={20} className="text-ob-accent" /> Gegevens & Bezorging
+              <h2 className="text-2xl font-normal text-ob-blue flex items-center gap-2.5 font-title-default">
+                <Building size={22} className="text-ob-accent" />
+                <EditableText
+                  contentKey="order_details_section_title"
+                  label="Titel 'Gegevens & Bezorging'"
+                  value={getDynamicText('order_details_section_title', 'Gegevens & Bezorging', 'Details & Delivery')}
+                  defaultValue={t('Gegevens & Bezorging', 'Details & Delivery')}
+                  inline
+                  as="span"
+                />
               </h2>
             </div>
             
@@ -998,11 +1250,81 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             </div>
           </section>
 
+          {/* Verpakkingsopties Sectie */}
+          {availablePackagingOptions.length > 0 && (
+            <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+                <h2 className="text-2xl font-normal text-ob-blue flex items-center gap-2.5 font-title-default">
+                  <Package size={22} className="text-ob-accent" />
+                  {t('Verpakking van uw bestelling', 'Order packaging')}
+                </h2>
+                <p className="text-gray-500 text-sm mt-1 font-paragraph-default">
+                  {t('Kies hoe u wilt dat uw bestelling verpakt en geleverd wordt.', 'Choose how you would like your order packaged and delivered.')}
+                </p>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {availablePackagingOptions.map((opt) => {
+                    const isSelected = selectedPackagingOption?.id === opt.id;
+                    const optName = (language === 'en' && opt.name_en) ? opt.name_en : opt.name;
+                    const optDesc = (language === 'en' && opt.description_en) ? opt.description_en : opt.description;
+                    return (
+                      <label
+                        key={`guest-pack-${opt.id}`}
+                        className={`flex flex-col p-4 sm:p-5 border rounded-2xl cursor-pointer transition-all overflow-hidden ${
+                          isSelected
+                            ? 'border-ob-blue bg-blue-50/30 ring-2 ring-ob-blue shadow-xs'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/80 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3.5 min-w-0">
+                          <input
+                            type="radio"
+                            name="packaging_option_guest"
+                            checked={isSelected}
+                            onChange={() => setSelectedPackagingOption(opt)}
+                            className="w-5 h-5 mt-1 rounded-full border-gray-300 text-ob-blue focus:ring-ob-blue shrink-0 cursor-pointer"
+                          />
+                          {opt.image_url && (
+                            <img
+                              src={opt.image_url}
+                              alt={optName}
+                              className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl border border-gray-200 shrink-0 shadow-2xs"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none';
+                              }}
+                            />
+                          )}
+                          <div className="flex-1 min-w-0 flex flex-col justify-between">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1 mb-1">
+                              <span className="font-bold text-gray-900 text-sm sm:text-base font-heading-default break-words leading-snug">
+                                {optName}
+                              </span>
+                              <span className="font-bold text-[#05053D] text-xs shrink-0 font-button-default">
+                                {opt.price && Number(opt.price) > 0 ? `+ €${Number(opt.price).toFixed(2)}` : t('Inbegrepen', 'Included')}
+                              </span>
+                            </div>
+                            {optDesc && (
+                              <span className="text-xs text-gray-500 block font-paragraph-default leading-relaxed break-words">
+                                {optDesc}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Kortingscode Sectie */}
           <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-ob-blue flex items-center gap-2">
-                <Tag size={20} className="text-ob-accent" /> Kortingscode
+              <h2 className="text-2xl font-normal text-ob-blue flex items-center gap-2.5 font-title-default">
+                <Tag size={22} className="text-ob-accent" /> {t('Kortingscode', 'Discount code')}
               </h2>
               {appliedDiscount && (
                 <span className="text-xs bg-green-100 text-green-800 font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
@@ -1033,6 +1355,9 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                       Toepassen
                     </button>
                   </div>
+                  <p className="text-[11px] text-gray-500 mt-1.5">
+                    Let op: er kan maximaal één kortingscode per bestelling worden toegepast (kortingen stapelen niet).
+                  </p>
                 </div>
               ) : (
                 <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between gap-3">
@@ -1088,6 +1413,17 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
                   <div className="flex justify-between text-gray-600">
                     <span>{t('Bezorging', 'Delivery')} ({getDeliveryMethodName(selectedDeliveryMethod, language, t)})</span>
                     <span className="font-semibold text-gray-900">€{Number(selectedDeliveryMethod.price).toFixed(2)}</span>
+                  </div>
+                )}
+
+                {selectedPackagingOption && (
+                  <div className="flex justify-between text-gray-600">
+                    <span>{t('Verpakking', 'Packaging')} ({(language === 'en' && selectedPackagingOption.name_en) ? selectedPackagingOption.name_en : selectedPackagingOption.name})</span>
+                    <span className="font-semibold text-gray-900">
+                      {selectedPackagingOption.price && Number(selectedPackagingOption.price) > 0
+                        ? `€${Number(selectedPackagingOption.price).toFixed(2)}`
+                        : t('Inbegrepen', 'Included')}
+                    </span>
                   </div>
                 )}
 
@@ -1147,8 +1483,187 @@ ${discountNote ? `${discountNote}\n` : ''}Extra Notities: ${notes}
             </button>
           </div>
 
+            </div>{/* Einde Linkerkolom */}
+
+            {/* Rechterkolom: Sticky Zijbalk met Categorie Navigatie & Direct Naar Bestellen */}
+            <aside className="hidden xl:block xl:col-span-4 2xl:col-span-3 sticky top-24 space-y-4">
+              
+              {/* Categorie Navigatie Card */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
+                  <div className="flex items-center gap-2">
+                    <Compass size={18} className="text-ob-accent" />
+                    <h3 className="font-bold text-ob-blue text-sm font-heading-default uppercase tracking-wider">
+                      <EditableText
+                        contentKey="order_sidebar_categories_title"
+                        label="Zijbalk Titel 'Categorieën'"
+                        value={getDynamicText('order_sidebar_categories_title', 'Categorieën', 'Categories')}
+                        defaultValue={t('Categorieën', 'Categories')}
+                        inline
+                        as="span"
+                      />
+                    </h3>
+                  </div>
+                  <span className="text-xs text-gray-400 font-paragraph-default">
+                    {categories.length} {t('secties', 'sections')}
+                  </span>
+                </div>
+
+                <nav className="flex flex-col gap-1 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                  {categories.map((category, catIdx) => {
+                    const isCatActive = activeCategory === category.title;
+                    return (
+                      <button
+                        key={`side-cat-${category.title}-${catIdx}`}
+                        type="button"
+                        onClick={() => scrollToCategory(category.title)}
+                        className={`w-full text-left px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-all flex items-center justify-between group cursor-pointer ${
+                          isCatActive
+                            ? 'bg-ob-blue text-white shadow-xs font-bold'
+                            : 'text-gray-700 hover:bg-gray-100/80 hover:text-ob-blue'
+                        }`}
+                      >
+                        <span className="truncate pr-2 font-paragraph-default">{category.title}</span>
+                        <ChevronRight size={14} className={`shrink-0 transition-transform ${isCatActive ? 'text-white' : 'text-gray-400 group-hover:translate-x-0.5'}`} />
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+
+              {/* Direct Naar Bestellen CTA Card */}
+              <div className="bg-gradient-to-br from-white to-blue-50/40 rounded-2xl shadow-sm border border-blue-100/80 p-5 space-y-3.5">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-150">
+                  <span className="text-xs uppercase tracking-wider font-bold text-gray-500 font-button-default">
+                    <EditableText
+                      contentKey="order_summary_selection_title"
+                      label="Zijbalk 'Uw selectie'"
+                      value={getDynamicText('order_summary_selection_title', 'Uw selectie', 'Your selection')}
+                      defaultValue={t('Uw selectie', 'Your selection')}
+                      inline
+                      as="span"
+                    />
+                  </span>
+                  {selectedItemsList.length > 0 && (
+                    <span className="text-[11px] font-semibold text-[#5170ff] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                      {selectedItemsList.reduce((acc, i) => acc + i.qty, 0)} {selectedItemsList.reduce((acc, i) => acc + i.qty, 0) === 1 ? t('portie', 'portion') : t('porties', 'portions')}
+                    </span>
+                  )}
+                </div>
+
+                {/* Kort Bonnet / Overzicht van geselecteerde artikelen */}
+                {selectedItemsList.length === 0 ? (
+                  <div className="py-3 px-3 text-center text-xs text-gray-400 italic bg-white/70 rounded-xl border border-dashed border-gray-200">
+                    {t('Selecteer snacks uit het assortiment hiernaast', 'Select snacks from the assortment')}
+                  </div>
+                ) : (
+                  <div className="bg-white/90 rounded-xl p-3 border border-blue-100/80 shadow-2xs space-y-2 max-h-52 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
+                    {selectedItemsList.map((item) => (
+                      <div key={item.key} className="pt-2 first:pt-0 flex items-start justify-between text-xs gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-gray-900 truncate">
+                            <span className="text-[#5170ff] font-bold mr-1">{item.qty}x</span>
+                            {item.product}
+                          </div>
+                          <div className="text-[11px] text-gray-500 font-normal">
+                            {item.size} st.{item.variant ? ` • ${item.variant}` : ''}
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0 font-bold text-ob-blue font-heading-default">
+                          €{item.itemTotal.toFixed(2)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-baseline justify-between pt-1">
+                  <span className="text-sm font-medium text-gray-600 font-paragraph-default inline-flex items-center">
+                    <EditableText
+                      contentKey="order_summary_total_label"
+                      label="Label 'Geschat totaal'"
+                      value={getDynamicText('order_summary_total_label', 'Geschat totaal', 'Estimated total')}
+                      defaultValue={t('Geschat totaal', 'Estimated total')}
+                      inline
+                      as="span"
+                    />
+                    <span>:</span>
+                  </span>
+                  <span className="text-2xl font-bold text-ob-blue font-heading-default">
+                    €{finalTotalAmount.toFixed(2)}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={scrollToOrder}
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all font-button-default text-xs tracking-wider cursor-pointer"
+                >
+                  <ArrowDown size={16} />
+                  <EditableText
+                    contentKey="order_summary_btn_scroll"
+                    label="Knop 'Naar Bestellen'"
+                    value={getDynamicText('order_summary_btn_scroll', 'Naar Bestellen', 'Go to Order Details')}
+                    defaultValue={t('Naar Bestellen', 'Go to Order Details')}
+                    inline
+                    as="span"
+                  />
+                </button>
+                <EditableText
+                  contentKey="order_summary_btn_subtitle"
+                  label="Onderschrift 'Direct door naar bezorging...'"
+                  value={getDynamicText('order_summary_btn_subtitle', 'Direct door naar bezorging, factuur & afronden', 'Jump directly to delivery, invoice & submit')}
+                  defaultValue={t('Direct door naar bezorging, factuur & afronden', 'Jump directly to delivery, invoice & submit')}
+                  as="p"
+                  className="text-[11px] text-gray-500 text-center font-paragraph-default"
+                />
+              </div>
+            </aside>
+
+          </div>{/* Einde xl:grid */}
         </form>
       </div>
+
+      {/* Zwevende Mobiele / Tablet Quick-Bar naar Bestellen */}
+      {totalSelectedItems > 0 && (
+        <div className="xl:hidden fixed bottom-5 left-4 right-4 z-40 max-w-md mx-auto animate-in slide-in-from-bottom duration-300">
+          <button
+            type="button"
+            onClick={scrollToOrder}
+            className="w-full bg-[#151f34] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 hover:bg-[#1e2a44] transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-xs font-bold font-heading-default">
+                {totalSelectedItems}
+              </div>
+              <div className="text-left">
+                <span className="text-[11px] font-medium text-gray-300 block font-paragraph-default">
+                  <EditableText
+                    contentKey="order_mobile_selected_label"
+                    label="Mobiel Label 'Geselecteerd'"
+                    value={getDynamicText('order_mobile_selected_label', 'Geselecteerd', 'Selected')}
+                    defaultValue={t('Geselecteerd', 'Selected')}
+                    inline
+                    as="span"
+                  />
+                </span>
+                <span className="text-sm font-bold text-white block font-heading-default">€{finalTotalAmount.toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 bg-[#5170ff] hover:bg-[#4060ee] px-3.5 py-2 rounded-xl text-xs font-bold font-button-default tracking-wider shadow-sm">
+              <EditableText
+                contentKey="order_mobile_btn_scroll"
+                label="Mobiele Knop 'Naar Bestellen'"
+                value={getDynamicText('order_mobile_btn_scroll', 'Naar Bestellen', 'Go to Order')}
+                defaultValue={t('Naar Bestellen', 'Go to Order')}
+                inline
+                as="span"
+              />
+              <ArrowDown size={14} />
+            </div>
+          </button>
+        </div>
+      )}
 
       <PrivacyModal 
         isOpen={isPrivacyModalOpen} 
