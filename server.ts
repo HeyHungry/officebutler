@@ -623,7 +623,13 @@ ${JSON.stringify(toTranslate, null, 2)}
         deliveryDate, 
         deliveryTime, 
         deliveryMethod, 
-        deliveryMethodPrice 
+        deliveryMethodPrice,
+        discountCode,
+        discountType,
+        discountValue,
+        discountAmount,
+        freeProductInfo,
+        finalTotal
       } = req.body;
       const apiKey = process.env.RESEND_API_KEY;
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -675,6 +681,9 @@ ${JSON.stringify(toTranslate, null, 2)}
           deliveryMethodPrice,
           notes,
           billingInfo: company?.billing_info,
+          discountCode,
+          discountAmount,
+          freeProductInfo,
           isTest: false
         });
 
@@ -747,6 +756,13 @@ ${JSON.stringify(toTranslate, null, 2)}
                 <h3 style="margin-top: 0; color: #0d47a1;">Interne Notitie (Office Butler)</h3>
                 <p style="margin: 5px 0;">Er is zojuist een nieuwe bestelling geplaatst door <strong>${effectiveCompanyName}</strong>.</p>
                 <p style="margin: 5px 0;">Controleer deze factuur en stuur deze vervolgens handmatig door naar: <a href="mailto:${emailRecipient}">${emailRecipient}</a></p>
+                ${discountCode ? `
+                <div style="margin-top: 10px; padding: 8px 12px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; color: #1b5e20;">
+                  <strong>🎟️ Toegepaste Kortingscode:</strong> <span style="font-family: monospace; font-weight: bold; background: #fff; padding: 2px 6px; border-radius: 4px; border: 1px solid #81c784;">${discountCode}</span>
+                  ${discountType === 'percentage' ? ` &mdash; <strong>${discountValue}% korting</strong> (-€${Number(discountAmount || 0).toFixed(2)})` : ''}
+                  ${discountType === 'free_product' ? ` &mdash; <strong>Gratis product: ${freeProductInfo || 'Gratis item'}</strong>` : ''}
+                </div>
+                ` : ''}
               </div>
 
               <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur</h2>
@@ -762,10 +778,30 @@ ${JSON.stringify(toTranslate, null, 2)}
                 </thead>
                 <tbody>
                   ${itemsHtml}
+                  ${(freeProductInfo && (!orderLines || !orderLines.some((l: any) => l.product_name && l.product_name.includes(discountCode)))) ? `
+                  <tr style="background-color: #f0fdf4; color: #166534;">
+                    <td style="padding: 8px; border-bottom: 1px solid #bbf7d0;">
+                      🎁 <strong>GRATIS PRODUCT:</strong> ${freeProductInfo} <br/>
+                      <span style="font-size: 11px; color: #15803d;">Toegevoegd via kortingscode: <strong>${discountCode}</strong></span>
+                    </td>
+                    <td style="padding: 8px; border-bottom: 1px solid #bbf7d0; text-align: right; font-weight: bold; color: #16a34a;">
+                      GRATIS (€0,00)
+                    </td>
+                  </tr>` : ''}
                   ${(!hasDeliveryInLines && deliveryMethod && Number(deliveryMethodPrice) > 0) ? `<tr>
                     <td style="padding: 8px; border-bottom: 1px solid #eee;">Bezorging (${deliveryMethod})</td>
                     <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">€${Number(deliveryMethodPrice).toFixed(2)}</td>
                   </tr>` : ''}
+                  ${(discountAmount && Number(discountAmount) > 0) ? `
+                  <tr style="background-color: #f0fdf4; color: #166534;">
+                    <td style="padding: 8px; border-bottom: 1px solid #bbf7d0; font-weight: 500;">
+                      🏷️ Korting via code <strong>${discountCode}</strong> (-${discountValue}%):
+                    </td>
+                    <td style="padding: 8px; border-bottom: 1px solid #bbf7d0; text-align: right; font-weight: bold; color: #16a34a;">
+                      -€${Number(discountAmount).toFixed(2)}
+                    </td>
+                  </tr>
+                  ` : ''}
                   <tr>
                     <td style="padding: 8px; font-weight: bold; text-align: right;">Totaal</td>
                     <td style="padding: 8px; font-weight: bold; text-align: right;">€${grandInvoiceTotal.toFixed(2)}</td>
@@ -791,7 +827,9 @@ ${JSON.stringify(toTranslate, null, 2)}
           await resend.emails.send({
             from: 'Office Butler <info@office-butler.com>',
             to: ['info@office-butler.com'],
-            subject: `Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
+            subject: discountCode 
+              ? `Nieuwe Bestelling & Factuur [Korting: ${discountCode}] - ${effectiveCompanyName}`
+              : `Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
             html: emailHtml
           });
           emailSent = true;
