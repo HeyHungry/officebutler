@@ -103,6 +103,7 @@ export function EmployeeOrdering() {
 
   // Packaging option state
   const [selectedPackagingOption, setSelectedPackagingOption] = useState<PackagingOption | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>('');
 
   const handleApplyCoupon = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -805,9 +806,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
     };
   });
   categoryList.sort((a, b) => a.minSortOrder - b.minSortOrder);
-
   const totalSelectedItems = Object.keys(selections).length;
-  const [activeCategory, setActiveCategory] = useState<string>('');
 
   const scrollToCategory = (catTitle: string) => {
     setActiveCategory(catTitle);
@@ -839,33 +838,6 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
       });
     }
   };
-
-  useEffect(() => {
-    if (categoryList.length === 0) return;
-    if (!activeCategory && categoryList[0]) {
-      setActiveCategory(categoryList[0].title);
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const catTitle = entry.target.getAttribute('data-category-title');
-            if (catTitle) {
-              setActiveCategory(catTitle);
-            }
-          }
-        });
-      },
-      { rootMargin: '-20% 0px -65% 0px', threshold: 0 }
-    );
-
-    categoryList.forEach((cat) => {
-      const el = document.getElementById(`emp-cat-${encodeURIComponent(cat.title)}`);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [categoryList]);
 
   return (
     <div className="min-h-screen bg-[#f4f6f9] pt-28 pb-20 font-serif">

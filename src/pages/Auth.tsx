@@ -28,14 +28,20 @@ export function Auth() {
     setError('');
     setIsLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
+
     if (supabase) {
       const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+        email: cleanEmail,
+        password: password,
       });
 
       if (authError) {
-        setError('Ongeldige inloggegevens of account bestaat niet.');
+        if (authError.message?.toLowerCase().includes('email not confirmed')) {
+          setError('Dit account is nog niet bevestigd. Neem contact op met de beheerder.');
+        } else {
+          setError('Ongeldige inloggegevens of account bestaat niet. Controleer uw e-mailadres en wachtwoord.');
+        }
       } else {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {

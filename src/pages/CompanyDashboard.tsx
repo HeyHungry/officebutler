@@ -9,7 +9,7 @@ import {
 } from '../lib/orderDeadlines';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Building, MapPin, Users, Package, Save, CheckCircle2, Plus, Trash2, Mail, Lock, UserPlus, Eye, EyeOff, ShoppingBag, ListOrdered, Truck, Loader2, Edit2, XCircle, AlertTriangle, Calendar, Clock, X, Phone } from 'lucide-react';
+import { Building, MapPin, Users, Package, Save, CheckCircle2, Plus, Trash2, Mail, Lock, UserPlus, Eye, EyeOff, ShoppingBag, ListOrdered, Truck, Loader2, Edit2, XCircle, AlertTriangle, Calendar, Clock, X, Phone, KeyRound } from 'lucide-react';
 
 type Tab = 'settings' | 'addresses' | 'employees' | 'assortment' | 'orders';
 
@@ -65,6 +65,11 @@ export function CompanyDashboard() {
   const [newEmpPassword, setNewEmpPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [resettingEmployee, setResettingEmployee] = useState<any | null>(null);
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordMessage, setResetPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
 
@@ -650,10 +655,11 @@ export function CompanyDashboard() {
     setError('');
 
     try {
+      const cleanEmail = newEmpEmail.trim().toLowerCase();
       const res = await fetch('/api/create-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: newEmpEmail, password: newEmpPassword, companyId: company.id })
+        body: JSON.stringify({ email: cleanEmail, password: newEmpPassword, companyId: company.id })
       });
       
       const data = await res.json();
@@ -670,6 +676,41 @@ export function CompanyDashboard() {
     }
 
     setIsSaving(false);
+  };
+
+  const handleResetEmployeePassword = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!resettingEmployee || !company) return;
+    setIsResettingPassword(true);
+    setResetPasswordMessage(null);
+
+    try {
+      const res = await fetch('/api/reset-employee-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: resettingEmployee.id,
+          newPassword: newResetPassword,
+          companyId: company.id
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Er is een fout opgetreden bij het herstellen van het wachtwoord');
+      }
+
+      setResetPasswordMessage({ type: 'success', text: `Wachtwoord voor ${resettingEmployee.first_name || 'medewerker'} is succesvol gewijzigd!` });
+      setTimeout(() => {
+        setResettingEmployee(null);
+        setNewResetPassword('');
+        setResetPasswordMessage(null);
+      }, 1800);
+    } catch (err: any) {
+      setResetPasswordMessage({ type: 'error', text: err.message });
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   const toggleProduct = (product: string) => {
@@ -989,9 +1030,9 @@ export function CompanyDashboard() {
                   ) : (
                     <ul className="divide-y divide-gray-100">
                       {employees.map((emp, idx) => (
-                        <li key={`dash-emp-${emp.id || idx}-${idx}`} className="p-4 px-6 flex items-center justify-between">
+                        <li key={`dash-emp-${emp.id || idx}-${idx}`} className="p-4 px-6 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-[#5170ff] text-white flex items-center justify-center font-bold">
+                            <div className="w-10 h-10 rounded-full bg-[#5170ff] text-white flex items-center justify-center font-bold shrink-0">
                               {emp.first_name ? emp.first_name.charAt(0).toUpperCase() : <Users size={16} />}
                             </div>
                             <div>
@@ -999,12 +1040,117 @@ export function CompanyDashboard() {
                               <p className="text-xs text-gray-400">Account ID: {emp.id.substring(0, 8)}...</p>
                             </div>
                           </div>
-                          <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">Werknemer</span>
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setResettingEmployee(emp);
+                                setNewResetPassword('');
+                                setShowResetPassword(false);
+                                setResetPasswordMessage(null);
+                              }}
+                              className="px-3 py-1.5 text-xs font-semibold text-[#5170ff] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 inline-flex items-center gap-1.5"
+                            >
+                              <KeyRound size={13} />
+                              Wachtwoord Wijzigen
+                            </button>
+                            <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">Werknemer</span>
+                          </div>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
+
+                {/* Modal voor wachtwoord herstellen / wijzigen */}
+                {resettingEmployee && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResettingEmployee(null);
+                          setNewResetPassword('');
+                          setResetPasswordMessage(null);
+                        }}
+                        className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg"
+                      >
+                        <X size={20} />
+                      </button>
+
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 text-[#5170ff] flex items-center justify-center shrink-0">
+                          <KeyRound size={20} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-bold text-ob-text">Wachtwoord Wijzigen</h3>
+                          <p className="text-xs text-gray-500">{resettingEmployee.first_name || 'Medewerker'}</p>
+                        </div>
+                      </div>
+
+                      {resetPasswordMessage && (
+                        <div className={`p-3 rounded-lg text-sm mb-4 font-medium ${
+                          resetPasswordMessage.type === 'success'
+                            ? 'bg-green-50 text-green-800 border border-green-200'
+                            : 'bg-red-50 text-red-800 border border-red-200'
+                        }`}>
+                          {resetPasswordMessage.text}
+                        </div>
+                      )}
+
+                      <form onSubmit={handleResetEmployeePassword} className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-ob-text mb-1.5">Nieuw Wachtwoord</label>
+                          <div className="relative">
+                            <input
+                              type={showResetPassword ? "text" : "password"}
+                              required
+                              minLength={6}
+                              value={newResetPassword}
+                              onChange={(e) => setNewResetPassword(e.target.value)}
+                              placeholder="Minimaal 6 tekens"
+                              className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-[#5170ff] focus:ring-1 focus:ring-[#5170ff]"
+                            />
+                            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                            <button
+                              type="button"
+                              onClick={() => setShowResetPassword(!showResetPassword)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                            >
+                              {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResettingEmployee(null);
+                              setNewResetPassword('');
+                              setResetPasswordMessage(null);
+                            }}
+                            className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50"
+                          >
+                            Annuleren
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isResettingPassword || !newResetPassword}
+                            className="px-5 py-2 bg-[#5170ff] text-white rounded-lg text-sm font-semibold hover:bg-[#4060ee] disabled:opacity-50 inline-flex items-center gap-2"
+                          >
+                            {isResettingPassword ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                            Opslaan & Activeren
+                          </button>
+                        </div>
+                      </form>
+                    </motion.div>
+                  </div>
+                )}
               </div>
             )}
 
