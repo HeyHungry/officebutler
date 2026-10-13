@@ -192,6 +192,58 @@ ${JSON.stringify(toTranslate, null, 2)}
   });
 
   
+  // Reset Employee Password Route (allows office managers to change/recover employee passwords)
+  app.post("/api/reset-employee-password", async (req, res) => {
+    try {
+      const { employeeId, newPassword, companyId } = req.body;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+
+      if (!employeeId || !newPassword || !companyId) {
+        return res.status(400).json({ error: "Medewerker ID, nieuw wachtwoord en bedrijfs-ID zijn verplicht." });
+      }
+
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: "Wachtwoord moet minimaal 6 tekens bevatten." });
+      }
+
+      if (!serviceKey || !supabaseUrl) {
+        console.error("Missing SUPABASE_SERVICE_ROLE_KEY or VITE_SUPABASE_URL");
+        return res.status(500).json({ error: "Server configuratie ontbreekt (Service Role Key)" });
+      }
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
+
+      // Veiligheidscheck: Controleer of deze medewerker daadwerkelijk bij het betreffende bedrijf hoort
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from('ob_user_profiles')
+        .select('*')
+        .eq('id', employeeId)
+        .eq('company_id', companyId)
+        .single();
+
+      if (profileError || !profile) {
+        return res.status(403).json({ error: "Medewerker niet gevonden of hoort niet bij dit kantoor." });
+      }
+
+      // Update wachtwoord direct via Supabase Auth Admin
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(employeeId, {
+        password: newPassword
+      });
+
+      if (updateError) {
+        return res.status(400).json({ error: updateError.message });
+      }
+
+      res.status(200).json({ success: true, message: "Wachtwoord succesvol gewijzigd!" });
+    } catch (err: any) {
+      console.error("Error resetting employee password:", err);
+      res.status(500).json({ error: err.message || "Interne serverfout bij resetten van wachtwoord" });
+    }
+  });
+
   // Helper to parse Dutch address strings into BiteBerry address components
   function parseDutchAddress(rawAddress: string, label?: string, notes?: string) {
     const text = (rawAddress || "").trim();
