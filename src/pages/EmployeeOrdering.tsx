@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent, MouseEvent } from 'react';
-import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption } from '../lib/supabase';
+import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption, isItemVisibleForBrand, CURRENT_BRAND } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
@@ -252,11 +252,15 @@ export function EmployeeOrdering() {
   const rawPackagingOptions: PackagingOption[] = pageContent?.packaging_options || [];
   const availablePackagingOptions = rawPackagingOptions.filter((opt: PackagingOption) => {
     if (!opt.is_active) return false;
-    if (opt.available_for_all_companies) return true;
-    if (opt.allowed_company_ids && companyId && (
+    const hasCompanyException = opt.allowed_company_ids && companyId && (
       opt.allowed_company_ids.includes(companyId) || 
       (companyName && opt.allowed_company_ids.includes(companyName))
-    )) return true;
+    );
+    if (!hasCompanyException && !isItemVisibleForBrand(opt.allowed_brands)) {
+      return false;
+    }
+    if (opt.available_for_all_companies) return true;
+    if (hasCompanyException) return true;
     return false;
   });
 
@@ -363,51 +367,99 @@ export function EmployeeOrdering() {
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
       if (priceData) {
         const pMap: PriceMap = {};
+        const allPrices = priceData;
         
-        // 1. Default prices (no company_id)
-        priceData.filter((p: any) => !p.company_id).forEach((p: any) => {
-          const cleanName = (p.product_name || '').trim();
-          const price = parseFloat(p.price);
-          pMap[`${cleanName}_${p.portion_size}`] = price;
-          pMap[`${p.product_name}_${p.portion_size}`] = price;
-        });
+        // 1. Universal standard prices (no company_id, brand is null or 'office_butler')
+        allPrices
+          .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+          .forEach((p: any) => {
+            const cleanName = (p.product_name || '').trim();
+            const price = parseFloat(p.price);
+            pMap[`${cleanName}_${p.portion_size}`] = price;
+            pMap[`${p.product_name}_${p.portion_size}`] = price;
+          });
 
-        // 2. Company specific override
-        priceData.filter((p: any) => p.company_id === compId).forEach((p: any) => {
-          const cleanName = (p.product_name || '').trim();
-          const price = parseFloat(p.price);
-          pMap[`${cleanName}_${p.portion_size}`] = price;
-          pMap[`${p.product_name}_${p.portion_size}`] = price;
-        });
+        // 2. Concept / Brand specific standard price override (no company_id, brand === CURRENT_BRAND)
+        if (CURRENT_BRAND !== 'office_butler') {
+          allPrices
+            .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+            .forEach((p: any) => {
+              const cleanName = (p.product_name || '').trim();
+              const price = parseFloat(p.price);
+              pMap[`${cleanName}_${p.portion_size}`] = price;
+              pMap[`${p.product_name}_${p.portion_size}`] = price;
+            });
+        }
 
-        // Also cross-link with dbProducts in case product.name has whitespace or different casing
+        // 3. Company specific override (highest priority: specific deals for this company)
+        allPrices
+          .filter((p: any) => p.company_id === compId)
+          .forEach((p: any) => {
+            const cleanName = (p.product_name || '').trim();
+            const price = parseFloat(p.price);
+            pMap[`${cleanName}_${p.portion_size}`] = price;
+            pMap[`${p.product_name}_${p.portion_size}`] = price;
+          });
+
+        // Cross-link with dbProducts in case product.name has whitespace or different casing
         if (prods) {
           prods.forEach((prodItem: any) => {
             const prodName = prodItem.name || '';
             const cleanProdName = prodName.trim();
-            priceData.forEach((p: any) => {
-              const pClean = (p.product_name || '').trim();
-              if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
-                const price = parseFloat(p.price);
-                pMap[`${prodName}_${p.portion_size}`] = price;
-                pMap[`${cleanProdName}_${p.portion_size}`] = price;
-              }
-            });
+            // A. Base default
+            allPrices
+              .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+              .forEach((p: any) => {
+                const pClean = (p.product_name || '').trim();
+                if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                  const price = parseFloat(p.price);
+                  pMap[`${prodName}_${p.portion_size}`] = price;
+                  pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                }
+              });
+
+            // B. Brand override
+            if (CURRENT_BRAND !== 'office_butler') {
+              allPrices
+                .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                .forEach((p: any) => {
+                  const pClean = (p.product_name || '').trim();
+                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                    const price = parseFloat(p.price);
+                    pMap[`${prodName}_${p.portion_size}`] = price;
+                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                  }
+                });
+            }
+
+            // C. Company deal override
+            allPrices
+              .filter((p: any) => p.company_id === compId)
+              .forEach((p: any) => {
+                const pClean = (p.product_name || '').trim();
+                if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                  const price = parseFloat(p.price);
+                  pMap[`${prodName}_${p.portion_size}`] = price;
+                  pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                }
+              });
           });
         }
         
         setPrices(pMap);
       }
 
-            // Fetch allowed delivery methods
+      // Fetch allowed delivery methods
       const { data: cdmData, error: cdmError } = await supabase.from('ob_company_delivery_methods').select('delivery_method_id').eq('company_id', compId);
       if (cdmError) console.error('Error fetching company delivery methods:', cdmError);
       
-      const enrichDeliveryList = (list: any[]) => (list || []).map((m: any) => ({
-        ...m,
-        name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
-        description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
-      }));
+      const enrichDeliveryList = (list: any[]) => (list || [])
+        .filter((m: any) => isItemVisibleForBrand(m.allowed_brands))
+        .map((m: any) => ({
+          ...m,
+          name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
+          description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
+        }));
 
       if (cdmData && cdmData.length > 0) {
         const allowedIds = cdmData.map(a => a.delivery_method_id);
@@ -416,7 +468,9 @@ export function EmployeeOrdering() {
         if (dmData && dmData.length > 0) {
           const enriched = enrichDeliveryList(dmData);
           setDeliveryMethods(enriched);
-          setSelectedDeliveryMethod(enriched[0]);
+          if (enriched.length > 0) {
+            setSelectedDeliveryMethod(enriched[0]);
+          }
         }
       } else {
         // Fallback to defaults if none selected for company
@@ -425,7 +479,9 @@ export function EmployeeOrdering() {
         if (dmData && dmData.length > 0) {
           const enriched = enrichDeliveryList(dmData);
           setDeliveryMethods(enriched);
-          setSelectedDeliveryMethod(enriched[0]);
+          if (enriched.length > 0) {
+            setSelectedDeliveryMethod(enriched[0]);
+          }
         }
       }
 
@@ -763,8 +819,12 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
           if (!categoryRestrictions[cat].includes(companyId)) return false;
         }
 
-        if (p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0) {
+        const hasCompanyException = p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0;
+        if (hasCompanyException) {
           if (!p.allowed_company_ids.includes(companyId)) return false;
+        } else {
+          // If not restricted to specific companies, enforce concept / brand visibility
+          if (!isItemVisibleForBrand(p.allowed_brands)) return false;
         }
         return true;
       })

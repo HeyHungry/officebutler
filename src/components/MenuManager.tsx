@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, CategoryVariantRulesMap, CategoryVariantRule } from '../lib/supabase';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical, ChevronUp, ChevronDown, ChefHat, Sparkles, Printer, Search, Eye, EyeOff, RotateCcw } from 'lucide-react';
+import { supabase, CategoryVariantRulesMap, CategoryVariantRule, AVAILABLE_BRANDS, BrandId } from '../lib/supabase';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical, ChevronUp, ChevronDown, ChefHat, Sparkles, Printer, Search, Eye, EyeOff, RotateCcw, Globe } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -23,6 +23,7 @@ export type ObProduct = {
   brand?: string;
   hide_image?: boolean;
   allowed_company_ids?: string[];
+  allowed_brands?: string[];
   kitchen_name?: string;
   kitchen_ingredients?: string;
   kitchen_prep_instructions?: string;
@@ -34,6 +35,7 @@ export type EditFormState = Partial<ObProduct> & {
   additional_categories_str?: string;
   hide_image?: boolean;
   allowed_company_ids?: string[];
+  allowed_brands?: string[];
   kitchen_name?: string;
   kitchen_ingredients?: string;
   kitchen_prep_instructions?: string;
@@ -217,6 +219,11 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete, ha
             {p.allowed_company_ids && p.allowed_company_ids.length > 0 && (
               <span className="text-[10px] text-indigo-800 bg-indigo-50 px-1.5 py-0.5 rounded w-fit mt-0.5 border border-indigo-200 font-medium flex items-center gap-1">
                 🔒 Alleen voor: {p.allowed_company_ids.map((id: string) => companyNamesMap?.[id] || id).join(', ')}
+              </span>
+            )}
+            {p.allowed_brands && p.allowed_brands.length > 0 && (
+              <span className="text-[10px] text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded w-fit mt-0.5 border border-teal-200 font-medium flex items-center gap-1">
+                🌐 Alleen op: {p.allowed_brands.map((b: string) => AVAILABLE_BRANDS.find(ab => ab.id === b)?.name || b).join(', ')}
               </span>
             )}
             {p.image_url ? (
@@ -569,6 +576,7 @@ export function MenuManager() {
     setEditForm({
       ...product,
       allowed_company_ids: product.allowed_company_ids ? [...product.allowed_company_ids] : [],
+      allowed_brands: product.allowed_brands ? [...product.allowed_brands] : [],
       kitchen_name: product.kitchen_name || '',
       kitchen_ingredients: product.kitchen_ingredients || '',
       kitchen_prep_instructions: product.kitchen_prep_instructions || ''
@@ -783,6 +791,7 @@ export function MenuManager() {
     const brandToSave = editForm.brand?.trim() || null;
     const hideImageToSave = Boolean(editForm.hide_image);
     const allowedCompanyIdsToSave = editForm.allowed_company_ids || [];
+    const allowedBrandsToSave = editForm.allowed_brands && editForm.allowed_brands.length > 0 ? editForm.allowed_brands : null;
     const kitchenNameToSave = editForm.kitchen_name?.trim() || '';
     const kitchenIngredientsToSave = editForm.kitchen_ingredients?.trim() || '';
     const kitchenPrepToSave = editForm.kitchen_prep_instructions?.trim() || '';
@@ -804,17 +813,19 @@ export function MenuManager() {
           sauces: saucesToSave,
           sort_order: products.length,
           hide_image: hideImageToSave,
-          allowed_company_ids: allowedCompanyIdsToSave
+          allowed_company_ids: allowedCompanyIdsToSave,
+          allowed_brands: allowedBrandsToSave
         };
         if (brandToSave) insertPayload.brand = brandToSave;
 
         let { data, error } = await supabase.from('ob_products').insert(insertPayload).select();
 
         // If columns do not exist in ob_products table yet, retry without them
-        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('extra_info_en'))) {
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('allowed_brands') || error.message?.toLowerCase().includes('extra_info_en'))) {
           if (error.message?.toLowerCase().includes('brand')) delete insertPayload.brand;
           if (error.message?.toLowerCase().includes('hide_image')) delete insertPayload.hide_image;
           if (error.message?.toLowerCase().includes('allowed_company_ids')) delete insertPayload.allowed_company_ids;
+          if (error.message?.toLowerCase().includes('allowed_brands')) delete insertPayload.allowed_brands;
           if (error.message?.toLowerCase().includes('extra_info_en')) delete insertPayload.extra_info_en;
           const retry = await supabase.from('ob_products').insert(insertPayload).select();
           data = retry.data;
@@ -829,6 +840,7 @@ export function MenuManager() {
             extra_info_en: extraInfoEnToSave,
             hide_image: hideImageToSave,
             allowed_company_ids: allowedCompanyIdsToSave,
+            allowed_brands: allowedBrandsToSave || [],
             kitchen_name: kitchenNameToSave,
             kitchen_ingredients: kitchenIngredientsToSave,
             kitchen_prep_instructions: kitchenPrepToSave
@@ -851,17 +863,19 @@ export function MenuManager() {
           additional_categories: editForm.additional_categories || [],
           sauces: saucesToSave,
           hide_image: hideImageToSave,
-          allowed_company_ids: allowedCompanyIdsToSave
+          allowed_company_ids: allowedCompanyIdsToSave,
+          allowed_brands: allowedBrandsToSave
         };
         if (brandToSave !== undefined) updatePayload.brand = brandToSave;
 
         let { data, error } = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
 
         // If columns do not exist in ob_products table yet, retry without them
-        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('extra_info_en'))) {
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('allowed_brands') || error.message?.toLowerCase().includes('extra_info_en'))) {
           if (error.message?.toLowerCase().includes('brand')) delete updatePayload.brand;
           if (error.message?.toLowerCase().includes('hide_image')) delete updatePayload.hide_image;
           if (error.message?.toLowerCase().includes('allowed_company_ids')) delete updatePayload.allowed_company_ids;
+          if (error.message?.toLowerCase().includes('allowed_brands')) delete updatePayload.allowed_brands;
           if (error.message?.toLowerCase().includes('extra_info_en')) delete updatePayload.extra_info_en;
           const retry = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
           data = retry.data;
@@ -876,6 +890,7 @@ export function MenuManager() {
             extra_info_en: extraInfoEnToSave,
             hide_image: hideImageToSave,
             allowed_company_ids: allowedCompanyIdsToSave,
+            allowed_brands: allowedBrandsToSave || [],
             kitchen_name: kitchenNameToSave,
             kitchen_ingredients: kitchenIngredientsToSave,
             kitchen_prep_instructions: kitchenPrepToSave
@@ -1168,6 +1183,62 @@ export function MenuManager() {
                   ))
                 }
               </select>
+            </div>
+          </div>
+
+          {/* 🌐 Website & Merk Zichtbaarheid (Office Butler, Canal Butler, Snack Butler) */}
+          <div className="bg-teal-50/70 p-2.5 rounded-lg border border-teal-200 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-teal-950 flex items-center gap-1.5">
+                <Globe size={14} className="text-teal-700" />
+                🌐 Zichtbaarheid per website / concept
+              </span>
+              {(editForm.allowed_brands || []).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, allowed_brands: [] })}
+                  className="text-[11px] text-teal-700 hover:text-teal-900 underline font-medium"
+                >
+                  Toon op alle websites
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-teal-800/90">
+              {(editForm.allowed_brands || []).length === 0 ? (
+                <span>🟢 <strong>Standaard:</strong> Zichtbaar op álle websites (Office Butler, Canal Butler & Snack Butler).</span>
+              ) : (
+                <span>🎯 <strong>Exclusief:</strong> Alleen zichtbaar op de hieronder aangevinkte website(s).</span>
+              )}
+            </p>
+            <div className="flex flex-wrap gap-2 pt-0.5">
+              {AVAILABLE_BRANDS.map(brand => {
+                const isSelected = (editForm.allowed_brands || []).includes(brand.id);
+                return (
+                  <label
+                    key={`brand-select-${brand.id}`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
+                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        const current = editForm.allowed_brands || [];
+                        const updated = e.target.checked
+                          ? [...current, brand.id]
+                          : current.filter(b => b !== brand.id);
+                        setEditForm({ ...editForm, allowed_brands: updated });
+                      }}
+                      className="sr-only"
+                    />
+                    <span>{brand.badge}</span>
+                    {isSelected && <Check size={12} className="stroke-[3]" />}
+                  </label>
+                );
+              })}
             </div>
           </div>
 

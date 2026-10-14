@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { supabase, SharedSettings, StoreSettings, ObCompany, ObPortionPrice, formatStoreSchedule, DEFAULT_SECTION_ORDER, SECTION_METADATA, HomepageSectionKey, BrandId, AVAILABLE_BRANDS, fetchBrandPageContent, saveBrandPageContent } from '../lib/supabase';
-import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, Package, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon, ShieldCheck, Eye } from 'lucide-react';
+import { LogIn, X, Lock, Store, Users, DollarSign, Building2, CheckCircle2, ChevronRight, ChevronLeft, ArrowLeft, ShoppingBag, Type, Truck, Package, ArrowUp, ArrowDown, ArrowUpDown, Languages, Plus, Trash2, Search, Edit3, Save, Tag, Clock, Check, Filter, RotateCcw, Printer, FileText, Calendar, Mail, Send, Upload, Image as ImageIcon, ShieldCheck, Eye, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { MenuManager } from './MenuManager';
@@ -81,6 +81,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [variantFullPrices, setVariantFullPrices] = useState<Record<string, number | string>>({});
   const lastLoadedProductRef = useRef<string>('');
   const lastLoadedCompanyRef = useRef<string | null>(null);
+  const lastLoadedBrandRef = useRef<string>('office_butler');
 
   // New Tabs State
   const [activeTab, setActiveTab] = useState<Tab>(() => {
@@ -111,6 +112,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const [orders, setOrders] = useState<any[]>([]);
   const [selectedPriceProduct, setSelectedPriceProduct] = useState(AVAILABLE_PRODUCTS[0]);
   const [selectedPriceCompany, setSelectedPriceCompany] = useState<string | null>(null);
+  const [selectedPriceBrand, setSelectedPriceBrand] = useState<string>('office_butler');
 
   const [impersonating, setImpersonating] = useState<ObCompany | null>(null);
   const [resendingInvoice, setResendingInvoice] = useState<string | null>(null);
@@ -386,7 +388,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     if (dbProducts.length > 0 && selectedPriceProduct) {
       const cleanSelected = selectedPriceProduct.trim().toLowerCase();
       const currentCompanyKey = selectedPriceCompany || null;
-      const productChanged = lastLoadedProductRef.current !== cleanSelected || lastLoadedCompanyRef.current !== currentCompanyKey;
+      const currentBrandKey = selectedPriceCompany ? null : (selectedPriceBrand || 'office_butler');
+      const productChanged = lastLoadedProductRef.current !== cleanSelected || 
+                             lastLoadedCompanyRef.current !== currentCompanyKey ||
+                             lastLoadedBrandRef.current !== currentBrandKey;
 
       const prod = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanSelected);
       if (prod) {
@@ -396,6 +401,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
         if (productChanged || Object.keys(variantFullPrices).length === 0) {
           lastLoadedProductRef.current = cleanSelected;
           lastLoadedCompanyRef.current = currentCompanyKey;
+          lastLoadedBrandRef.current = currentBrandKey || 'office_butler';
 
           const initialFullPrices: Record<string, number | string> = {};
           const portionsToUse = prod.portions && prod.portions.length > 0 ? prod.portions : PORTIONS;
@@ -412,12 +418,25 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
               if (compP && compP.price > 0) {
                 basePrice = Number(compP.price);
               } else {
-                const defP = productPrices.find(p => 
-                  (p.product_name || '').trim().toLowerCase() === cleanSelected && 
-                  !p.company_id && 
+                // If a specific brand is selected, look for that brand's price first
+                const brandP = (currentBrandKey && currentBrandKey !== 'office_butler') ? productPrices.find(p =>
+                  (p.product_name || '').trim().toLowerCase() === cleanSelected &&
+                  !p.company_id &&
+                  p.brand === currentBrandKey &&
                   Number(p.portion_size) === Number(size)
-                );
-                if (defP && defP.price > 0) basePrice = Number(defP.price);
+                ) : null;
+                if (brandP && brandP.price > 0) {
+                  basePrice = Number(brandP.price);
+                } else {
+                  // Fallback to standard Office Butler default price
+                  const defP = productPrices.find(p => 
+                    (p.product_name || '').trim().toLowerCase() === cleanSelected && 
+                    !p.company_id && 
+                    (!p.brand || p.brand === 'office_butler') &&
+                    Number(p.portion_size) === Number(size)
+                  );
+                  if (defP && defP.price > 0) basePrice = Number(defP.price);
+                }
               }
 
               const surchargeVal = surcharges[key] !== undefined ? surcharges[key] : (surcharges[v] !== undefined ? surcharges[v] : undefined);
@@ -435,7 +454,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
         setVariantFullPrices({});
       }
     }
-  }, [dbProducts, selectedPriceProduct, selectedPriceCompany, productPrices]);
+  }, [dbProducts, selectedPriceProduct, selectedPriceCompany, selectedPriceBrand, productPrices]);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -866,7 +885,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
         const selectedProdObj = dbProducts.find(p => (p.name || '').trim().toLowerCase() === cleanProductName.toLowerCase());
         const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
 
-        // 1. Delete existing prices for this product and company deal to avoid duplicates
+        // 1. Delete existing prices for this product and company deal or brand to avoid duplicates
         const productNamesToDelete = [cleanProductName];
         if (selectedProdObj?.name && selectedProdObj.name !== cleanProductName) {
           productNamesToDelete.push(selectedProdObj.name);
@@ -881,19 +900,28 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           delQuery = delQuery.eq('company_id', selectedPriceCompany);
         } else {
           delQuery = delQuery.is('company_id', null);
+          if (selectedPriceBrand && selectedPriceBrand !== 'office_butler') {
+            delQuery = delQuery.eq('brand', selectedPriceBrand);
+          } else {
+            delQuery = delQuery.or('brand.is.null,brand.eq.office_butler');
+          }
         }
         await delQuery;
 
         // 2. Insert new prices for all portions that have a price > 0
+        const targetBrand = selectedPriceCompany ? null : (selectedPriceBrand === 'office_butler' ? null : selectedPriceBrand);
+
         const rowsToInsert = portionsToUse
           .map((portion: number) => {
             const p = productPrices.find(
               x => (x.product_name || '').trim().toLowerCase() === cleanProductName.toLowerCase() &&
                    (x.company_id || null) === (selectedPriceCompany || null) &&
+                   (selectedPriceCompany ? true : (targetBrand ? x.brand === targetBrand : (!x.brand || x.brand === 'office_butler'))) &&
                    Number(x.portion_size) === Number(portion)
             );
             return p && Number(p.price) > 0 ? {
               company_id: selectedPriceCompany || null,
+              brand: targetBrand,
               product_name: cleanProductName,
               portion_size: portion,
               price: Number(p.price)
@@ -922,6 +950,7 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                   const defP = productPrices.find(p => 
                     (p.product_name || '').trim().toLowerCase() === cleanProductName.toLowerCase() && 
                     !p.company_id && 
+                    (!p.brand || p.brand === 'office_butler') &&
                     Number(p.portion_size) === Number(portion)
                   );
                   if (defP && defP.price > 0) savedBasePrice = Number(defP.price);
@@ -978,19 +1007,23 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   const handleProductPriceChange = (portion: number, value: string) => {
     const numValue = parseFloat(value) || 0;
     const cleanCurrentProd = selectedPriceProduct.trim().toLowerCase();
+    const targetBrand = selectedPriceCompany ? null : (selectedPriceBrand === 'office_butler' ? null : selectedPriceBrand);
+
     setProductPrices(prev => {
       const existsIndex = prev.findIndex(p => 
         (p.product_name || '').trim().toLowerCase() === cleanCurrentProd && 
         (p.company_id || null) === (selectedPriceCompany || null) && 
+        (selectedPriceCompany ? true : (targetBrand ? p.brand === targetBrand : (!p.brand || p.brand === 'office_butler'))) &&
         Number(p.portion_size) === Number(portion)
       );
       if (existsIndex >= 0) {
         const next = [...prev];
-        next[existsIndex] = { ...next[existsIndex], price: numValue };
+        next[existsIndex] = { ...next[existsIndex], price: numValue, brand: targetBrand };
         return next;
       } else {
         return [...prev, { 
           company_id: selectedPriceCompany, 
+          brand: targetBrand,
           product_name: selectedPriceProduct.trim(), 
           portion_size: portion, 
           price: numValue 
@@ -1001,12 +1034,26 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   
   const getDisplayPrice = (portion: number) => {
     const cleanCurrentProd = selectedPriceProduct.trim().toLowerCase();
+    const targetBrand = selectedPriceCompany ? null : (selectedPriceBrand === 'office_butler' ? null : selectedPriceBrand);
+
     const p = productPrices.find(p => 
       (p.product_name || '').trim().toLowerCase() === cleanCurrentProd && 
       (p.company_id || null) === (selectedPriceCompany || null) && 
+      (selectedPriceCompany ? true : (targetBrand ? p.brand === targetBrand : (!p.brand || p.brand === 'office_butler'))) &&
       Number(p.portion_size) === Number(portion)
     );
     return p && p.price > 0 ? p.price : '';
+  };
+
+  const getStandardFallbackPrice = (portion: number) => {
+    const cleanCurrentProd = selectedPriceProduct.trim().toLowerCase();
+    const def = productPrices.find(p => 
+      (p.product_name || '').trim().toLowerCase() === cleanCurrentProd &&
+      !p.company_id &&
+      (!p.brand || p.brand === 'office_butler') &&
+      Number(p.portion_size) === Number(portion)
+    );
+    return def && def.price > 0 ? def.price : null;
   };
 
   return (
@@ -4357,13 +4404,13 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                         </div>
                         {saveSuccess && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-6 text-sm flex items-center gap-2"><span>Prijzen succesvol opgeslagen!</span></div>}
                         
-                        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                        <div className="flex flex-col md:flex-row gap-4 mb-4">
                            <div className="flex-1">
                              <label className="block text-sm font-semibold text-gray-700 mb-2">Product</label>
                              <select 
                                value={selectedPriceProduct}
                                onChange={(e) => setSelectedPriceProduct(e.target.value)}
-                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
+                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33] bg-white text-sm"
                              >
                                {dbProducts.length > 0 ? (
                                  Array.from(new Set(dbProducts.map(p => (p.name || '').trim()))).filter(Boolean).map((prodName, idx) => (
@@ -4375,11 +4422,29 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                              </select>
                            </div>
                            <div className="flex-1">
-                             <label className="block text-sm font-semibold text-gray-700 mb-2">Bedrijfsdeal (Optioneel)</label>
+                             <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                               <Globe size={15} className="text-teal-700" />
+                               Website / Concept
+                             </label>
+                             <select 
+                               value={selectedPriceBrand}
+                               disabled={Boolean(selectedPriceCompany)}
+                               onChange={(e) => setSelectedPriceBrand(e.target.value)}
+                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33] disabled:bg-gray-100 disabled:text-gray-400 bg-white text-sm"
+                             >
+                               {AVAILABLE_BRANDS.map(brand => (
+                                 <option key={`price-brand-${brand.id}`} value={brand.id}>
+                                   {brand.badge} {brand.id === 'office_butler' ? '(Standaard Basis)' : ''}
+                                 </option>
+                               ))}
+                             </select>
+                           </div>
+                           <div className="flex-1">
+                             <label className="block text-sm font-semibold text-gray-700 mb-2">Bedrijfsdeal (Uitzondering)</label>
                              <select 
                                value={selectedPriceCompany || ''}
                                onChange={(e) => setSelectedPriceCompany(e.target.value === '' ? null : e.target.value)}
-                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33]"
+                               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33] bg-white text-sm"
                              >
                                <option value="">Standaard (Geen deal)</option>
                                {customers.map((c, idx) => (
@@ -4387,6 +4452,23 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                ))}
                              </select>
                            </div>
+                        </div>
+
+                        {/* Concept / Deal Status Banner */}
+                        <div className={`p-3 rounded-lg text-xs mb-6 border flex items-center justify-between ${
+                          selectedPriceCompany 
+                            ? 'bg-amber-50 border-amber-200 text-amber-900' 
+                            : selectedPriceBrand !== 'office_butler'
+                              ? 'bg-teal-50 border-teal-200 text-teal-900'
+                              : 'bg-blue-50 border-blue-200 text-blue-900'
+                        }`}>
+                          {selectedPriceCompany ? (
+                            <span>🎯 <strong>Exclusieve deal:</strong> Deze prijzen gelden als uitzondering exclusief voor <strong>{customers.find(c => c.id === selectedPriceCompany)?.name || 'dit bedrijf'}</strong>.</span>
+                          ) : selectedPriceBrand !== 'office_butler' ? (
+                            <span>🌐 <strong>{AVAILABLE_BRANDS.find(b => b.id === selectedPriceBrand)?.name || selectedPriceBrand} prijzen:</strong> Vul hier de specifieke standaardprijzen in voor dit concept. Als je een veld leeg laat, geldt automatisch de standaard Office Butler prijs!</span>
+                          ) : (
+                            <span>🟢 <strong>Office Butler (Universele standaard):</strong> Dit zijn de hoofdprijzen. Deze gelden voor Office Butler en als automatische fallback voor alle andere concepten.</span>
+                          )}
                         </div>
 
                         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
@@ -4403,25 +4485,37 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                                 const portionsToUse = selectedProdObj?.portions && selectedProdObj.portions.length > 0 ? selectedProdObj.portions : PORTIONS;
                                 return (
                                   <tbody className="divide-y divide-gray-100">
-                                    {portionsToUse.map((portion: number, portionIdx: number) => (
-                                      <tr key={`portion-row-${portion}-${portionIdx}`} className="hover:bg-gray-50/50 transition-colors">
-                                  <td className="px-6 py-4 font-medium text-gray-900">{portion} stuks</td>
-                                  <td className="px-6 py-4 text-right">
-                                    <div className="relative inline-flex items-center justify-end w-32 ml-auto">
-                                      <span className="absolute left-3 text-gray-500">€</span>
-                                      <input 
-                                        type="number" 
-                                        min="0"
-                                        step="0.01"
-                                        value={getDisplayPrice(portion)}
-                                        onChange={(e) => handleProductPriceChange(portion, e.target.value)}
-                                        className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33] focus:ring-1 focus:ring-[#151f33] text-right"
-                                      />
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
+                                    {portionsToUse.map((portion: number, portionIdx: number) => {
+                                      const displayVal = getDisplayPrice(portion);
+                                      const fallbackVal = getStandardFallbackPrice(portion);
+                                      return (
+                                        <tr key={`portion-row-${portion}-${portionIdx}`} className="hover:bg-gray-50/50 transition-colors">
+                                          <td className="px-6 py-4 font-medium text-gray-900">
+                                            {portion} stuks
+                                            {displayVal === '' && fallbackVal && selectedPriceBrand !== 'office_butler' && !selectedPriceCompany && (
+                                              <span className="ml-2 text-[11px] text-teal-700 font-normal bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                                                Standaard: €{Number(fallbackVal).toFixed(2)}
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="px-6 py-4 text-right">
+                                            <div className="relative inline-flex items-center justify-end w-36 ml-auto">
+                                              <span className="absolute left-3 text-gray-500">€</span>
+                                              <input 
+                                                type="number" 
+                                                min="0"
+                                                step="0.01"
+                                                value={displayVal}
+                                                placeholder={displayVal === '' && fallbackVal ? `${Number(fallbackVal).toFixed(2)}` : '0.00'}
+                                                onChange={(e) => handleProductPriceChange(portion, e.target.value)}
+                                                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-[#151f33] focus:ring-1 focus:ring-[#151f33] text-right"
+                                              />
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
                                 );
                               })()}
                           </table>

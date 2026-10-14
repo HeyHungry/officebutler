@@ -1,5 +1,5 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
-import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption } from '../lib/supabase';
+import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption, isItemVisibleForBrand, CURRENT_BRAND } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
@@ -129,24 +129,58 @@ export function GuestOrdering() {
           }
           if (pricesRes.data) {
             const pMap: Record<string, number> = {};
-            pricesRes.data.forEach((p: any) => {
-              const cleanName = (p.product_name || '').trim();
-              const price = parseFloat(p.price);
-              pMap[`${cleanName}_${p.portion_size}`] = price;
-              pMap[`${p.product_name}_${p.portion_size}`] = price;
-            });
+            const allPriceRows = pricesRes.data;
+
+            // 1. Universal standard prices (no company_id, brand is null or 'office_butler')
+            allPriceRows
+              .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+              .forEach((p: any) => {
+                const cleanName = (p.product_name || '').trim();
+                const price = parseFloat(p.price);
+                pMap[`${cleanName}_${p.portion_size}`] = price;
+                pMap[`${p.product_name}_${p.portion_size}`] = price;
+              });
+
+            // 2. Concept/Brand specific price override (no company_id, brand === CURRENT_BRAND)
+            if (CURRENT_BRAND !== 'office_butler') {
+              allPriceRows
+                .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                .forEach((p: any) => {
+                  const cleanName = (p.product_name || '').trim();
+                  const price = parseFloat(p.price);
+                  pMap[`${cleanName}_${p.portion_size}`] = price;
+                  pMap[`${p.product_name}_${p.portion_size}`] = price;
+                });
+            }
+
+            // Cross-link with prods
             if (prods) {
               prods.forEach((prodItem: any) => {
                 const prodName = prodItem.name || '';
                 const cleanProdName = prodName.trim();
-                pricesRes.data.forEach((p: any) => {
-                  const pClean = (p.product_name || '').trim();
-                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
-                    const price = parseFloat(p.price);
-                    pMap[`${prodName}_${p.portion_size}`] = price;
-                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
-                  }
-                });
+                allPriceRows
+                  .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+                  .forEach((p: any) => {
+                    const pClean = (p.product_name || '').trim();
+                    if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                      const price = parseFloat(p.price);
+                      pMap[`${prodName}_${p.portion_size}`] = price;
+                      pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                    }
+                  });
+
+                if (CURRENT_BRAND !== 'office_butler') {
+                  allPriceRows
+                    .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                    .forEach((p: any) => {
+                      const pClean = (p.product_name || '').trim();
+                      if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                        const price = parseFloat(p.price);
+                        pMap[`${prodName}_${p.portion_size}`] = price;
+                        pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                      }
+                    });
+                }
               });
             }
             setPrices(pMap);
@@ -159,6 +193,8 @@ export function GuestOrdering() {
           const grouped = prods.reduce((acc, item) => {
             const st = (item.status || '').toLowerCase();
             if (['inactive', 'inactief', 'verborgen'].includes(st)) return acc;
+            // Exclude products not allowed on current website / concept
+            if (!isItemVisibleForBrand(item.allowed_brands)) return acc;
             // Exclude products restricted to specific companies from guest ordering
             if (item.allowed_company_ids && Array.isArray(item.allowed_company_ids) && item.allowed_company_ids.length > 0) {
               return acc;
@@ -196,31 +232,20 @@ export function GuestOrdering() {
 
         }
 
-        if (globalPrices) {
-          const newPrices: Record<string, number> = {};
-          const productNames = new Set<string>();
-          globalPrices.forEach(gp => {
-            const cleanName = (gp.product_name || '').trim();
-            const price = gp.price || gp.default_price;
-            newPrices[`${cleanName}_${gp.portion_size}`] = price;
-            newPrices[`${gp.product_name}_${gp.portion_size}`] = price;
-            productNames.add(cleanName);
-          });
-          if (Object.keys(newPrices).length > 0) {
-            setPrices(prev => ({ ...prev, ...newPrices }));
-          }
-        }
-        
         const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').eq('is_active', true).order('sort_order', { ascending: true });
         if (dmError) console.error('Error fetching delivery methods:', dmError);
         if (dmData && dmData.length > 0) {
-          const enrichedDm = dmData.map((m: any) => ({
-            ...m,
-            name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
-            description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
-          }));
+          const enrichedDm = dmData
+            .filter((m: any) => isItemVisibleForBrand(m.allowed_brands))
+            .map((m: any) => ({
+              ...m,
+              name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
+              description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
+            }));
           setDeliveryMethods(enrichedDm);
-          setSelectedDeliveryMethod(enrichedDm[0]);
+          if (enrichedDm.length > 0) {
+            setSelectedDeliveryMethod(enrichedDm[0]);
+          }
         }
 
 
@@ -631,7 +656,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
 
   const rawPackagingOptions: PackagingOption[] = pageContent?.packaging_options || [];
   const availablePackagingOptions = rawPackagingOptions.filter((opt: PackagingOption) => {
-    return opt.is_active && opt.available_for_guests;
+    return opt.is_active && opt.available_for_guests && isItemVisibleForBrand(opt.allowed_brands);
   });
 
   const packagingPrice = Number(selectedPackagingOption?.price) || 0;

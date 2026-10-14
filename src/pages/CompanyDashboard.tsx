@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { supabase, ObCompany } from '../lib/supabase';
+import { supabase, ObCompany, CURRENT_BRAND } from '../lib/supabase';
 import { 
   getAllOrderActionsStatus, 
   getApplicableTier, 
@@ -520,34 +520,79 @@ export function CompanyDashboard() {
         const { data: priceData } = await supabase.from('ob_product_prices').select('*');
         if (priceData) {
           const pMap: Record<string, number> = {};
+          const allPrices = priceData;
           
-          // 1. Default prices (no company_id)
-          priceData.filter((p: any) => !p.company_id).forEach((p: any) => {
-            const clean = (p.product_name || '').trim();
-            pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
-            pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
-          });
+          // 1. Universal default prices (no company_id, brand is null or 'office_butler')
+          allPrices
+            .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+            .forEach((p: any) => {
+              const clean = (p.product_name || '').trim();
+              pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
+              pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+            });
 
-          // 2. Company specific override
-          priceData.filter((p: any) => p.company_id === comp.id).forEach((p: any) => {
-            const clean = (p.product_name || '').trim();
-            pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
-            pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
-          });
+          // 2. Concept / Brand specific default override
+          if (CURRENT_BRAND !== 'office_butler') {
+            allPrices
+              .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+              .forEach((p: any) => {
+                const clean = (p.product_name || '').trim();
+                pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
+                pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+              });
+          }
 
-          // 3. Cross-link with prodsList
+          // 3. Company specific override (deal for this company)
+          allPrices
+            .filter((p: any) => p.company_id === comp.id)
+            .forEach((p: any) => {
+              const clean = (p.product_name || '').trim();
+              pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
+              pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
+            });
+
+          // 4. Cross-link with prodsList
           if (prodsList.length > 0) {
             prodsList.forEach((prodItem: any) => {
               const prodName = prodItem.name || '';
               const cleanProdName = prodName.trim();
-              priceData.forEach((p: any) => {
-                const pClean = (p.product_name || '').trim();
-                if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
-                  const price = parseFloat(p.price);
-                  pMap[`${prodName}_${p.portion_size}`] = price;
-                  pMap[`${cleanProdName}_${p.portion_size}`] = price;
-                }
-              });
+              // A. Base default
+              allPrices
+                .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+                .forEach((p: any) => {
+                  const pClean = (p.product_name || '').trim();
+                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                    const price = parseFloat(p.price);
+                    pMap[`${prodName}_${p.portion_size}`] = price;
+                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                  }
+                });
+
+              // B. Brand override
+              if (CURRENT_BRAND !== 'office_butler') {
+                allPrices
+                  .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                  .forEach((p: any) => {
+                    const pClean = (p.product_name || '').trim();
+                    if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                      const price = parseFloat(p.price);
+                      pMap[`${prodName}_${p.portion_size}`] = price;
+                      pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                    }
+                  });
+              }
+
+              // C. Company deal override
+              allPrices
+                .filter((p: any) => p.company_id === comp.id)
+                .forEach((p: any) => {
+                  const pClean = (p.product_name || '').trim();
+                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                    const price = parseFloat(p.price);
+                    pMap[`${prodName}_${p.portion_size}`] = price;
+                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                  }
+                });
             });
           }
 

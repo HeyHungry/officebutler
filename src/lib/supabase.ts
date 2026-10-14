@@ -79,6 +79,7 @@ export type PackagingOption = {
   available_for_guests: boolean;
   available_for_all_companies: boolean;
   allowed_company_ids?: string[];
+  allowed_brands?: string[];
   sort_order?: number;
   created_at?: string;
 };
@@ -666,4 +667,15 @@ export async function saveBrandPageContent(brandId: BrandId, content: Record<str
     console.error(`[Supabase] Fout bij saveBrandPageContent voor ${brandId}:`, err);
     throw err;
   }
+}
+
+/**
+ * Controleert of een item (product, bezorgmethode, verpakking) getoond mag worden op een specifiek merk.
+ * Als allowed_brands NULL, leeg of niet gedefinieerd is, is het item standaard op ÁLLE merken zichtbaar.
+ */
+export function isItemVisibleForBrand(allowedBrands?: string[] | null, targetBrand: BrandId = CURRENT_BRAND): boolean {
+  if (!allowedBrands || !Array.isArray(allowedBrands) || allowedBrands.length === 0) {
+    return true;
+  }
+  return allowedBrands.includes(targetBrand);
 }

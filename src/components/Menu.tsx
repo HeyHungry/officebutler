@@ -1,4 +1,4 @@
-import { StoreSettings, sortVariantsByCategory, supabase, CategoryVariantRulesMap } from '../lib/supabase';
+import { StoreSettings, sortVariantsByCategory, supabase, CategoryVariantRulesMap, isItemVisibleForBrand } from '../lib/supabase';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
@@ -89,6 +89,9 @@ export function Menu({ content }: { content?: any }) {
           // You might only want 'actief' and 'meest gekozen' etc. Let's just group them.
           if (['verborgen', 'inactief', 'hidden', 'inactive'].includes((item.status || '').toLowerCase())) return acc;
           
+          // Exclude products not allowed on current website / concept
+          if (!isItemVisibleForBrand(item.allowed_brands)) return acc;
+
           // Exclude products restricted to specific companies from the public menu
           if (item.allowed_company_ids && Array.isArray(item.allowed_company_ids) && item.allowed_company_ids.length > 0) {
             return acc;
