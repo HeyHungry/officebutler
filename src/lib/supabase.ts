@@ -101,6 +101,7 @@ export type StoreSettings = {
       kitchen_name?: string;
       ingredients?: string;
       prep_instructions?: string;
+      variant_kitchen_names?: Record<string, string>;
     }>;
     discount_codes?: DiscountCode[];
     packaging_options?: PackagingOption[];

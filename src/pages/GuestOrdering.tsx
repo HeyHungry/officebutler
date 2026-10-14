@@ -49,8 +49,12 @@ export function GuestOrdering() {
   const [guestEmail, setGuestEmail] = useState('');
   const [guestBillingInfo, setGuestBillingInfo] = useState('');
   const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
   const sessionPref = sessionStorage.getItem('deliveryPref');
-  const initialDeliveryMode = (location.state?.deliveryMode === 'scheduled' || sessionPref === 'scheduled') ? 'scheduled' : 'zsm';
+  const explicitPref = (location.state?.deliveryMode || searchParams.get('deliveryMode') || searchParams.get('mode')) as 'zsm' | 'scheduled' | undefined;
+  const initialDeliveryMode = explicitPref 
+    ? explicitPref 
+    : (sessionPref === 'scheduled' ? 'scheduled' : 'zsm');
 
   const [guestAddress, setGuestAddress] = useState('');
   const [phone, setPhone] = useState('');
@@ -437,7 +441,8 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
               portion_size: sizeNum,
               price: price,
               qty: qty as number,
-              lineTotal: price * (qty as number)
+              lineTotal: price * (qty as number),
+              variant: variant || undefined
             });
             
             for (let i = 0; i < (qty as number); i++) {
@@ -534,6 +539,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
             body: JSON.stringify({
               guestName,
               guestEmail,
+              brand: CURRENT_BRAND,
               guestBillingInfo,
               guestAddress,
               selections,
@@ -583,36 +589,6 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
     
     setIsSubmitting(false);
   };
-
-  if (orderSuccess) {
-    const successTitle = pageContent?.guest_success_title || pageContent?.order_success_title || "Bestelling Ontvangen!";
-    const defaultMsg = `Bedankt voor uw bestelling${guestName ? `, ${guestName}` : ''}. We hebben uw aanvraag goed ontvangen.`;
-    const configuredMsg = pageContent?.guest_success_message 
-      ? pageContent.guest_success_message.replace('{guestName}', guestName || '')
-      : defaultMsg;
-    const delayNotice = pageContent?.delivery_delay_notice || " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later).";
-    const invoiceNotice = pageContent?.guest_invoice_notice || " De factuur is verstuurd naar uw e-mail.";
-
-    return (
-      <div className="font-serif min-h-screen bg-gray-50 flex items-center justify-center p-6">
-        <div className="bg-white max-w-md w-full rounded-2xl shadow-xl p-8 text-center border border-gray-100">
-          <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle size={40} className="text-green-500" />
-          </div>
-          <h2 className="text-3xl font-bold text-ob-blue mb-4">{successTitle}</h2>
-          <p className="text-gray-600 mb-8 leading-relaxed">
-            {configuredMsg}{emailFailed ? delayNotice : invoiceNotice}
-          </p>
-          <Link 
-            to="/"
-            className="inline-block bg-[#5170ff] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#4060ee] transition-colors shadow-sm"
-          >
-            {pageContent?.guest_success_button || "Terug naar home"}
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   const totalOrderPrice = Object.entries(selections).reduce((sum, [prod, sizes]) => {
       let prodSum = 0;
@@ -734,6 +710,36 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
 
     return () => observer.disconnect();
   }, [categories]);
+
+  if (orderSuccess) {
+    const successTitle = pageContent?.guest_success_title || pageContent?.order_success_title || "Bestelling Ontvangen!";
+    const defaultMsg = `Bedankt voor uw bestelling${guestName ? `, ${guestName}` : ''}. We hebben uw aanvraag goed ontvangen.`;
+    const configuredMsg = pageContent?.guest_success_message 
+      ? pageContent.guest_success_message.replace('{guestName}', guestName || '')
+      : defaultMsg;
+    const delayNotice = pageContent?.delivery_delay_notice || " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later).";
+    const invoiceNotice = pageContent?.guest_invoice_notice || " De factuur is verstuurd naar uw e-mail.";
+
+    return (
+      <div className="font-serif min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-white max-w-md w-full rounded-2xl shadow-xl p-8 text-center border border-gray-100">
+          <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle size={40} className="text-green-500" />
+          </div>
+          <h2 className="text-3xl font-bold text-ob-blue mb-4">{successTitle}</h2>
+          <p className="text-gray-600 mb-8 leading-relaxed">
+            {configuredMsg}{emailFailed ? delayNotice : invoiceNotice}
+          </p>
+          <Link 
+            to="/"
+            className="inline-block bg-[#5170ff] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#4060ee] transition-colors shadow-sm"
+          >
+            {pageContent?.guest_success_button || "Terug naar home"}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="font-serif min-h-screen bg-gray-50 pb-20 pt-24 sm:pt-28">
@@ -1215,7 +1221,10 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                       name="guestDeliveryMode" 
                       value="zsm" 
                       checked={deliveryMode === 'zsm'} 
-                      onChange={() => setDeliveryMode('zsm')}
+                      onChange={() => {
+                        setDeliveryMode('zsm');
+                        try { sessionStorage.setItem('deliveryPref', 'zsm'); } catch {}
+                      }}
                       className="text-ob-blue focus:ring-ob-blue"
                     />
                     <span className="text-sm font-medium">Zo snel mogelijk</span>
@@ -1226,7 +1235,10 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                       name="guestDeliveryMode" 
                       value="scheduled" 
                       checked={deliveryMode === 'scheduled'} 
-                      onChange={() => setDeliveryMode('scheduled')}
+                      onChange={() => {
+                        setDeliveryMode('scheduled');
+                        try { sessionStorage.setItem('deliveryPref', 'scheduled'); } catch {}
+                      }}
                       className="text-ob-blue focus:ring-ob-blue"
                     />
                     <span className="text-sm font-medium">Kies datum & tijd</span>

@@ -279,30 +279,35 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     }
   }, [activeTab]);
 
-  const handleSelectBrand = async (brandId: BrandId) => {
-    if (brandId === selectedBrand || !localStoreSettings) return;
+  const handleSelectBrand = async (brandId: BrandId, forceReload: boolean = false) => {
+    if ((brandId === selectedBrand && !forceReload) || !localStoreSettings) return;
     setIsLoadingBrandContent(true);
     setBrandSaveSuccess(false);
 
     try {
-      // 1. Stash current content
+      // 1. Stash current content if switching to another brand
       const currentContent = localStoreSettings.page_content || {};
-      setBrandContents(prev => ({
-        ...prev,
-        [selectedBrand]: currentContent
-      }));
-      if (selectedBrand === 'office_butler') {
-        officeButlerStoreContentRef.current = currentContent;
+      if (brandId !== selectedBrand) {
+        setBrandContents(prev => ({
+          ...prev,
+          [selectedBrand]: currentContent
+        }));
+        if (selectedBrand === 'office_butler') {
+          officeButlerStoreContentRef.current = currentContent;
+        }
       }
 
       // 2. Determine target brand's content
-      let targetContent = brandContents[brandId];
+      let targetContent = forceReload ? undefined : brandContents[brandId];
       const hasInMemory = targetContent && Object.keys(targetContent).length > 0;
 
       if (!hasInMemory) {
         const remote = await fetchBrandPageContent(brandId);
         if (remote && Object.keys(remote).length > 0) {
           targetContent = remote;
+        } else if (brandId === 'canal_butler') {
+          const { data: stRow } = await supabase.from('store_settings').select('page_content').eq('id', 1).maybeSingle();
+          targetContent = stRow?.page_content || {};
         } else {
           // Initialize from template so inputs are pre-filled
           const baseTemplate = officeButlerStoreContentRef.current || currentContent;
@@ -315,10 +320,10 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       }
 
       // 3. Apply to localStoreSettings for immediate editing
-      setLocalStoreSettings({
-        ...localStoreSettings,
+      setLocalStoreSettings(prev => prev ? ({
+        ...prev,
         page_content: targetContent
-      });
+      }) : prev);
 
       setSelectedBrand(brandId);
     } catch (err) {
@@ -328,11 +333,11 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
     }
   };
 
-  // Auto-load brand content when opened with a brand URL param (e.g. from Canal Butler)
+  // Auto-load brand content when opened with a brand URL param (e.g. from Canal Butler) or on mount
   useEffect(() => {
-    if (isOpen && localStoreSettings && selectedBrand !== 'office_butler') {
+    if (isOpen && localStoreSettings) {
       if (!brandContents[selectedBrand] || Object.keys(brandContents[selectedBrand]).length === 0) {
-        handleSelectBrand(selectedBrand);
+        handleSelectBrand(selectedBrand, true);
       }
     }
   }, [isOpen, selectedBrand, !!localStoreSettings]);
@@ -356,19 +361,24 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
         [selectedBrand]: activeContent
       }));
 
-      // 3. If office_butler, ALSO write to store_settings.page_content
+      // 3. If saving canal_butler, ALSO write to store_settings.page_content (id: 1)
+      // This ensures 100% backward compatibility for the live Canal Butler website!
+      if (selectedBrand === 'canal_butler' && supabase) {
+        const { error: storeError } = await supabase
+          .from('store_settings')
+          .update({
+            page_content: activeContent
+          })
+          .eq('id', 1);
+
+        if (storeError) {
+          console.error("Fout bij synchroniseren store_settings voor canal_butler:", storeError);
+        }
+      }
+
+      // If saving office_butler, update memory ref and trigger parent callback
       if (selectedBrand === 'office_butler') {
         officeButlerStoreContentRef.current = activeContent;
-        if (supabase) {
-          const { error: storeError } = await supabase
-            .from('store_settings')
-            .update({
-              page_content: activeContent
-            })
-            .eq('id', 1);
-
-          if (storeError) throw storeError;
-        }
         if (onStoreSettingsUpdated) {
           onStoreSettingsUpdated(localStoreSettings);
         }
@@ -678,19 +688,11 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
           .from('store_settings')
           .update({
             override_status: localStoreSettings.override_status,
-            schedule: localStoreSettings.schedule,
-            page_content: localStoreSettings.page_content
+            schedule: localStoreSettings.schedule
           })
           .eq('id', 1);
 
         if (storeError) throw storeError;
-
-        // Also keep brand_page_content updated for office_butler
-        try {
-          await saveBrandPageContent('office_butler', localStoreSettings.page_content || {});
-        } catch (e) {
-          // silent fallback
-        }
 
         // Also synchronize shared_settings.opening_hours
         const scheduleLines = formatStoreSchedule(localStoreSettings.schedule);

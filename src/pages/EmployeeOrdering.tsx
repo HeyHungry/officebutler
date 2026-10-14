@@ -590,7 +590,8 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
               portion_size: sizeNum,
               price: price,
               qty: qty as number,
-              lineTotal: price * (qty as number)
+              lineTotal: price * (qty as number),
+              variant: variant || undefined
             });
             
             for (let i = 0; i < (qty as number); i++) {
@@ -707,6 +708,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
             headers: { 'Content-Type': 'application/json' },
             
             body: JSON.stringify({
+              brand: CURRENT_BRAND,
               companyId,
               companyName: companyName,
               customerName: companyName,

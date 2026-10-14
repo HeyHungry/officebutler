@@ -171,30 +171,21 @@ export function ModeratorProvider({
 
         // 2. Persist to Supabase if connected
         if (supabase) {
-          if (CURRENT_BRAND === 'office_butler') {
+          try {
+            await saveBrandPageContent(CURRENT_BRAND, updatedPC);
+          } catch (e) {
+            console.error(`Fout bij opslaan brand_page_content voor ${CURRENT_BRAND}:`, e);
+          }
+
+          // If on canal_butler, also keep store_settings id=1 in sync for backward compatibility
+          if (CURRENT_BRAND === 'canal_butler') {
             const { error } = await supabase
               .from('store_settings')
               .update({ page_content: updatedPC })
               .eq('id', 1);
 
             if (error) {
-              console.error('Fout bij opslaan naar Supabase store_settings:', error);
-            }
-
-            // Also keep brand_page_content updated for office_butler
-            try {
-              await saveBrandPageContent('office_butler', updatedPC);
-            } catch (e) {
-              // Silently fallback if table does not exist yet
-            }
-          } else {
-            // We are on a sister brand website (e.g. canal_butler or snack_butler)
-            // Save ONLY to brand_page_content for this specific brand!
-            // This ensures we NEVER touch office_butler's texts in store_settings.
-            try {
-              await saveBrandPageContent(CURRENT_BRAND, updatedPC);
-            } catch (e) {
-              console.error(`Fout bij opslaan brand_page_content voor ${CURRENT_BRAND}:`, e);
+              console.error('Fout bij opslaan naar Supabase store_settings voor canal_butler:', error);
             }
           }
         }

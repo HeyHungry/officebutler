@@ -159,23 +159,20 @@ export default function App() {
         } else if (storeRes.data) {
           let sData = storeRes.data as StoreSettings;
 
-          // If this website is configured as a sister brand (e.g. canal_butler or snack_butler),
-          // load that brand's specific texts and banners from brand_page_content
-          if (CURRENT_BRAND !== 'office_butler') {
-            try {
-              const brandContent = await fetchBrandPageContent(CURRENT_BRAND);
-              if (brandContent && Object.keys(brandContent).length > 0) {
-                sData = {
-                  ...sData,
-                  page_content: {
-                    ...(sData.page_content || {}),
-                    ...brandContent
-                  }
-                };
-              }
-            } catch (bErr) {
-              console.warn(`[Supabase] Kon brand content voor ${CURRENT_BRAND} niet laden:`, bErr);
+          // Load this brand's specific texts and banners from brand_page_content
+          try {
+            const brandContent = await fetchBrandPageContent(CURRENT_BRAND);
+            if (brandContent && Object.keys(brandContent).length > 0) {
+              sData = {
+                ...sData,
+                page_content: {
+                  ...(sData.page_content || {}),
+                  ...brandContent
+                }
+              };
             }
+          } catch (bErr) {
+            console.warn(`[Supabase] Kon brand content voor ${CURRENT_BRAND} niet laden:`, bErr);
           }
 
           setStoreSettings(sData);

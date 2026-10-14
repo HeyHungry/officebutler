@@ -1,12 +1,14 @@
 import { StoreSettings } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { ArrowRight, Utensils, CalendarClock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useOrderModal } from '../contexts/OrderModalContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 import { EditableText } from './EditableText';
 
 export function Hero({ content }: { content?: any }) {
+  const navigate = useNavigate();
   const { openStep2 } = useOrderModal();
   const { t, language } = useLanguage();
   const bgImage = content?.hero_background_image || 'https://i.imgur.com/VKJOvsI.png';
@@ -80,7 +82,12 @@ export function Hero({ content }: { content?: any }) {
           <div className="flex flex-col items-center justify-center gap-6">
             <div className="flex flex-col sm:flex-row gap-6 w-full sm:w-auto justify-center">
               <button 
-                onClick={() => window.location.href = '/guest-order'} 
+                onClick={() => {
+                  try {
+                    sessionStorage.setItem('deliveryPref', 'scheduled');
+                  } catch {}
+                  navigate('/guest-order', { state: { deliveryMode: 'scheduled' } });
+                }} 
                 className="group bg-[#5170ff] text-white border border-transparent px-8 py-4 flex items-center gap-3 hover:bg-[#4060ee] hover:shadow-[0_0_25px_rgba(81,112,255,0.6)] hover:-translate-y-1 transition-all duration-300 shadow-lg w-full sm:w-[260px] justify-center h-[56px] cursor-pointer"
               >
                 <EditableText

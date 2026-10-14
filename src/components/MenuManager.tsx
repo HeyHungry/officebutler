@@ -20,6 +20,7 @@ export type ObProduct = {
   sauces?: string[];
   variants?: string[];
   variant_surcharges?: Record<string, number>;
+  variant_kitchen_names?: Record<string, string>;
   brand?: string;
   hide_image?: boolean;
   allowed_company_ids?: string[];
@@ -39,13 +40,22 @@ export type EditFormState = Partial<ObProduct> & {
   kitchen_name?: string;
   kitchen_ingredients?: string;
   kitchen_prep_instructions?: string;
+  variant_kitchen_names?: Record<string, string>;
 };
 
-export const DEFAULT_KITCHEN_SUGGESTIONS: Record<string, { kitchen_name: string; ingredients: string; prep_instructions: string }> = {
+export const DEFAULT_KITCHEN_SUGGESTIONS: Record<string, { kitchen_name: string; ingredients: string; prep_instructions: string; variant_kitchen_names?: Record<string, string> }> = {
   'Bitterballen': {
     kitchen_name: 'Beef Bitterballen (Kalfs)',
     ingredients: 'Dutch beef ragout (beef broth, beef meat, roux, butter, onion, parsley), breadcrumb crust. Allergens: Gluten, Dairy, Mustard, Celery.',
-    prep_instructions: 'Deep fry at 180°C for 4.5 to 5 minutes from frozen. Drain well. Serve with 2 mustard dip cups per 25pcs.'
+    prep_instructions: 'Deep fry at 180°C for 4.5 to 5 minutes from frozen. Drain well. Serve with 2 mustard dip cups per 25pcs.',
+    variant_kitchen_names: {
+      'Rund': 'Beef Bitterballen (Rund)',
+      'Kalf': 'Beef Bitterballen (Kalfs)',
+      'Vega': 'Vegetarian Bitterballen (Vega)',
+      'Vegan': 'Vegan Bitterballen (Plant-based)',
+      'Kaas': 'Cheese Bitterballen (Gouda)',
+      'Kip': 'Crispy Chicken Bitterballen'
+    }
   },
   'Kaasstengels': {
     kitchen_name: 'Crispy Cheese Sticks (Gouda)',
@@ -252,13 +262,19 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete, ha
               </div>
             )}
             
-            {(p.kitchen_name || p.kitchen_ingredients || p.kitchen_prep_instructions) ? (
+            {(p.kitchen_name || p.kitchen_ingredients || p.kitchen_prep_instructions || (p.variant_kitchen_names && Object.keys(p.variant_kitchen_names).length > 0)) ? (
               <div className="text-[10px] bg-amber-50/90 text-amber-950 border border-amber-300/80 rounded px-2 py-1 mt-1.5 max-w-sm space-y-0.5 shadow-xs">
                 <div className="font-semibold flex items-center gap-1 text-amber-950">
                   <ChefHat size={12} className="text-amber-700 shrink-0" />
                   <span className="text-[9px] uppercase tracking-wider font-bold text-amber-800">Keuken (EN):</span>
                   <span className="font-bold text-amber-950 truncate">{p.kitchen_name || p.name}</span>
                 </div>
+                {p.variant_kitchen_names && Object.keys(p.variant_kitchen_names).length > 0 && (
+                  <div className="text-[9px] text-amber-900 line-clamp-1">
+                    <span className="font-semibold text-amber-950">Varianten:</span>{' '}
+                    {Object.entries(p.variant_kitchen_names).map(([v, kn]) => `${v} → ${kn}`).join(', ')}
+                  </div>
+                )}
                 {p.kitchen_ingredients && (
                   <div className="text-amber-900 line-clamp-1" title={p.kitchen_ingredients}>
                     <span className="font-semibold text-amber-950">Ingr:</span> {p.kitchen_ingredients}
@@ -321,18 +337,19 @@ export function MenuManager() {
   const [isKitchenSheetOpen, setIsKitchenSheetOpen] = useState(false);
   const [kitchenSearch, setKitchenSearch] = useState('');
   const [kitchenCategoryFilter, setKitchenCategoryFilter] = useState('ALL');
-  const [kitchenDraftMap, setKitchenDraftMap] = useState<Record<string, { kitchen_name: string; ingredients: string; prep_instructions: string }>>({});
+  const [kitchenDraftMap, setKitchenDraftMap] = useState<Record<string, { kitchen_name: string; ingredients: string; prep_instructions: string; variant_kitchen_names?: Record<string, string> }>>({});
   const [isSavingKitchenSheet, setIsSavingKitchenSheet] = useState(false);
   const [kitchenSheetSavedNotice, setKitchenSheetSavedNotice] = useState(false);
 
   useEffect(() => {
     if (isKitchenSheetOpen) {
-      const draft: Record<string, { kitchen_name: string; ingredients: string; prep_instructions: string }> = {};
+      const draft: Record<string, { kitchen_name: string; ingredients: string; prep_instructions: string; variant_kitchen_names?: Record<string, string> }> = {};
       products.forEach(p => {
         draft[p.id] = {
           kitchen_name: p.kitchen_name || '',
           ingredients: p.kitchen_ingredients || '',
-          prep_instructions: p.kitchen_prep_instructions || ''
+          prep_instructions: p.kitchen_prep_instructions || '',
+          variant_kitchen_names: p.variant_kitchen_names ? { ...p.variant_kitchen_names } : {}
         };
       });
       setKitchenDraftMap(draft);
@@ -348,11 +365,20 @@ export function MenuManager() {
           Object.entries(DEFAULT_KITCHEN_SUGGESTIONS).find(([k]) => cleanName.toLowerCase().includes(k.toLowerCase()))?.[1];
 
         if (suggestion) {
-          const current = updated[p.id] || { kitchen_name: '', ingredients: '', prep_instructions: '' };
+          const current = updated[p.id] || { kitchen_name: '', ingredients: '', prep_instructions: '', variant_kitchen_names: {} };
+          const newVarNames = { ...(current.variant_kitchen_names || {}) };
+          if (suggestion.variant_kitchen_names && p.variants) {
+            p.variants.forEach(v => {
+              if (!newVarNames[v] && suggestion.variant_kitchen_names?.[v]) {
+                newVarNames[v] = suggestion.variant_kitchen_names[v];
+              }
+            });
+          }
           updated[p.id] = {
             kitchen_name: current.kitchen_name || suggestion.kitchen_name,
             ingredients: current.ingredients || suggestion.ingredients,
-            prep_instructions: current.prep_instructions || suggestion.prep_instructions
+            prep_instructions: current.prep_instructions || suggestion.prep_instructions,
+            variant_kitchen_names: newVarNames
           };
         }
       });
@@ -369,7 +395,7 @@ export function MenuManager() {
 
       products.forEach(p => {
         const entry = kitchenDraftMap[p.id];
-        if (entry && (entry.kitchen_name || entry.ingredients || entry.prep_instructions)) {
+        if (entry && (entry.kitchen_name || entry.ingredients || entry.prep_instructions || (entry.variant_kitchen_names && Object.keys(entry.variant_kitchen_names).length > 0))) {
           currentKitchen[p.id] = entry;
           currentKitchen[p.name] = entry;
           currentKitchen[(p.name || '').trim()] = entry;
@@ -394,7 +420,8 @@ export function MenuManager() {
             ...p,
             kitchen_name: entry.kitchen_name,
             kitchen_ingredients: entry.ingredients,
-            kitchen_prep_instructions: entry.prep_instructions
+            kitchen_prep_instructions: entry.prep_instructions,
+            variant_kitchen_names: entry.variant_kitchen_names || {}
           };
         }
         return p;
@@ -473,7 +500,7 @@ export function MenuManager() {
       const catDescMap: Record<string, string> = storeRes?.data?.page_content?.category_descriptions || {};
       const companyRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.company_restricted_products || {};
       const catRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || {};
-      const kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string }> = storeRes?.data?.page_content?.product_kitchen_info || {};
+      const kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string; variant_kitchen_names?: Record<string, string> }> = storeRes?.data?.page_content?.product_kitchen_info || {};
       const productTranslationsMap: Record<string, { extra_info_en?: string }> = storeRes?.data?.page_content?.product_translations || {};
       const catVariantRulesMap: CategoryVariantRulesMap = storeRes?.data?.page_content?.category_variant_rules || {};
       setCategoryDescriptions(catDescMap);
@@ -505,7 +532,8 @@ export function MenuManager() {
             allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || [],
             kitchen_name: p.kitchen_name || kInfo?.kitchen_name || '',
             kitchen_ingredients: p.kitchen_ingredients || kInfo?.ingredients || '',
-            kitchen_prep_instructions: p.kitchen_prep_instructions || kInfo?.prep_instructions || ''
+            kitchen_prep_instructions: p.kitchen_prep_instructions || kInfo?.prep_instructions || '',
+            variant_kitchen_names: p.variant_kitchen_names || kInfo?.variant_kitchen_names || {}
           };
         });
         setProducts(enriched);
@@ -579,7 +607,8 @@ export function MenuManager() {
       allowed_brands: product.allowed_brands ? [...product.allowed_brands] : [],
       kitchen_name: product.kitchen_name || '',
       kitchen_ingredients: product.kitchen_ingredients || '',
-      kitchen_prep_instructions: product.kitchen_prep_instructions || ''
+      kitchen_prep_instructions: product.kitchen_prep_instructions || '',
+      variant_kitchen_names: product.variant_kitchen_names ? { ...product.variant_kitchen_names } : {}
     });
     setIsCreatingCategory(false);
     setIsCreatingStatus(false);
@@ -796,6 +825,7 @@ export function MenuManager() {
     const kitchenIngredientsToSave = editForm.kitchen_ingredients?.trim() || '';
     const kitchenPrepToSave = editForm.kitchen_prep_instructions?.trim() || '';
     const extraInfoEnToSave = editForm.extra_info_en?.trim() || '';
+    const variantKitchenNamesToSave = editForm.variant_kitchen_names || {};
 
     try {
       let savedProduct: any = null;
@@ -807,6 +837,7 @@ export function MenuManager() {
           status: statusToSave,
           portions: portionsToSave,
           variants: variantsToSave,
+          variant_kitchen_names: variantKitchenNamesToSave,
           extra_info: editForm.extra_info || null,
           extra_info_en: extraInfoEnToSave || null,
           additional_categories: editForm.additional_categories || [],
@@ -821,12 +852,13 @@ export function MenuManager() {
         let { data, error } = await supabase.from('ob_products').insert(insertPayload).select();
 
         // If columns do not exist in ob_products table yet, retry without them
-        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('allowed_brands') || error.message?.toLowerCase().includes('extra_info_en'))) {
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('allowed_brands') || error.message?.toLowerCase().includes('extra_info_en') || error.message?.toLowerCase().includes('variant_kitchen_names'))) {
           if (error.message?.toLowerCase().includes('brand')) delete insertPayload.brand;
           if (error.message?.toLowerCase().includes('hide_image')) delete insertPayload.hide_image;
           if (error.message?.toLowerCase().includes('allowed_company_ids')) delete insertPayload.allowed_company_ids;
           if (error.message?.toLowerCase().includes('allowed_brands')) delete insertPayload.allowed_brands;
           if (error.message?.toLowerCase().includes('extra_info_en')) delete insertPayload.extra_info_en;
+          if (error.message?.toLowerCase().includes('variant_kitchen_names')) delete insertPayload.variant_kitchen_names;
           const retry = await supabase.from('ob_products').insert(insertPayload).select();
           data = retry.data;
           error = retry.error;
@@ -843,7 +875,8 @@ export function MenuManager() {
             allowed_brands: allowedBrandsToSave || [],
             kitchen_name: kitchenNameToSave,
             kitchen_ingredients: kitchenIngredientsToSave,
-            kitchen_prep_instructions: kitchenPrepToSave
+            kitchen_prep_instructions: kitchenPrepToSave,
+            variant_kitchen_names: variantKitchenNamesToSave
           };
           setProducts([...products, savedProduct]);
         }
@@ -858,6 +891,7 @@ export function MenuManager() {
           status: statusToSave,
           portions: portionsToSave,
           variants: variantsToSave,
+          variant_kitchen_names: variantKitchenNamesToSave,
           extra_info: editForm.extra_info || null,
           extra_info_en: extraInfoEnToSave || null,
           additional_categories: editForm.additional_categories || [],
@@ -871,12 +905,13 @@ export function MenuManager() {
         let { data, error } = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
 
         // If columns do not exist in ob_products table yet, retry without them
-        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('allowed_brands') || error.message?.toLowerCase().includes('extra_info_en'))) {
+        if (error && (error.message?.toLowerCase().includes('brand') || error.message?.toLowerCase().includes('hide_image') || error.message?.toLowerCase().includes('allowed_company_ids') || error.message?.toLowerCase().includes('allowed_brands') || error.message?.toLowerCase().includes('extra_info_en') || error.message?.toLowerCase().includes('variant_kitchen_names'))) {
           if (error.message?.toLowerCase().includes('brand')) delete updatePayload.brand;
           if (error.message?.toLowerCase().includes('hide_image')) delete updatePayload.hide_image;
           if (error.message?.toLowerCase().includes('allowed_company_ids')) delete updatePayload.allowed_company_ids;
           if (error.message?.toLowerCase().includes('allowed_brands')) delete updatePayload.allowed_brands;
           if (error.message?.toLowerCase().includes('extra_info_en')) delete updatePayload.extra_info_en;
+          if (error.message?.toLowerCase().includes('variant_kitchen_names')) delete updatePayload.variant_kitchen_names;
           const retry = await supabase.from('ob_products').update(updatePayload).eq('id', editingId).select();
           data = retry.data;
           error = retry.error;
@@ -893,7 +928,8 @@ export function MenuManager() {
             allowed_brands: allowedBrandsToSave || [],
             kitchen_name: kitchenNameToSave,
             kitchen_ingredients: kitchenIngredientsToSave,
-            kitchen_prep_instructions: kitchenPrepToSave
+            kitchen_prep_instructions: kitchenPrepToSave,
+            variant_kitchen_names: variantKitchenNamesToSave
           };
           const cleanOldName = (oldName || '').trim();
           if (cleanOldName && cleanOldName !== trimmedName) {
@@ -946,9 +982,10 @@ export function MenuManager() {
         const kitchenEntry = {
           kitchen_name: kitchenNameToSave,
           ingredients: kitchenIngredientsToSave,
-          prep_instructions: kitchenPrepToSave
+          prep_instructions: kitchenPrepToSave,
+          variant_kitchen_names: variantKitchenNamesToSave
         };
-        if (kitchenNameToSave || kitchenIngredientsToSave || kitchenPrepToSave) {
+        if (kitchenNameToSave || kitchenIngredientsToSave || kitchenPrepToSave || Object.keys(variantKitchenNamesToSave).length > 0) {
           if (prodId) currentKitchen[prodId] = kitchenEntry;
           if (editForm.name) currentKitchen[editForm.name] = kitchenEntry;
           currentKitchen[trimmedName] = kitchenEntry;
@@ -1258,11 +1295,20 @@ export function MenuManager() {
                     <button
                       type="button"
                       onClick={() => {
+                        const newVarNames = { ...(editForm.variant_kitchen_names || {}) };
+                        if (suggestion.variant_kitchen_names && editForm.variants) {
+                          editForm.variants.forEach(v => {
+                            if (!newVarNames[v] && suggestion.variant_kitchen_names?.[v]) {
+                              newVarNames[v] = suggestion.variant_kitchen_names[v];
+                            }
+                          });
+                        }
                         setEditForm({
                           ...editForm,
                           kitchen_name: editForm.kitchen_name || suggestion.kitchen_name,
                           kitchen_ingredients: editForm.kitchen_ingredients || suggestion.ingredients,
-                          kitchen_prep_instructions: editForm.kitchen_prep_instructions || suggestion.prep_instructions
+                          kitchen_prep_instructions: editForm.kitchen_prep_instructions || suggestion.prep_instructions,
+                          variant_kitchen_names: newVarNames
                         });
                       }}
                       className="text-[10px] bg-amber-200/90 hover:bg-amber-300 text-amber-950 px-2 py-0.5 rounded font-medium flex items-center gap-1 transition-colors cursor-pointer"
@@ -1291,6 +1337,45 @@ export function MenuManager() {
                   onChange={e => setEditForm({ ...editForm, kitchen_name: e.target.value })}
                 />
               </div>
+
+              {editForm.variants && editForm.variants.length > 0 && (
+                <div className="bg-amber-100/70 border border-amber-300/90 rounded-lg p-2.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-amber-950 uppercase tracking-wider flex items-center gap-1">
+                      <ChefHat size={12} className="text-amber-800" />
+                      Keukennaam per variant (voor keukenbonnen & KDS)
+                    </span>
+                    <span className="text-[10px] text-amber-800/80">
+                      Zodat de keuken direct ziet welke variant gemaakt moet worden
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {editForm.variants.map((v) => (
+                      <div key={`var-kname-${v}`} className="space-y-0.5">
+                        <label className="text-[10px] font-semibold text-amber-900 block truncate">
+                          Variant <span className="font-bold underline">{v}</span>:
+                        </label>
+                        <input
+                          type="text"
+                          placeholder={editForm.kitchen_name ? `${editForm.kitchen_name} (${v})` : `Keukennaam voor ${v}`}
+                          className="w-full px-2 py-1 border border-amber-300 rounded text-xs bg-white text-gray-800 focus:outline-none focus:border-amber-600"
+                          value={editForm.variant_kitchen_names?.[v] || ''}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setEditForm({
+                              ...editForm,
+                              variant_kitchen_names: {
+                                ...(editForm.variant_kitchen_names || {}),
+                                [v]: val
+                              }
+                            });
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-[10px] font-bold text-amber-900 uppercase tracking-wider block mb-0.5">
                   Ingrediënten & Allergenen (Ingredients list for kitchen)
@@ -2210,12 +2295,21 @@ export function MenuManager() {
                               <button
                                 type="button"
                                 onClick={() => {
+                                  const newVarNames = { ...(draft.variant_kitchen_names || {}) };
+                                  if (suggestion.variant_kitchen_names && p.variants) {
+                                    p.variants.forEach(v => {
+                                      if (!newVarNames[v] && suggestion.variant_kitchen_names?.[v]) {
+                                        newVarNames[v] = suggestion.variant_kitchen_names[v];
+                                      }
+                                    });
+                                  }
                                   setKitchenDraftMap(prev => ({
                                     ...prev,
                                     [p.id]: {
                                       kitchen_name: draft.kitchen_name || suggestion.kitchen_name,
                                       ingredients: draft.ingredients || suggestion.ingredients,
-                                      prep_instructions: draft.prep_instructions || suggestion.prep_instructions
+                                      prep_instructions: draft.prep_instructions || suggestion.prep_instructions,
+                                      variant_kitchen_names: newVarNames
                                     }
                                   }));
                                 }}
@@ -2282,6 +2376,43 @@ export function MenuManager() {
                               />
                             </div>
                           </div>
+
+                          {p.variants && p.variants.length > 0 && (
+                            <div className="mt-2.5 pt-2 border-t border-amber-200/80 bg-amber-50/60 rounded-md p-2">
+                              <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <ChefHat size={11} className="text-amber-700" />
+                                Keukennamen per variant (bonnen / KDS):
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                {p.variants.map(v => (
+                                  <div key={`bulk-var-${p.id}-${v}`} className="space-y-0.5">
+                                    <label className="text-[10px] font-semibold text-amber-900 block truncate">
+                                      {v}:
+                                    </label>
+                                    <input
+                                      type="text"
+                                      placeholder={draft.kitchen_name ? `${draft.kitchen_name} (${v})` : `Keukennaam ${v}`}
+                                      value={draft.variant_kitchen_names?.[v] || ''}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setKitchenDraftMap(prev => ({
+                                          ...prev,
+                                          [p.id]: {
+                                            ...draft,
+                                            variant_kitchen_names: {
+                                              ...(draft.variant_kitchen_names || {}),
+                                              [v]: val
+                                            }
+                                          }
+                                        }));
+                                      }}
+                                      className="w-full px-2 py-1 border border-gray-300 rounded text-xs text-gray-900 focus:outline-none focus:border-amber-500 bg-white"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
