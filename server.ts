@@ -837,6 +837,10 @@ ${JSON.stringify(toTranslate, null, 2)}
         ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
         : null;
 
+      const rawBrand = (req.body.brand || process.env.VITE_BRAND_ID || 'office_butler').trim().toLowerCase();
+      const brandName = rawBrand.includes('canal') ? 'Canal Butler' : (rawBrand.includes('snack') ? 'Snack Butler' : 'Office Butler');
+      const brandFromEmail = rawBrand.includes('canal') ? 'Canal Butler <info@office-butler.com>' : 'Office Butler <info@office-butler.com>';
+
       // Fetch company details to get billing_email
       let company: any = null;
       let address: any = null;
@@ -1019,16 +1023,21 @@ ${JSON.stringify(toTranslate, null, 2)}
                 ${company?.billing_info ? `<br/><p style="margin: 5px 0;"><strong>Factuurgegevens:</strong><br/>${company.billing_info}</p>` : ''}
               </div>
               
-              <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Office Butler.</p>
+              <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van ${brandName}.</p>
             </div>
           `;
 
+          const recipientList: string[] = ['info@office-butler.com'];
+          if (effectiveEmail && effectiveEmail.includes('@') && !recipientList.includes(effectiveEmail.trim())) {
+            recipientList.push(effectiveEmail.trim());
+          }
+
           await resend.emails.send({
-            from: 'Office Butler <info@office-butler.com>',
-            to: ['info@office-butler.com'],
+            from: brandFromEmail,
+            to: recipientList,
             subject: discountCode 
-              ? `Nieuwe Bestelling & Factuur [Korting: ${discountCode}] - ${effectiveCompanyName}`
-              : `Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
+              ? `[${brandName}] Nieuwe Bestelling & Factuur [Korting: ${discountCode}] - ${effectiveCompanyName}`
+              : `[${brandName}] Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
             html: emailHtml
           });
           emailSent = true;
@@ -1070,12 +1079,16 @@ ${JSON.stringify(toTranslate, null, 2)}
         finalTotal
       } = req.body;
       const apiKey = process.env.RESEND_API_KEY;
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 
       const supabaseAdmin = (serviceKey && supabaseUrl)
         ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
         : null;
+
+      const rawBrand = (req.body.brand || process.env.VITE_BRAND_ID || 'office_butler').trim().toLowerCase();
+      const brandName = rawBrand.includes('canal') ? 'Canal Butler' : (rawBrand.includes('snack') ? 'Snack Butler' : 'Office Butler');
+      const brandFromEmail = rawBrand.includes('canal') ? 'Canal Butler <info@office-butler.com>' : 'Office Butler <info@office-butler.com>';
 
       // 1. BiteBerry Integration: ALWAYS forward order to BiteBerry via Office Butler integration
       let biteberryResult: any = null;
@@ -1234,16 +1247,21 @@ ${JSON.stringify(toTranslate, null, 2)}
                 ${notes ? `<p style="margin: 5px 0;"><strong>Extra Notities:</strong> ${notes}</p>` : ''}
               </div>
               
-              <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Office Butler.</p>
+              <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van ${brandName}.</p>
             </div>
           `;
 
+          const recipientList: string[] = ['info@office-butler.com'];
+          if (guestEmail && guestEmail.includes('@') && !recipientList.includes(guestEmail.trim())) {
+            recipientList.push(guestEmail.trim());
+          }
+
           await resend.emails.send({
-            from: 'Office Butler <info@office-butler.com>',
-            to: ['info@office-butler.com'],
+            from: brandFromEmail,
+            to: recipientList,
             subject: discountCode 
-              ? `Nieuwe GAST Bestelling & Factuur [Korting: ${discountCode}] - ${guestName}`
-              : `Nieuwe GAST Bestelling & Factuur - ${guestName}`,
+              ? `[${brandName}] Nieuwe GAST Bestelling & Factuur [Korting: ${discountCode}] - ${guestName}`
+              : `[${brandName}] Nieuwe GAST Bestelling & Factuur - ${guestName}`,
             html: emailHtml
           });
           emailSent = true;
