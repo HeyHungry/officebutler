@@ -21,13 +21,13 @@ export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps
       qKey: 'faq_q1',
       qLabel: 'FAQ Vraag 1',
       qVal: content?.faq_q1,
-      defaultQ: "Bezorgen jullie ook buiten Amsterdam?",
+      defaultQ: "Op welke locaties in Amsterdam bezorgen jullie?",
       qSize: content?.faq_q1_size,
       qFont: content?.faq_q1_font,
       aKey: 'faq_a1',
       aLabel: 'FAQ Antwoord 1',
       aVal: content?.faq_a1,
-      defaultA: "Momenteel bezorgen wij met Office Butler uitsluitend op kantoren binnen de ring van Amsterdam om de kwaliteit en temperatuur van onze snacks te garanderen.",
+      defaultA: "Wij bezorgen op vaste afgesproken aanlegsteigers, kades en overdrachtspunten langs de gehele Amsterdamse grachtengordel, Amstel en het Oosterdok.",
       aSize: content?.faq_a1_size,
       aFont: content?.faq_a1_font,
     },
@@ -35,13 +35,13 @@ export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps
       qKey: 'faq_q2',
       qLabel: 'FAQ Vraag 2',
       qVal: content?.faq_q2,
-      defaultQ: "Wat is het verschil met Canal Butler?",
+      defaultQ: "Hoe blijven de snacks warm op het water?",
       qSize: content?.faq_q2_size,
       qFont: content?.faq_q2_font,
       aKey: 'faq_a2',
       aLabel: 'FAQ Antwoord 2',
       aVal: content?.faq_a2,
-      defaultA: "Office Butler is het B2B zusterbedrijf van Canal Butler. We maken gebruik van dezelfde keuken (Mokum Local Kitchen) en bieden dezelfde premium kwaliteit, maar dan specifiek afgestemd op levering op kantoor in plaats van op de grachten.",
+      defaultA: "Al onze hapjes worden vlak voor overdracht vers bereid in de Mokum Local Kitchen en direct in professionele thermoboxen overgedragen aan boord, zodat ze gegarandeerd heet en krokant geserveerd kunnen worden.",
       aSize: content?.faq_a2_size,
       aFont: content?.faq_a2_font,
     },
@@ -49,13 +49,13 @@ export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps
       qKey: 'faq_q3',
       qLabel: 'FAQ Vraag 3',
       qVal: content?.faq_q3,
-      defaultQ: "Hoe ver van tevoren moet ik bestellen?",
+      defaultQ: "Hoe ver van tevoren moeten wij als rederij bestellen?",
       qSize: content?.faq_q3_size,
       qFont: content?.faq_q3_font,
       aKey: 'faq_a3',
       aLabel: 'FAQ Antwoord 3',
       aVal: content?.faq_a3,
-      defaultA: "Voor reguliere bestellingen vragen wij u minimaal 2 uur van tevoren te bestellen. Voor grote groepen (>30 personen) of een compleet assortiment horen wij dit graag minimaal 24 uur van tevoren.",
+      defaultA: "Bestellingen kunnen vooraf worden ingepland voor specifieke afvaarten. Voor reguliere vaarten adviseren wij minimaal 2 uur vooraf te bestellen, grotere arrangementen graag 24 uur vooraf.",
       aSize: content?.faq_a3_size,
       aFont: content?.faq_a3_font,
     },
@@ -76,7 +76,7 @@ export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps
   ];
 
   return (
-    <section id="contact" className="py-24 bg-ob-cream">
+    <section id="contact" className="py-24 bg-ob-cream relative">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
           
@@ -99,7 +99,7 @@ export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps
             
             <div className="space-y-8">
               <div className="flex items-start gap-4">
-                <div className="bg-white p-3 rounded-full text-[#5170ff] shadow-sm shrink-0">
+                <div className="bg-white p-3 rounded-full text-[#eaaf47] shadow-sm shrink-0 border border-gray-100">
                   <Phone size={24} />
                 </div>
                 <div>
@@ -110,12 +110,12 @@ export function ContactFAQ({ settings, storeSettings, content }: ContactFAQProps
               </div>
               
               <div className="flex items-start gap-4">
-                <div className="bg-white p-3 rounded-full text-[#5170ff] shadow-sm shrink-0">
+                <div className="bg-white p-3 rounded-full text-[#eaaf47] shadow-sm shrink-0 border border-gray-100">
                   <Mail size={24} />
                 </div>
                 <div>
                   <h4 className="text-lg mb-1 font-heading-default text-ob-text">{t('E-mail', 'Email')}</h4>
-                  <p className="text-ob-text-light font-paragraph-default">info@office-butler.com</p>
+                  <p className="text-ob-text-light font-paragraph-default">info@canal-butler.com</p>
                 </div>
               </div>
             </div>

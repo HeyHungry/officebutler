@@ -7,7 +7,7 @@ import { getTypographyStyle } from '../lib/typography';
 import { PrivacyModal } from './PrivacyModal';
 import { EditableText } from './EditableText';
 
-export function BusinessRegistration({ content }: { content?: any }) {
+export function BusinessRegistration({ content, waveColor = 'text-ob-cream' }: { content?: any; waveColor?: string }) {
   const { t } = useLanguage();
   const [formData, setFormData] = useState({
     companyName: '',
@@ -84,7 +84,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
   };
 
   return (
-    <section id="business" className="py-24 bg-white">
+    <section id="business" className="pt-20 pb-28 md:pb-36 bg-white relative overflow-hidden">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 flex flex-col lg:flex-row items-center gap-16">
         
         <div className="w-full lg:w-1/2">
@@ -98,7 +98,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
               contentKey="business_title"
               label="Voor Bedrijven Titel"
               value={content?.business_title}
-              defaultValue="Voor Bedrijven"
+              defaultValue="Partner Worden voor Rederijen"
               as="h2"
               className="text-3xl md:text-5xl text-ob-text mb-6 font-title-default"
               style={getTypographyStyle('title', content?.business_title_font, content?.business_title_size)}
@@ -109,7 +109,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
               contentKey="business_subtitle"
               label="Voor Bedrijven Ondertitel"
               value={content?.business_subtitle}
-              defaultValue="Een vaste partner voor uw kantoor."
+              defaultValue="Vaste horecapartner voor uw rondvaarten en sloepen."
               as="h3"
               className="text-2xl mb-4 text-ob-blue italic font-subtitle-default"
               style={getTypographyStyle('subtitle', content?.business_subtitle_font, content?.business_subtitle_size)}
@@ -119,7 +119,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
               contentKey="business_desc"
               label="Voor Bedrijven Beschrijving"
               value={content?.business_desc}
-              defaultValue="Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers."
+              defaultValue="Vaart u regelmatig met gasten over de Amsterdamse grachten? Sluit uw rederij aan bij Canal Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw schippers en planners met vaste overdrachtspunten langs uw vaarroutes."
               multiline
               as="p"
               className="text-ob-text-light mb-6 leading-relaxed font-paragraph-default"
@@ -133,7 +133,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                   contentKey="business_point1"
                   label="Bedrijven Voordeel 1"
                   value={content?.business_point1}
-                  defaultValue="Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)"
+                  defaultValue="Vaste afleversteigers en overdrachtspunten langs uw vaarroutes"
                   as="span"
                   className="text-ob-text"
                   style={getTypographyStyle('paragraph', content?.business_point1_font, content?.business_point1_size)}
@@ -145,7 +145,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                   contentKey="business_point2"
                   label="Bedrijven Voordeel 2"
                   value={content?.business_point2}
-                  defaultValue="Gepersonaliseerd assortiment naar wens"
+                  defaultValue="Gepersonaliseerd assortiment en speciale rederij-tarieven"
                   as="span"
                   className="text-ob-text"
                   style={getTypographyStyle('paragraph', content?.business_point2_font, content?.business_point2_size)}
@@ -157,7 +157,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                   contentKey="business_point3"
                   label="Bedrijven Voordeel 3"
                   value={content?.business_point3}
-                  defaultValue="Optie tot betalen op factuur"
+                  defaultValue="Eenvoudig bestellen en overzichtelijke verzamelfacturatie per vaart of maand"
                   as="span"
                   className="text-ob-text"
                   style={getTypographyStyle('paragraph', content?.business_point3_font, content?.business_point3_size)}
@@ -195,7 +195,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                   contentKey="business_form_title"
                   label="Bedrijf Aanmelden Formulier Titel"
                   value={content?.business_form_title}
-                  defaultValue={t('Bedrijf Aanmelden')}
+                  defaultValue={t('Rederij Aanmelden')}
                   as="h3"
                   className="text-2xl mb-8 text-center font-heading-default text-ob-text block"
                   style={getTypographyStyle('heading', content?.business_form_title_font, content?.business_form_title_size)}
@@ -205,10 +205,10 @@ export function BusinessRegistration({ content }: { content?: any }) {
                     <input 
                       type="text" 
                       required
-                      placeholder={t('Bedrijfsnaam', 'Company Name')} 
+                      placeholder={t('Rederij / Bedrijfsnaam', 'Company / Boat Company Name')} 
                       value={formData.companyName}
                       onChange={(e) => setFormData({...formData, companyName: e.target.value})}
-                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-paragraph-default" 
+                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-[#eaaf47] transition-colors font-paragraph-default" 
                     />
                   </div>
                   <div>
@@ -218,7 +218,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                       placeholder={t('Contactpersoon', 'Contact Person')} 
                       value={formData.contactPerson}
                       onChange={(e) => setFormData({...formData, contactPerson: e.target.value})}
-                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-paragraph-default" 
+                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-[#eaaf47] transition-colors font-paragraph-default" 
                     />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -228,7 +228,7 @@ export function BusinessRegistration({ content }: { content?: any }) {
                       placeholder={t('E-mailadres', 'Email Address')} 
                       value={formData.email}
                       onChange={(e) => setFormData({...formData, email: e.target.value})}
-                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-paragraph-default" 
+                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-[#eaaf47] transition-colors font-paragraph-default" 
                     />
                     <input 
                       type="tel" 
@@ -236,28 +236,28 @@ export function BusinessRegistration({ content }: { content?: any }) {
                       placeholder={t('Telefoonnummer', 'Phone Number')} 
                       value={formData.phone}
                       onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-paragraph-default" 
+                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-[#eaaf47] transition-colors font-paragraph-default" 
                     />
                   </div>
                   <div>
                     <textarea 
-                      placeholder={t('Eventuele wensen (bijv. frequentie, grootte team)', 'Special requests (e.g. frequency, team size)')} 
+                      placeholder={t('Eventuele wensen (bijv. vaste opstaplocaties, aantal boten, vaarfrequentie)', 'Special requests (e.g. docking locations, number of boats, frequency)')} 
                       rows={3} 
                       value={formData.wishes}
                       onChange={(e) => setFormData({...formData, wishes: e.target.value})}
-                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-ob-blue transition-colors font-paragraph-default resize-none" 
+                      className="w-full bg-white border border-ob-text/10 px-4 py-3 focus:outline-none focus:border-[#eaaf47] transition-colors font-paragraph-default resize-none" 
                     ></textarea>
                   </div>
                   {errorMsg && <p className="font-paragraph-default text-red-500 text-sm">{errorMsg}</p>}
                   
                   <div className="flex items-start gap-2 text-xs text-gray-500 pt-1">
-                    <ShieldCheck size={15} className="text-[#5170ff] shrink-0 mt-0.5" />
+                    <ShieldCheck size={15} className="text-[#eaaf47] shrink-0 mt-0.5" />
                     <span className="leading-relaxed">
                       {t('Uw gegevens worden vertrouwelijk behandeld en uitsluitend gebruikt om contact met u op te nemen conform onze', 'Your data will be kept confidential and used solely to contact you in accordance with our')}{' '}
                       <button
                         type="button"
                         onClick={() => setIsPrivacyOpen(true)}
-                        className="text-[#5170ff] hover:underline font-semibold cursor-pointer"
+                        className="text-[#eaaf47] hover:underline font-semibold cursor-pointer"
                       >
                         {t('Privacy Policy', 'Privacy Policy')}
                       </button>
@@ -268,10 +268,10 @@ export function BusinessRegistration({ content }: { content?: any }) {
                   <button 
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-[#5170ff] text-white py-4 hover:bg-[#4060ee] transition-colors font-button-default text-sm mt-3 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center cursor-pointer shadow-md"
+                    className="w-full bg-[#eaaf47] text-[#151f33] py-4 hover:bg-[#d89e36] transition-all font-button-default text-sm mt-3 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center cursor-pointer shadow-md font-bold hover:shadow-[0_0_20px_rgba(234,175,71,0.5)]"
                     style={getTypographyStyle('button', content?.business_btn_font, content?.business_btn_size)}
                   >
-                    {isSubmitting ? t('Versturen...', 'Submitting...') : (content?.business_btn || t('Kantoor Inschrijven'))}
+                    {isSubmitting ? t('Versturen...', 'Submitting...') : (content?.business_btn || t('Rederij Aanmelden'))}
                   </button>
                 </form>
               </>
@@ -285,6 +285,22 @@ export function BusinessRegistration({ content }: { content?: any }) {
         onClose={() => setIsPrivacyOpen(false)} 
         pageContent={content} 
       />
+
+      {/* Golvende overgang naar de volgende sectie (Canal Wave) */}
+      <div className="absolute -bottom-1 left-0 right-0 w-full overflow-hidden leading-none z-10 pointer-events-none">
+        <svg 
+          viewBox="0 0 1440 100" 
+          fill="none" 
+          xmlns="http://www.w3.org/2000/svg"
+          className={`relative block w-full h-8 md:h-14 lg:h-18 ${waveColor}`}
+          preserveAspectRatio="none"
+        >
+          <path 
+            d="M0,50 C320,10 520,15 780,65 C1040,110 1260,75 1440,35 L1440,100 L0,100 Z" 
+            fill="currentColor"
+          />
+        </svg>
+      </div>
     </section>
   );
 }

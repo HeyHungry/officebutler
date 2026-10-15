@@ -1,5 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
+export const supabaseUrl = process.env.VITE_SUPABASE_URL || "https://rqqotumbdsghvkkmquqo.supabase.co";
+export const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+
+export const adminClient = (supabaseUrl && serviceKey)
+  ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  : null;
+
 // Helper to parse Dutch address strings into BiteBerry address components
 export function parseDutchAddress(rawAddress: string, label?: string, notes?: string) {
   const text = (rawAddress || "").trim();
@@ -28,35 +35,55 @@ export function parseDutchAddress(rawAddress: string, label?: string, notes?: st
   };
 }
 
+// Helper to translate delivery methods to English for courier and staff
+export function translateDeliveryMethodToEnglish(method?: string): string {
+  if (!method) return "Standard delivery";
+  const m = method.toLowerCase().trim();
+  if (m.includes("dockside") || m.includes("kade") || m.includes("steiger") || m.includes("aanlegplek") || m.includes("opstap")) {
+    return "Dockside delivery";
+  }
+  if (m.includes("butler service") || m.includes("butlerservice") || m.includes("service aan boord")) {
+    return "Butler service";
+  }
+  if (m.includes("afhaal") || m.includes("pickup") || m.includes("ophalen")) {
+    return "Pickup";
+  }
+  if (m.includes("uitpakken") || m.includes("unpack") || m.includes("setup")) {
+    return "Unpack service";
+  }
+  if (m.includes("drempel") || m.includes("doorstep") || m.includes("threshold")) {
+    return "Doorstep delivery";
+  }
+  if (m.includes("standaard") || m.includes("standard")) {
+    return "Standard delivery";
+  }
+  return "Standard delivery";
+}
+
 // Helper to parse deliveryDate and deliveryTime into BiteBerry ISO scheduled date-times
 export function parseDeliverySchedule(deliveryDate?: string, deliveryTime?: string) {
-  const now = new Date();
-  if (!deliveryDate || !deliveryTime || deliveryTime.toLowerCase().includes("snel") || deliveryTime.toLowerCase().includes("zsm")) {
-    const defaultFinished = new Date(now.getTime() + 45 * 60 * 1000); // +45 min estimated delivery
-    const defaultReady = new Date(now.getTime() + 20 * 60 * 1000); // +20 min kitchen ready
-    return {
-      scheduled_order: false,
-      estimated_finished_at: defaultFinished.toISOString(),
-      estimated_ready_at: defaultReady.toISOString()
-    };
+  if (!deliveryDate) {
+    return { scheduled_order: false };
   }
 
-  const timeMatch = deliveryTime.match(/(\d{1,2}):(\d{2})/);
   const dateMatch = deliveryDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!timeMatch || !dateMatch) {
-    const defaultFinished = new Date(now.getTime() + 45 * 60 * 1000);
-    const defaultReady = new Date(now.getTime() + 20 * 60 * 1000);
-    return {
-      scheduled_order: false,
-      estimated_finished_at: defaultFinished.toISOString(),
-      estimated_ready_at: defaultReady.toISOString()
-    };
+  if (!dateMatch) {
+    return { scheduled_order: false };
   }
 
   const [_, y, m, d] = dateMatch;
-  const [__, hh, mm] = timeMatch;
-  const pad = (n: number | string) => String(n).padStart(2, "0");
+  let hh = "12";
+  let mm = "00";
 
+  if (deliveryTime && !deliveryTime.toLowerCase().includes("snel") && !deliveryTime.toLowerCase().includes("zsm") && !deliveryTime.toLowerCase().includes("asap")) {
+    const timeMatch = deliveryTime.match(/(\d{1,2}):(\d{2})/);
+    if (timeMatch) {
+      hh = timeMatch[1];
+      mm = timeMatch[2];
+    }
+  }
+
+  const pad = (n: number | string) => String(n).padStart(2, "0");
   const isoLocal = `${y}-${pad(m)}-${pad(d)}T${pad(hh)}:${pad(mm)}:00`;
   let offsetHours = 2; // Default summer (CEST) in NL
   try {
@@ -75,35 +102,29 @@ export function parseDeliverySchedule(deliveryDate?: string, deliveryTime?: stri
 
   const finishedAt = new Date(`${isoLocal}${formattedOffset}`);
   if (isNaN(finishedAt.getTime())) {
-    const defaultFinished = new Date(now.getTime() + 45 * 60 * 1000);
-    const defaultReady = new Date(now.getTime() + 20 * 60 * 1000);
-    return {
-      scheduled_order: false,
-      estimated_finished_at: defaultFinished.toISOString(),
-      estimated_ready_at: defaultReady.toISOString()
-    };
+    return { scheduled_order: false };
   }
 
   const readyAt = new Date(finishedAt.getTime() - 30 * 60 * 1000); // 30 minutes before delivery for kitchen prep
   const isFuture = finishedAt.getTime() > (Date.now() + 15 * 60 * 1000);
 
   return {
-    scheduled_order: isFuture,
+    scheduled_order: true,
     is_future: isFuture,
     estimated_finished_at: finishedAt.toISOString(),
     estimated_ready_at: readyAt.toISOString()
   };
 }
 
-// 100% Fail-Safe function to format and send orders to BiteBerry
 export async function sendOrderToBiteberry(params: {
+  brand?: string;
+  brandPlatform?: string;
   customerName: string;
   email?: string;
   phone: string;
   rawAddress: string;
   addressLabel?: string;
   companyName?: string;
-  brand?: string;
   orderLines?: any[];
   selections?: any;
   prices?: any;
@@ -120,6 +141,9 @@ export async function sendOrderToBiteberry(params: {
   supabaseAdmin?: any;
 }) {
   try {
+    const brand = params.brand || "canal_butler";
+    const brandPlatform = params.brandPlatform || "canal";
+
     let apiKey = process.env.BITEBERRY_API_KEY?.trim() || "ob_live_8f3a9e2b7c4d1f5e0a6b";
     let storefrontId = process.env.BITEBERRY_STOREFRONT_ID?.trim() || "322e275f-c3d3-44bd-876c-f30ecf713227";
     if (storefrontId === "4f6adec7-55d6-4bdb-b719-a37f44a3fc19") {
@@ -127,22 +151,16 @@ export async function sendOrderToBiteberry(params: {
     }
 
     let kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string; variant_kitchen_names?: Record<string, string> }> = {};
-    let dbProducts: { id: string; name: string; variant_kitchen_names?: Record<string, string> }[] = [];
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    let dbProducts: { id: string; name: string; variants?: string[]; variant_kitchen_names?: Record<string, string> }[] = [];
 
-    // Use passed supabaseAdmin or create one if keys exist
-    const adminClient = params.supabaseAdmin || ((serviceKey && supabaseUrl)
-      ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-      : null);
-
-    if (adminClient) {
+    const sbClient = params.supabaseAdmin || adminClient;
+    if (sbClient) {
       try {
         const [storeRes, prodRes] = await Promise.all([
-          adminClient.from('store_settings').select('page_content').eq('id', 1).maybeSingle(),
-          adminClient.from('ob_products').select('id, name')
+          sbClient.from('store_settings').select('page_content').eq('id', 1).maybeSingle(),
+          sbClient.from('ob_products').select('id, name, variants')
         ]);
-        const storeRow = storeRes?.data;
+        const storeRow = storeRes.data;
         if (prodRes?.data) {
           dbProducts = prodRes.data;
         }
@@ -165,38 +183,23 @@ export async function sendOrderToBiteberry(params: {
       return { success: false, reason: "No API key configured" };
     }
 
-    // Determine brand details (office, canal, snack)
-    const rawBrand = (params.brand || process.env.VITE_BRAND_ID || 'office_butler').trim().toLowerCase();
-    let brandCourier = "office butler";
-    let brandPlatform = "office";
-    let brandName = "Office Butler";
-    let brandPrefix = "OB";
-
-    if (rawBrand.includes('canal')) {
-      brandCourier = "canal butler";
-      brandPlatform = "canal";
-      brandName = "Canal Butler";
-      brandPrefix = "CB";
-    } else if (rawBrand.includes('snack')) {
-      brandCourier = "snack butler";
-      brandPlatform = "snack";
-      brandName = "Snack Butler";
-      brandPrefix = "SB";
-    }
-
     // 1. Process items / order lines
-    const parsedLines: { name: string; qty: number; price: number; taxRate?: number; variant?: string }[] = [];
+    const parsedLines: { name: string; qty: number; price: number; taxRate?: number }[] = [];
     if (params.orderLines && Array.isArray(params.orderLines) && params.orderLines.length > 0) {
       for (const line of params.orderLines) {
-        const isDelivery = Boolean(line.product_name && (line.product_name.startsWith("Bezorging:") || line.product_name.toLowerCase().includes("levering:")));
-        const alreadyHasPortion = Boolean(line.product_name && (line.product_name.toLowerCase().includes("stuks") || line.product_name.toLowerCase().includes("stuk")));
-        const portionSuffix = (!isDelivery && !alreadyHasPortion && line.portion_size) ? ` (${line.portion_size} stuks)` : "";
+        const isDelivery = Boolean(
+          line.product_name && (
+            line.product_name.startsWith("Canal Butler levering:") ||
+            line.product_name.startsWith("Bezorging:") ||
+            line.product_name.toLowerCase().includes("levering:")
+          )
+        );
+        const portionSuffix = (!isDelivery && line.portion_size) ? ` (${line.portion_size} stuks)` : "";
         parsedLines.push({
           name: `${line.product_name}${portionSuffix}`,
           qty: Math.max(1, Number(line.qty) || 1),
           price: Math.max(0, Number(line.price) || 0),
-          taxRate: isDelivery ? 21 : 9,
-          variant: line.variant || undefined
+          taxRate: isDelivery ? 21 : 9
         });
       }
     } else if (params.selections && typeof params.selections === "object") {
@@ -213,21 +216,34 @@ export async function sendOrderToBiteberry(params: {
             name: `${finalProd} (${size} stuks)`,
             qty: Math.max(1, Number(qty) || 1),
             price: Math.max(0, Number(price) || 0),
-            taxRate: 9,
-            variant: variant || undefined
+            taxRate: 9
           });
         }
       }
     }
 
-    // 2. Ensure delivery method is ALWAYS included as an explicit item on BiteBerry so operator/kitchen tablet sees it clearly:
+    // 2. Type bestelling: order_type 'delivery' en orderregel met 'Canal Butler levering: [methode]'
     const deliveryPriceNum = params.deliveryMethodPrice && Number(params.deliveryMethodPrice) > 0
       ? Number(params.deliveryMethodPrice)
       : 0;
+    const rawDeliveryMethod = (params.deliveryMethod || "Standaard bezorging").trim();
+    const deliveryItemName = `Canal Butler levering: ${rawDeliveryMethod}`;
 
-    if (deliveryPriceNum > 0 && !parsedLines.some(l => l.name.toLowerCase().includes("bezorging") || l.name.toLowerCase().includes("levering"))) {
+    const existingDeliveryIdx = parsedLines.findIndex(l => 
+      l.name.startsWith("Canal Butler levering:") || 
+      l.name.startsWith("Bezorging:") ||
+      l.name.toLowerCase().includes("levering:")
+    );
+
+    if (existingDeliveryIdx >= 0) {
+      parsedLines[existingDeliveryIdx].name = deliveryItemName;
+      if (deliveryPriceNum > 0) {
+        parsedLines[existingDeliveryIdx].price = deliveryPriceNum;
+      }
+      parsedLines[existingDeliveryIdx].taxRate = 21;
+    } else {
       parsedLines.push({
-        name: `${brandName} levering: ${params.deliveryMethod || "Standaard Bezorging"}`,
+        name: deliveryItemName,
         qty: 1,
         price: deliveryPriceNum,
         taxRate: 21
@@ -243,6 +259,7 @@ export async function sendOrderToBiteberry(params: {
       });
     }
 
+    // Items mapping met voorvoegsel CB-
     const items = parsedLines.map((line, idx) => {
       return {
         name: line.name,
@@ -250,11 +267,13 @@ export async function sendOrderToBiteberry(params: {
         price: Math.round(line.price * 100), // In cents
         tax_rate: line.taxRate || 9,
         order_item_type: "standalone" as const,
-        external_id: `${brandPrefix}-ITEM-${idx + 1}`
+        external_id: `CB-ITEM-${idx + 1}`
       };
     });
 
     const charges: any[] = [];
+
+    // 3. Discounts
     const discounts: any[] = [];
     const discountCents = params.discountAmount && Number(params.discountAmount) > 0
       ? Math.round(Number(params.discountAmount) * 100)
@@ -265,24 +284,25 @@ export async function sendOrderToBiteberry(params: {
         discount_type: "all",
         amount: discountCents,
         name: params.discountCode ? `Korting (${params.discountCode})` : "Korting",
-        external_id: `${brandPrefix}-DISCOUNT-${params.discountCode || "CODE"}`
+        external_id: `CB-DISCOUNT-${params.discountCode || "CODE"}`
       });
     }
 
     const activeItems = items.length > 0 ? items : [
       {
-        name: `${brandName} Catering`,
+        name: "Canal Butler Catering",
         quantity: 1,
         price: 100,
         tax_rate: 9,
         order_item_type: "standalone" as const,
-        external_id: `${brandPrefix}-ITEM-1`
+        external_id: "CB-ITEM-1"
       }
     ];
 
     const subTotalCents = activeItems.reduce((sum, it) => sum + (it.price * it.quantity), 0);
     const grandTotalCents = Math.max(0, subTotalCents - discountCents);
 
+    // 4. Contact details & Address
     const isTestOrder = Boolean(params.isTest === true);
 
     let effectiveCustomerName = (params.customerName || "Klant").trim();
@@ -296,9 +316,10 @@ export async function sendOrderToBiteberry(params: {
     } else {
       const nameParts = effectiveCustomerName.split(" ");
       firstName = nameParts[0] || "Klant";
-      lastName = nameParts.slice(1).join(" ") || (params.companyName ? `(${params.companyName})` : "");
+      lastName = nameParts.slice(1).join(" ") || (params.companyName ? `(${params.companyName})` : "Klant");
     }
 
+    // Sanitize phone number so Biteberry contact_details.phone.number is ALWAYS filled
     let rawPhone = String(params.phone || '').trim();
     let digitsOnly = rawPhone.replace(/[^0-9]/g, '');
     if (digitsOnly.startsWith('31') && digitsOnly.length >= 10) {
@@ -308,188 +329,224 @@ export async function sendOrderToBiteberry(params: {
     const address = parseDutchAddress(params.rawAddress, params.addressLabel, params.notes);
     const scheduleInfo = parseDeliverySchedule(params.deliveryDate, params.deliveryTime);
 
-    // English delivery method translation
-    let engDeliveryMethod = "Standard Delivery";
-    const rawDeliveryMethod = (params.deliveryMethod || "").trim().toLowerCase();
-    if (rawDeliveryMethod) {
-      if (rawDeliveryMethod.includes("uitpakken") || rawDeliveryMethod.includes("stallen") || rawDeliveryMethod.includes("setup")) {
-        engDeliveryMethod = "Unpack & Setup";
-      } else if (rawDeliveryMethod.includes("butler") || rawDeliveryMethod.includes("premium")) {
-        engDeliveryMethod = "Butler Service";
-      } else if (rawDeliveryMethod.includes("kade") || rawDeliveryMethod.includes("dock")) {
-        engDeliveryMethod = "Dockside Delivery";
-      } else if (rawDeliveryMethod.includes("afhaal") || rawDeliveryMethod.includes("pickup") || rawDeliveryMethod.includes("ophalen")) {
-        engDeliveryMethod = "Pick-up";
-      } else if (rawDeliveryMethod.includes("gratis") || rawDeliveryMethod.includes("standaard") || rawDeliveryMethod.includes("bezorging") || rawDeliveryMethod.includes("delivery")) {
-        engDeliveryMethod = "Standard Delivery";
-      } else {
-        engDeliveryMethod = params.deliveryMethod ? params.deliveryMethod.trim() : "Standard Delivery";
-      }
-    }
-
-    // Build product kitchen data (kitchen_name, ingredients, prep_instructions)
-    const kitchenProducts: {
-      qty: number;
-      kitchenName: string;
-      portionStr: string;
-      ingredients?: string;
-      prepInstructions?: string;
-    }[] = [];
+    // Helper to resolve product kitchen title and info
+    const kitchenProductLines: string[] = [];
+    const courierProductLines: string[] = [];
 
     for (const line of parsedLines) {
-      if (line.name.startsWith("Bezorging:") || line.name.toLowerCase().includes("levering:") || line.name.startsWith("GRATIS:")) continue;
+      if (
+        line.name.startsWith("Canal Butler levering:") ||
+        line.name.startsWith("Bezorging:") ||
+        line.name.startsWith("GRATIS:")
+      ) {
+        continue;
+      }
+
       const rawName = line.name || "";
       const cleanName = rawName.replace(/\s*\(\d+\s*stuks\)/i, "").replace(/\s*\[\+.*?\]/g, "").trim();
 
-      // Extract variant from line.variant or parentheses (e.g. "Bitterballen (Vega)" -> variant "Vega", base "Bitterballen")
-      const variantInParen = cleanName.match(/\(([^)]+)\)$/);
-      const detectedVariant = (line.variant || (variantInParen ? variantInParen[1].trim() : "")).trim();
-      const baseNameWithoutVariant = detectedVariant ? cleanName.replace(/\s*\([^)]+\)$/, "").trim() : cleanName;
+      // Check for variant in parenthesis at the end (e.g. "Bitterballen (Vega)" -> variant: "Vega", base: "Bitterballen")
+      const variantParenMatch = cleanName.match(/\(([^()]+)\)$/);
+      const extractedVariant = variantParenMatch ? variantParenMatch[1].trim() : null;
+      const baseCleanName = variantParenMatch
+        ? cleanName.replace(/\s*\([^()]+\)$/, "").trim()
+        : cleanName;
 
-      const prod = dbProducts.find((p: any) =>
-        p.name?.trim().toLowerCase() === baseNameWithoutVariant.toLowerCase() ||
-        p.name?.trim().toLowerCase() === cleanName.toLowerCase() ||
-        cleanName.toLowerCase().includes(p.name?.trim().toLowerCase())
-      );
+      const prod = dbProducts.find((p: any) => {
+        const pName = (p.name || '').trim().toLowerCase();
+        const cName = cleanName.toLowerCase();
+        const bName = baseCleanName.toLowerCase();
+        return pName === cName || pName === bName || cName.startsWith(pName) || bName.startsWith(pName);
+      });
 
       const match = (prod && kitchenInfoMap[prod.id]) ||
-                    kitchenInfoMap[baseNameWithoutVariant] ||
                     kitchenInfoMap[cleanName] ||
+                    kitchenInfoMap[baseCleanName] ||
                     kitchenInfoMap[rawName] ||
+                    (prod && kitchenInfoMap[prod.name]) ||
                     Object.entries(kitchenInfoMap).find(([key]) => {
                       const kClean = key.trim().toLowerCase();
-                      return rawName.toLowerCase().includes(kClean) || cleanName.toLowerCase() === kClean;
+                      return cleanName.toLowerCase() === kClean ||
+                             baseCleanName.toLowerCase() === kClean ||
+                             cleanName.toLowerCase().startsWith(kClean) ||
+                             rawName.toLowerCase().includes(kClean);
                     })?.[1];
+
+      // Gather all potential variant names for this product
+      const allKnownVariants: string[] = [
+        ...(prod?.variants || []),
+        ...(match?.variant_kitchen_names ? Object.keys(match.variant_kitchen_names) : []),
+        ...((prod as any)?.variant_kitchen_names ? Object.keys((prod as any).variant_kitchen_names) : [])
+      ];
+
+      let chosenVariant: string | null = extractedVariant;
+      if (!chosenVariant && allKnownVariants.length > 0) {
+        for (const v of allKnownVariants) {
+          const vLower = v.toLowerCase();
+          if (rawName.toLowerCase().includes(`(${vLower})`) || cleanName.toLowerCase().includes(`(${vLower})`)) {
+            chosenVariant = v;
+            break;
+          }
+        }
+      } else if (chosenVariant && allKnownVariants.length > 0) {
+        const exactKnown = allKnownVariants.find(v => v.toLowerCase() === chosenVariant!.toLowerCase());
+        if (exactKnown) {
+          chosenVariant = exactKnown;
+        }
+      }
+
+      // Combine variant kitchen names maps
+      const variantKitchenMap: Record<string, string> = {
+        ...((prod as any)?.variant_kitchen_names || {}),
+        ...(match?.variant_kitchen_names || {})
+      };
+
+      let resolvedKitchenName: string = '';
+
+      // 1. If a specific kitchen name is set for this variant via variant_kitchen_names, use it
+      if (chosenVariant) {
+        const variantKey = Object.keys(variantKitchenMap).find(
+          k => k.trim().toLowerCase() === chosenVariant!.trim().toLowerCase()
+        );
+        if (variantKey && variantKitchenMap[variantKey]?.trim()) {
+          resolvedKitchenName = variantKitchenMap[variantKey].trim();
+        }
+      }
+
+      // 2. If no specific kitchen name for this variant is configured, but a general kitchen name is available:
+      // Automatically append the variant name (e.g. "Keukennaam (Variant)") so the kitchen never misses the variant
+      if (!resolvedKitchenName && match?.kitchen_name?.trim()) {
+        const baseKitchen = match.kitchen_name.trim();
+        if (chosenVariant) {
+          const alreadyHasVariant = baseKitchen.toLowerCase().includes(chosenVariant.toLowerCase());
+          if (!alreadyHasVariant) {
+            resolvedKitchenName = `${baseKitchen} (${chosenVariant})`;
+          } else {
+            resolvedKitchenName = baseKitchen;
+          }
+        } else {
+          resolvedKitchenName = baseKitchen;
+        }
+      }
 
       const portionMatch = rawName.match(/\((\d+\s*stuks)\)/i);
       const portionStr = portionMatch ? ` (${portionMatch[1]})` : "";
+      const kitchenTitle = resolvedKitchenName ? `${resolvedKitchenName}${portionStr}` : cleanName;
 
-      // Check for variant-specific kitchen name
-      let kTitle = "";
-      const variantMap = (match as any)?.variant_kitchen_names || (prod as any)?.variant_kitchen_names || {};
-      if (detectedVariant && variantMap) {
-        if (variantMap[detectedVariant]?.trim()) {
-          kTitle = variantMap[detectedVariant].trim();
-        } else {
-          const foundKey = Object.keys(variantMap).find(k => k.trim().toLowerCase() === detectedVariant.toLowerCase());
-          if (foundKey && variantMap[foundKey]?.trim()) {
-            kTitle = variantMap[foundKey].trim();
-          }
-        }
+      // Courier summary line: Keukennaam + aantal
+      courierProductLines.push(`${line.qty}x ${kitchenTitle}`);
+
+      // Kitchen instructions: Keukennaam + aantallen, eventuele ingrediënten (VOLLEDIG ZONDER bereidingswijzen)
+      const parts: string[] = [`${line.qty}x ${kitchenTitle}`];
+      if (match?.ingredients && String(match.ingredients).trim()) {
+        parts.push(`Ingrediënten: ${String(match.ingredients).trim()}`);
       }
-
-      // If no variant-specific kitchen name was configured:
-      if (!kTitle) {
-        const baseKName = match?.kitchen_name?.trim();
-        if (baseKName) {
-          if (detectedVariant && !baseKName.toLowerCase().includes(detectedVariant.toLowerCase())) {
-            kTitle = `${baseKName} (${detectedVariant})`;
-          } else {
-            kTitle = baseKName;
-          }
-        } else {
-          kTitle = cleanName;
-        }
-      }
-
-      kitchenProducts.push({
-        qty: line.qty,
-        kitchenName: kTitle,
-        portionStr,
-        ingredients: match?.ingredients?.trim() || undefined,
-        prepInstructions: match?.prep_instructions?.trim() || undefined
-      });
+      kitchenProductLines.push(parts.join("\n"));
     }
 
-    // 1. Opmerking voor de koerier (courier_note):
-    const courierAddress = [address.line1, address.zipcode, address.city].filter(Boolean).join(", ") || (params.rawAddress ? params.rawAddress.trim() : "Adres op aanvraag");
-    const courierSections: string[] = [
-      brandCourier,
+    // 5. Opmerking voor de koerier (contact_details.courier_note):
+    // - Bovenin kort de merknaam: "canal butler" (klein, zonder emoji's of poespas)
+    // - Bezorgadres
+    // - Engelse vertaling van de gekozen bezorgmethode
+    // - De eventuele extra opmerking / notities van de klant
+    // - Telefoonnummer en naam van de klant
+    // - Keukennamen en hoeveelheden van de bestelde producten
+    // (Duidelijke witregels \n\n tussen alle losse onderdelen)
+    const courierAddress = params.rawAddress || params.addressLabel || address.line1 || "Adres op aanvraag";
+    const courierMethodEn = translateDeliveryMethodToEnglish(params.deliveryMethod);
+
+    const courierParts: string[] = [
+      "canal butler",
       courierAddress,
-      engDeliveryMethod
+      courierMethodEn
     ];
-
     if (params.notes && params.notes.trim()) {
-      courierSections.push(params.notes.trim());
+      courierParts.push(params.notes.trim());
     }
-
-    courierSections.push(`${cleanPhone} - ${effectiveCustomerName}`);
-
-    if (kitchenProducts.length > 0) {
-      const productLines = kitchenProducts.map(kp => `${kp.qty}x ${kp.kitchenName}${kp.portionStr}`).join("\n");
-      courierSections.push(productLines);
+    courierParts.push(`${cleanPhone} - ${effectiveCustomerName}`);
+    if (courierProductLines.length > 0) {
+      courierParts.push(courierProductLines.join("\n"));
     }
+    const courierNote = courierParts.join("\n\n");
 
-    const finalCourierNote = courierSections.filter(Boolean).join("\n\n");
-
-    // 2. Opmerking voor de operator (operator_note):
-    const effectiveEmail = (params.email && params.email.includes('@')) ? params.email.trim() : "info@office-butler.com";
-    const companyDisplay = params.companyName?.trim() || "Geen bedrijf";
-    const operatorSections: string[] = [
-      effectiveCustomerName,
-      companyDisplay,
-      effectiveEmail,
-      brandPlatform
+    // 6. Opmerking voor de operator (operator_note):
+    // - Klantnaam
+    // - Bedrijfsnaam (indien ingevuld)
+    // - E-mailadres
+    // - Bestelplatform: "canal" / "canal butler"
+    // (Gescheiden door witregels \n\n)
+    const effectiveEmailStr = (params.email && params.email.includes("@")) ? params.email.trim() : "info@canalbutler.nl";
+    const operatorParts: string[] = [
+      effectiveCustomerName
     ];
-    const finalOperatorNote = operatorSections.filter(Boolean).join("\n\n");
-
-    // 3. Opmerking voor de keuken (kitchen_note):
-    const kitchenSections: string[] = [
-      brandPlatform
-    ];
-
-    if (kitchenProducts.length > 0) {
-      const itemBlocks: string[] = [];
-      for (const kp of kitchenProducts) {
-        const itemParts = [`${kp.kitchenName} - ${kp.qty}x${kp.portionStr}`];
-        if (kp.ingredients) {
-          itemParts.push(`Ingrediënten: ${kp.ingredients}`);
-        }
-        itemBlocks.push(itemParts.join("\n"));
-      }
-      kitchenSections.push(itemBlocks.join("\n\n"));
+    if (params.companyName && params.companyName.trim() && params.companyName.trim() !== effectiveCustomerName) {
+      operatorParts.push(params.companyName.trim());
     }
+    operatorParts.push(effectiveEmailStr);
+    operatorParts.push("canal butler");
+    const operatorNote = operatorParts.join("\n\n");
 
-    const clientAndCompany = params.companyName?.trim()
-      ? `${effectiveCustomerName} (${params.companyName.trim()})`
-      : effectiveCustomerName;
-    kitchenSections.push(clientAndCompany);
-
+    // 7. Opmerking voor de keuken (kitchen_note):
+    // - Bestelplatform: "canal" / "canal butler"
+    // - Keukennamen + aantallen van de producten (+ ingrediënten indien aanwezig, GEEN bereidingswijzen)
+    // - Klantnaam en bedrijf + eventuele extra opmerking van de klant
+    // (Zorg voor witregels \n\n tussen het platform, de producten, en de klantinformatie)
+    const kitchenCustomerParts: string[] = [
+      params.companyName && params.companyName.trim() !== effectiveCustomerName
+        ? `${effectiveCustomerName} & ${params.companyName.trim()}`
+        : effectiveCustomerName
+    ];
     if (params.notes && params.notes.trim()) {
-      kitchenSections.push(`Extra opmerking: ${params.notes.trim()}`);
+      kitchenCustomerParts.push(`Opmerking: ${params.notes.trim()}`);
     }
 
-    const finalKitchenNote = kitchenSections.filter(Boolean).join("\n\n").trim();
+    const kitchenSections: string[] = ["canal butler"];
+    if (kitchenProductLines.length > 0) {
+      kitchenSections.push(kitchenProductLines.join("\n\n"));
+    }
+    if (kitchenCustomerParts.length > 0) {
+      kitchenSections.push(kitchenCustomerParts.join("\n"));
+    }
+    const finalKitchenNote = kitchenSections.join("\n\n");
 
+    // 8. Klantgegevens:
+    // - Vul contact_details met first_name, last_name, email, phone (+31) en gestructureerd address.
+    // Betaling: 'Op factuur'
+    // Bestel-Id: external_id met voorvoegsel 'CB-'
     const orderPayload = {
+      brand,
+      brandPlatform,
       order: {
+        brand,
+        brandPlatform,
+        brand_platform: brandPlatform,
         storefront_id: storefrontId,
         order_type: "delivery",
         delivery_type: "own_fleet",
         is_test: isTestOrder,
-        scheduled_order: scheduleInfo.scheduled_order,
+        scheduled_order: scheduleInfo.scheduled_order ?? (Boolean(scheduleInfo.estimated_finished_at)),
         estimated_finished_at: scheduleInfo.estimated_finished_at,
         estimated_ready_at: scheduleInfo.estimated_ready_at,
-        external_id: `${brandPrefix}-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        external_id: `CB-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
         kitchen_note: finalKitchenNote,
-        operator_note: finalOperatorNote,
+        operator_note: operatorNote,
         sub_total: subTotalCents,
         grand_total: grandTotalCents,
         contact_details: {
           first_name: firstName,
           last_name: lastName,
-          email: effectiveEmail,
+          email: effectiveEmailStr,
           phone: {
             number: cleanPhone,
             country_code: "+31"
           },
-          courier_note: finalCourierNote,
+          courier_note: courierNote,
           address: {
             line1: address.line1 || "Keizersgracht 123",
             city: address.city || "Amsterdam",
             zipcode: address.zipcode || "1011 RB",
-            country: address.country || "Netherlands",
-            country_code: address.country_code || "nl",
+            country: "Netherlands",
+            country_code: "nl",
             note: address.note
           }
         },
@@ -503,7 +560,8 @@ export async function sendOrderToBiteberry(params: {
             payment_type: "other",
             name: "Op factuur",
             description: "Op factuur",
-            external_id: `${brandPrefix}-PAY-${Date.now()}`
+            payment_method: "Op factuur",
+            external_id: `CB-PAY-${Date.now()}`
           }
         ]
       }
@@ -527,7 +585,7 @@ export async function sendOrderToBiteberry(params: {
     console.log("[BiteBerry] Order succesvol aangemaakt! Order ID:", data.order?.id || data.id, "Short Code:", data.order?.short_code || data.short_code);
     return { success: true, order: data.order || data };
   } catch (err: any) {
-    console.error("[BiteBerry] Fout bij doorsturen naar BiteBerry (veilige fallback):", err?.message || err);
+    console.error("[BiteBerry] Fout bij doorsturen naar BiteBerry:", err?.message || err);
     return { success: false, error: err?.message || String(err) };
   }
 }

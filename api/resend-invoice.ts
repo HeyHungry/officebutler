@@ -24,13 +24,13 @@ export default async function handler(req: any, res: any) {
     const emailHtml = `
       <div style="font-family: sans-serif; max-w-xl; margin: 0 auto; color: #333;">
         <div style="background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
-          <h3 style="margin-top: 0; color: #0d47a1;">HERVERZENDING: Factuur / Bestelling (Office Butler)</h3>
-          <p style="margin: 5px 0;">Deze factuur is handmatig opnieuw verzonden vanuit het Moderator Paneel voor <strong>${customerName}</strong>.</p>
+          <h3 style="margin-top: 0; color: #0d47a1;">HERVERZENDING: Factuur / Bestelling (Canal Butler)</h3>
+          <p style="margin: 5px 0;">Deze factuur is handmatig opnieuw verzonden vanuit het Moderator Paneel voor <strong>${customerName}</strong> via Canal Butler.</p>
         </div>
 
-        <h2 style="color: #05053D;">Overzicht Bestelling & Factuur</h2>
+        <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur (Canal Butler)</h2>
         <p>Beste Beheerder,</p>
-        <p>Hierbij de herverzonden factuurgegevens van de bestelling van ${customerName}.</p>
+        <p>Hierbij de herverzonden factuurgegevens van de bestelling via Canal Butler van ${customerName}.</p>
         
         <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
           <thead>
@@ -58,16 +58,46 @@ export default async function handler(req: any, res: any) {
           ${notes ? `<p style="margin: 5px 0;"><strong>Extra Notities / KVK:</strong><br/><pre style="white-space: pre-wrap; font-family: inherit;">${notes}</pre></p>` : ''}
         </div>
         
-        <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Office Butler (Herverzending).</p>
+        <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Canal Butler (Herverzending).</p>
       </div>
     `;
 
-    const { data, error } = await resend.emails.send({
-      from: 'Office Butler <info@office-butler.com>',
-      to: ['info@office-butler.com'],
-      subject: `[HERVERZONDEN] Factuur - ${customerName}`,
+    const fromAddress = process.env.RESEND_FROM?.trim() || 'Canal Butler <info@office-butler.com>';
+
+    const recipients = ['info@office-butler.com', 'info@canal-butler.com'];
+
+    let { data, error } = await resend.emails.send({
+      from: fromAddress,
+      replyTo: 'info@canal-butler.com',
+      to: recipients,
+      subject: `[Canal Butler / Office Butler] [HERVERZONDEN] Factuur - ${customerName}`,
       html: emailHtml
     });
+
+    if (error && (error.name === 'validation_error' || error.message?.includes('not verified') || (error as any).statusCode === 403)) {
+      if (fromAddress !== 'Canal Butler <info@office-butler.com>') {
+        const fallback = await resend.emails.send({
+          from: 'Canal Butler <info@office-butler.com>',
+          replyTo: 'info@canal-butler.com',
+          to: recipients,
+          subject: `[Canal Butler / Office Butler] [HERVERZONDEN] Factuur - ${customerName}`,
+          html: emailHtml
+        });
+        data = fallback.data;
+        error = fallback.error;
+      }
+      if (error && (error.name === 'validation_error' || error.message?.includes('not verified') || (error as any).statusCode === 403)) {
+        const fallbackDev = await resend.emails.send({
+          from: 'Canal Butler <onboarding@resend.dev>',
+          replyTo: 'info@canal-butler.com',
+          to: recipients,
+          subject: `[Canal Butler / Office Butler] [HERVERZONDEN] Factuur - ${customerName}`,
+          html: emailHtml
+        });
+        data = fallbackDev.data;
+        error = fallbackDev.error;
+      }
+    }
 
     if (error) {
       console.error("Error resending invoice email:", error);

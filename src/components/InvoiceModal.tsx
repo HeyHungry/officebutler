@@ -20,7 +20,12 @@ export interface InvoiceModalProps {
   initialShowEmail?: boolean;
 }
 
-export function InvoiceModal({
+export function InvoiceModal(props: InvoiceModalProps) {
+  if (!props.isOpen || (!props.orderGroup && !props.monthlyData)) return null;
+  return <InvoiceModalContent {...props} />;
+}
+
+function InvoiceModalContent({
   isOpen,
   onClose,
   orderGroup,
@@ -29,52 +34,9 @@ export function InvoiceModal({
   storeSettings,
   initialShowEmail = false,
 }: InvoiceModalProps) {
-  const isMonthly = Boolean(monthlyData && monthlyData.orders && monthlyData.orders.length > 0);
-
-  // Recipient / Client details
-  let clientName = '';
-  let clientPhone = '';
-  let clientEmail = '';
-  let clientBillingInfo = '';
-  let deliveryAddress = '';
-
-  if (isMonthly) {
-    const comp = monthlyData?.company;
-    clientName = comp?.name || 'Zakelijke Klant';
-    clientPhone = comp?.phone || monthlyData?.orders?.[0]?.phone || '';
-    clientEmail = comp?.billing_email || comp?.email || comp?.contact_email || monthlyData?.orders?.[0]?.customer_email || monthlyData?.orders?.[0]?.email || '';
-    clientBillingInfo = comp?.billing_info || '';
-    deliveryAddress = comp?.address || monthlyData?.orders?.[0]?.address || 'Locatie Amsterdam';
-  } else if (orderGroup) {
-    const isGuest = !orderGroup.company_id;
-    clientName = customerCompany?.name || orderGroup.company_name || (isGuest ? 'Particuliere Gast' : 'Zakelijke Klant');
-    clientPhone = orderGroup.phone || customerCompany?.phone || '';
-    clientEmail = customerCompany?.billing_email || customerCompany?.email || customerCompany?.contact_email || orderGroup.customer_email || orderGroup.email || orderGroup.items?.[0]?.customer_email || '';
-    clientBillingInfo = customerCompany?.billing_info || '';
-    deliveryAddress = orderGroup.address || customerCompany?.address || 'Locatie Amsterdam';
-  }
-
   const [copied, setCopied] = useState(false);
-  const [isEmailPanelOpen, setIsEmailPanelOpen] = useState(Boolean(initialShowEmail));
-  const [recipientEmailInput, setRecipientEmailInput] = useState(clientEmail);
-  const [subjectInput, setSubjectInput] = useState('');
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
-  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
-  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (clientEmail && !recipientEmailInput) {
-      setRecipientEmailInput(clientEmail);
-    }
-  }, [clientEmail]);
-
-  useEffect(() => {
-    if (initialShowEmail) {
-      setIsEmailPanelOpen(true);
-    }
-  }, [initialShowEmail]);
-
-  if (!isOpen || (!orderGroup && !monthlyData)) return null;
+  const isMonthly = Boolean(monthlyData && monthlyData.orders && monthlyData.orders.length > 0);
 
   // Company settings (with Office Butler & Mokum Local Kitchen defaults)
   const pageContent = storeSettings?.page_content || {};
@@ -88,6 +50,29 @@ export function InvoiceModal({
   const sellerEmail = pageContent.invoice_email || 'info@office-butler.com';
   const sellerAddress = pageContent.invoice_address || 'Muiderstraat 18-s, 1011 RB Amsterdam';
   const paymentTermsDays = Number(pageContent.invoice_payment_terms_days) || 14;
+
+  // Recipient / Client details
+  let clientName = '';
+  let clientPhone = '';
+  let clientEmail = '';
+  let clientBillingInfo = '';
+  let deliveryAddress = '';
+
+  if (isMonthly) {
+    const comp = monthlyData!.company;
+    clientName = comp?.name || 'Zakelijke Klant';
+    clientPhone = comp?.phone || monthlyData!.orders[0]?.phone || '';
+    clientEmail = comp?.billing_email || comp?.email || comp?.contact_email || monthlyData!.orders[0]?.customer_email || monthlyData!.orders[0]?.email || '';
+    clientBillingInfo = comp?.billing_info || '';
+    deliveryAddress = comp?.address || monthlyData!.orders[0]?.address || 'Locatie Amsterdam';
+  } else {
+    const isGuest = !orderGroup.company_id;
+    clientName = customerCompany?.name || orderGroup.company_name || (isGuest ? 'Particuliere Gast' : 'Zakelijke Klant');
+    clientPhone = orderGroup.phone || customerCompany?.phone || '';
+    clientEmail = customerCompany?.billing_email || customerCompany?.email || customerCompany?.contact_email || orderGroup.customer_email || orderGroup.email || orderGroup.items?.[0]?.customer_email || '';
+    clientBillingInfo = customerCompany?.billing_info || '';
+    deliveryAddress = orderGroup.address || customerCompany?.address || 'Locatie Amsterdam';
+  }
 
   // Invoice Number Generation
   let invoiceNumber = '';
@@ -211,6 +196,25 @@ export function InvoiceModal({
   const subtotalExclVat = netPayableInclVat / (1 + vatRate);
   const vatAmount = netPayableInclVat - subtotalExclVat;
 
+  // Email dispatch state
+  const [isEmailPanelOpen, setIsEmailPanelOpen] = useState(Boolean(initialShowEmail));
+  const [recipientEmailInput, setRecipientEmailInput] = useState(clientEmail);
+  const [subjectInput, setSubjectInput] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
+  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (clientEmail && !recipientEmailInput) {
+      setRecipientEmailInput(clientEmail);
+    }
+  }, [clientEmail]);
+
+  useEffect(() => {
+    if (initialShowEmail) {
+      setIsEmailPanelOpen(true);
+    }
+  }, [initialShowEmail]);
 
   const defaultSubject = isMonthly
     ? (pageContent.email_monthly_invoice_subject 

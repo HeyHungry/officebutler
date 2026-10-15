@@ -13,22 +13,69 @@ export default async function handler(req: any, res: any) {
     }
     
     const resend = new Resend(apiKey);
+    const fromAddress = process.env.RESEND_FROM?.trim() || 'Canal Butler <info@office-butler.com>';
     
-    const { data, error } = await resend.emails.send({
-      from: 'Office Butler <info@office-butler.com>',
-      to: ['info@office-butler.com'],
-      subject: `Nieuwe aanvraag Kantoor: ${companyName}`,
+    const recipients = ['info@office-butler.com', 'info@canal-butler.com'];
+    
+    let { data, error } = await resend.emails.send({
+      from: fromAddress,
+      replyTo: 'info@canal-butler.com',
+      to: recipients,
+      subject: `[Canal Butler / Office Butler] Nieuwe aanvraag: ${companyName}`,
       html: `
-        <h2>Nieuwe aanvraag via Office Butler</h2>
-        <p>Er is zojuist een nieuw kantoor geregistreerd dat wacht op goedkeuring.</p>
+        <h2>Nieuwe aanvraag via Canal Butler</h2>
+        <p>Er is zojuist een nieuw bedrijf of opstaplocatie geregistreerd dat wacht op goedkeuring.</p>
         <ul>
-          <li><strong>Kantoornaam:</strong> ${companyName}</li>
+          <li><strong>Bedrijfsnaam / Locatie:</strong> ${companyName}</li>
           <li><strong>E-mailadres:</strong> ${email}</li>
           <li><strong>Telefoonnummer:</strong> ${phone}</li>
         </ul>
-        <p>Log in op het Office Butler Moderator Panel om deze aanvraag goed te keuren.</p>
+        <p>Dit is een automatisch gegenereerd bericht van Canal Butler.</p>
       `
     });
+
+    if (error && (error.name === 'validation_error' || error.message?.includes('not verified') || (error as any).statusCode === 403)) {
+      if (fromAddress !== 'Canal Butler <info@office-butler.com>') {
+        const fallback = await resend.emails.send({
+          from: 'Canal Butler <info@office-butler.com>',
+          replyTo: 'info@canal-butler.com',
+          to: recipients,
+          subject: `[Canal Butler / Office Butler] Nieuwe aanvraag: ${companyName}`,
+          html: `
+            <h2>Nieuwe aanvraag via Canal Butler</h2>
+            <p>Er is zojuist een nieuw bedrijf of opstaplocatie geregistreerd dat wacht op goedkeuring.</p>
+            <ul>
+              <li><strong>Bedrijfsnaam / Locatie:</strong> ${companyName}</li>
+              <li><strong>E-mailadres:</strong> ${email}</li>
+              <li><strong>Telefoonnummer:</strong> ${phone}</li>
+            </ul>
+            <p>Dit is een automatisch gegenereerd bericht van Canal Butler.</p>
+          `
+        });
+        data = fallback.data;
+        error = fallback.error;
+      }
+      if (error && (error.name === 'validation_error' || error.message?.includes('not verified') || (error as any).statusCode === 403)) {
+        const fallbackDev = await resend.emails.send({
+          from: 'Canal Butler <onboarding@resend.dev>',
+          replyTo: 'info@canal-butler.com',
+          to: recipients,
+          subject: `[Canal Butler / Office Butler] Nieuwe aanvraag: ${companyName}`,
+          html: `
+            <h2>Nieuwe aanvraag via Canal Butler</h2>
+            <p>Er is zojuist een nieuw bedrijf of opstaplocatie geregistreerd dat wacht op goedkeuring.</p>
+            <ul>
+              <li><strong>Bedrijfsnaam / Locatie:</strong> ${companyName}</li>
+              <li><strong>E-mailadres:</strong> ${email}</li>
+              <li><strong>Telefoonnummer:</strong> ${phone}</li>
+            </ul>
+            <p>Dit is een automatisch gegenereerd bericht van Canal Butler.</p>
+          `
+        });
+        data = fallbackDev.data;
+        error = fallbackDev.error;
+      }
+    }
     
     if (error) {
       console.error("Error sending admin email:", error);

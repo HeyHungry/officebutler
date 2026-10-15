@@ -15,7 +15,7 @@ export function WhatsAppWidget() {
   }, []);
   
   const phoneNumber = "31207867937";
-  const message = "Hallo Office Butler, ik heb een vraag over de kantoorborrel.";
+  const message = "Hallo Canal Butler, ik heb een vraag over de catering.";
   const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`;
 
   return (
@@ -31,28 +31,28 @@ export function WhatsAppWidget() {
           >
             <button 
               onClick={() => setIsOpen(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
             >
               <X size={16} />
             </button>
             <div 
               className="text-white rounded-full p-2.5 shrink-0 shadow-sm"
-              style={{ background: 'linear-gradient(135deg, #151f34 0%, #5270ff 100%)' }}
+              style={{ background: 'linear-gradient(135deg, #151f33 0%, #1e2c47 100%)' }}
             >
               <MessageCircle size={20} strokeWidth={1.5} />
             </div>
             <div className="pr-4">
-              <h4 className="font-semibold text-ob-text mb-2 text-lg font-heading-default">Office Butler</h4>
+              <h4 className="font-semibold text-ob-text mb-2 text-lg font-heading-default">Canal Butler</h4>
               <p className="text-[13px] text-ob-text-light font-paragraph-default leading-relaxed">
-                Wij bezorgen de perfecte kantoorborrel direct bij u op de zaak!
+                Wij bezorgen de perfecte catering direct aan boord!
                 <br /><br />
-                Meer weten? Chat hier met de Office Butler!
+                Meer weten? Chat hier met de Canal Butler!
               </p>
               <a 
                 href={whatsappUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 inline-block bg-[#25D366] text-white px-4 py-2 rounded-full text-xs font-semibold hover:bg-[#1EBE5D] transition-colors font-button-default shadow-xs"
+                className="mt-4 inline-block bg-[#25D366] text-white px-4 py-2 rounded-full text-xs font-semibold hover:bg-[#1EBE5D] transition-colors font-button-default shadow-xs cursor-pointer"
               >
                 Chat via WhatsApp
               </a>
@@ -73,8 +73,8 @@ export function WhatsAppWidget() {
             setIsOpen(true);
           }
         }}
-        className="text-white rounded-full shadow-[0_8px_20px_rgba(21,31,52,0.35)] hover:scale-105 hover:shadow-[0_10px_25px_rgba(82,112,255,0.4)] transition-all duration-300 flex items-center justify-center shrink-0 w-[60px] h-[60px]"
-        style={{ background: 'linear-gradient(135deg, #151f34 0%, #5270ff 100%)' }}
+        className="text-white rounded-full shadow-[0_8px_20px_rgba(21,31,51,0.35)] hover:scale-105 hover:shadow-[0_10px_25px_rgba(21,31,51,0.5)] transition-all duration-300 flex items-center justify-center shrink-0 w-[60px] h-[60px] border border-[#eaaf47]/40 cursor-pointer"
+        style={{ background: 'linear-gradient(135deg, #151f33 0%, #1e2c47 100%)' }}
         aria-label="Chat via WhatsApp"
       >
         <MessageCircle size={30} strokeWidth={1.5} />

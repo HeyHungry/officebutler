@@ -2,13 +2,54 @@ import { createClient } from '@supabase/supabase-js';
 import type { ModificationRulesConfig, CompanyCustomDeadlines } from './orderDeadlines';
 export type { ModificationRulesConfig, CompanyCustomDeadlines };
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+let rawSupabaseUrl = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_URL ? String(import.meta.env.VITE_SUPABASE_URL).trim() : '');
+let rawSupabaseAnonKey = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SUPABASE_ANON_KEY ? String(import.meta.env.VITE_SUPABASE_ANON_KEY).trim() : '');
 
-// Create a dummy client if env vars are missing so the app doesn't crash during preview
-export const supabase = supabaseUrl && supabaseAnonKey
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+// Detecteer en herstel automatisch wanneer de URL en de Anon Key omgewisseld zijn
+if (
+  (rawSupabaseUrl.startsWith('sb_publishable') || (!rawSupabaseUrl.includes('.') && rawSupabaseUrl.length > 15)) &&
+  (rawSupabaseAnonKey.startsWith('http://') || rawSupabaseAnonKey.startsWith('https://') || rawSupabaseAnonKey.includes('.supabase.co'))
+) {
+  const temp = rawSupabaseUrl;
+  rawSupabaseUrl = rawSupabaseAnonKey;
+  rawSupabaseAnonKey = temp;
+}
+
+// Centrale gedeelde Supabase backend van Office Butler / Canal Butler
+const SHARED_SUPABASE_URL = 'https://rqqotumbdsghvkkmquqo.supabase.co';
+const SHARED_SUPABASE_ANON_KEY = 'sb_publishable__q89JYItyV3VZvVe6codfg_WOZ__u28';
+
+if (!rawSupabaseUrl || rawSupabaseUrl.includes('your-project.supabase.co')) {
+  rawSupabaseUrl = SHARED_SUPABASE_URL;
+}
+if (!rawSupabaseAnonKey || rawSupabaseAnonKey === 'your-anon-key' || rawSupabaseAnonKey.length < 10) {
+  rawSupabaseAnonKey = SHARED_SUPABASE_ANON_KEY;
+}
+
+function getValidSupabaseClient() {
+  if (!rawSupabaseUrl || !rawSupabaseAnonKey) {
+    return null;
+  }
+
+  let finalUrl = rawSupabaseUrl;
+  if (!finalUrl.match(/^https?:\/\//i)) {
+    finalUrl = `https://${finalUrl}`;
+  }
+
+  try {
+    const parsed = new URL(finalUrl);
+    if (!parsed.protocol.startsWith('http')) {
+      return null;
+    }
+    return createClient(finalUrl, rawSupabaseAnonKey);
+  } catch (err) {
+    console.warn('[Supabase] Kon client niet initialiseren met opgegeven URL:', err);
+    return null;
+  }
+}
+
+// Create client with verified credentials
+export const supabase = getValidSupabaseClient();
 
 export type SharedSettings = {
   id: number;
@@ -79,7 +120,7 @@ export type PackagingOption = {
   available_for_guests: boolean;
   available_for_all_companies: boolean;
   allowed_company_ids?: string[];
-  allowed_brands?: string[];
+  allowed_brands?: string[] | string | null;
   sort_order?: number;
   created_at?: string;
 };
@@ -490,72 +531,75 @@ export type ObPortionPrice = {
 // Fallback data for preview if Supabase is not connected
 export const fallbackSettings: SharedSettings = {
   id: 1,
-  opening_hours: "Ma - Vr: 15:00 - 21:00",
+  opening_hours: "Ma - Zo: 12:00 - 23:00",
   promo_active: true,
-  promo_message: "Welkom bij Office Butler! Bestel nu voor de vrijmibo van aanstaande vrijdag.",
+  promo_message: "Welkom bij Canal Butler! Verse warme borrelhappen bezorgd aan boord van uw rondvaart in Amsterdam.",
 };
 
 export const fallbackStoreSettings: StoreSettings = {
   id: 1,
   override_status: 'AUTO',
   schedule: {
-    "1": { open: "15:00", close: "23:00", closed: false },
-    "2": { open: "15:00", close: "23:00", closed: false },
-    "3": { open: "15:00", close: "23:00", closed: false },
-    "4": { open: "15:00", close: "00:00", closed: false },
-    "5": { open: "14:00", close: "01:00", closed: false },
-    "6": { open: "13:00", close: "01:00", closed: false },
-    "0": { open: "13:00", close: "00:00", closed: false },
+    "1": { open: "12:00", close: "23:00", closed: false },
+    "2": { open: "12:00", close: "23:00", closed: false },
+    "3": { open: "12:00", close: "23:00", closed: false },
+    "4": { open: "12:00", close: "00:00", closed: false },
+    "5": { open: "12:00", close: "01:00", closed: false },
+    "6": { open: "11:00", close: "01:00", closed: false },
+    "0": { open: "11:00", close: "23:00", closed: false },
   },
   pickup_url: "https://web.orderli.com/YKjd-bootjes_i",
   delivery_url: "https://www.heyhungry.online/Canalbu",
   page_content: {
     section_order: DEFAULT_SECTION_ORDER,
-    hero_pre_title: "EXCLUSIEF IN AMSTERDAM",
-    hero_title: "De perfecte kantoorborrel.",
-    hero_subtitle: "Onze butlers leveren de lekkerste snacks voor jouw kantoorborrel.",
-    hero_btn_scheduled: "Bestel vooraf",
-    hero_btn_direct: "Bestel direct",
-    hero_btn_offer: "Bekijk aanbod",
-    how_title: "Hoe Werkt Office Butler?",
-    how_subtitle: "In 3 simpele stappen jouw kantoorborrel of vrijdagmiddagborrel geregeld.",
-    how_step1_title: "Stel uw pakket samen",
-    how_step1_desc: "Kies uit onze vaste pakketten of stel zelf uw ideale borrel samen met onze losse snacks.",
-    how_step2_title: "Kies uw bezorgmoment",
-    how_step2_desc: "Bestel direct voor levering binnen 45 minuten, of plan uw borrel vooruit voor een specifiek moment.",
-    how_step3_title: "Geniet van de borrel",
-    how_step3_desc: "Onze butlers bezorgen de snacks warm en perfect gepresenteerd bij u op kantoor.",
-    menu_title: "Onze Selectie",
-    menu_subtitle: "Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen.",
-    menu_btn: "Bekijk volledig menu",
-    business_title: "Vaste Klant Worden",
-    business_subtitle: "Een vaste partner voor uw kantoor.",
-    business_desc: "Organiseert u regelmatig kantoorborrels of evenementen? Meld uw bedrijf aan bij Office Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw medewerkers.",
-    business_point1: "Een eigen, unieke URL (bijv. officebutler.nl/uw-bedrijf)",
-    business_point2: "Gepersonaliseerd assortiment naar wens",
-    business_point3: "Optie tot betalen op factuur",
-    business_btn: "Kantoor Inschrijven",
-    business_form_title: "Bedrijf Aanmelden",
-    assortments_title: "Onze Assortimenten",
-    assortments_subtitle: "Kies het pakket dat het beste bij uw kantoorborrel past.",
-    assort_snacks_title: "Office Snacks",
-    assort_snacks_item1: "Gemengde warme snacks (Bourgondiër)",
-    assort_snacks_item2: "Inclusief sauzen",
-    assort_snacks_item3: "Perfect als aanvulling",
-    assort_snacks_btn: "Bestel Snacks",
-    assort_complete_title: "Office Compleet",
-    assort_complete_item1: "Uitgebreid assortiment",
-    assort_complete_item2: "Inclusief dranken",
-    assort_complete_item3: "Compleet verzorgd",
+    header_logo_url: "https://i.imgur.com/psrYTWD.png",
+    hero_background_image: "https://i.imgur.com/owrXF8B.png",
+    hero_pre_title: "AAN DE AMSTERDAMSE GRACHTEN",
+    hero_title: "De perfecte borrel aan boord.",
+    hero_subtitle: "Verse, warme snacks en gekoelde dranken bezorgd op vaste aanleglocaties voor rederijen en sloepen in Amsterdam.",
+    hero_btn_order: "Bestel nu",
+    hero_btn_scheduled: "Plan vaartocht",
+    hero_btn_direct: "Direct bestellen",
+    hero_btn_offer: "Bekijk assortiment",
+    how_title: "Hoe Werkt Canal Butler?",
+    how_subtitle: "In 3 simpele stappen verse warme borrelhappen aan boord van uw rondvaartboot of sloep.",
+    how_step1_title: "Stel uw vaarpakket samen",
+    how_step1_desc: "Kies uit onze samengestelde borrelboxen of stel zelf uw ideale assortiment samen met onze losse warme snacks.",
+    how_step2_title: "Kies tijd & aanleglocatie",
+    how_step2_desc: "Geef uw vaartijd en vaste aanlegsteiger of kade in Amsterdam door voor een stipte overhandiging aan boord.",
+    how_step3_title: "Geniet op het water",
+    how_step3_desc: "Onze butlers leveren de snacks warm, krokant en vaarklaar verpakt direct aan de kapitein of bemanning.",
+    menu_title: "Onze Selectie voor Rederijen",
+    menu_subtitle: "Hoogwaardige snacks en dranken, vers bereid in de Mokum Local Kitchen en warm aan boord bezorgd.",
+    menu_btn: "Bekijk volledig assortiment",
+    business_title: "Partner Worden voor Rederijen",
+    business_subtitle: "Vaste horecapartner voor uw rondvaarten en sloepen.",
+    business_desc: "Vaart u regelmatig met gasten over de grachten? Sluit uw rederij aan bij Canal Butler. Wij creëren een gepersonaliseerde bestelomgeving exclusief voor uw schippers en planners met vaste overdrachtspunten langs uw vaarroutes.",
+    business_point1: "Vaste afleversteigers en overdrachtspunten langs uw vaarroutes",
+    business_point2: "Gepersonaliseerd assortiment en speciale rederij-tarieven",
+    business_point3: "Eenvoudig bestellen en overzichtelijke verzamelfacturatie",
+    business_btn: "Rederij Aanmelden",
+    business_form_title: "Rederij Aanmelden",
+    assortments_title: "Onze Vaararrangementen",
+    assortments_subtitle: "Kies het pakket dat het beste bij uw vaartocht of gezelschap past.",
+    assort_snacks_title: "Grachten Borrelmix",
+    assort_snacks_item1: "Gemengde warme snacks (Bourgondiër & vega)",
+    assort_snacks_item2: "Inclusief ambachtelijke sauzen",
+    assort_snacks_item3: "Vaarklaar verpakt in thermobox",
+    assort_snacks_btn: "Bestel Borrelmix",
+    assort_complete_title: "Vaartocht Compleet",
+    assort_complete_item1: "Uitgebreid assortiment warme en koude happen",
+    assort_complete_item2: "Inclusief gekoelde dranken",
+    assort_complete_item3: "Volledig verzorgd voor uw gasten",
     assort_complete_btn: "Bestel Compleet",
-    contact_title: "Contact & Informatie",
+    contact_title: "Contact & Locaties",
     faq_title: "Veelgestelde Vragen",
-    faq_q1: "Bezorgen jullie ook buiten Amsterdam?",
-    faq_a1: "Momenteel bezorgen wij met Office Butler uitsluitend op kantoren binnen de ring van Amsterdam om de kwaliteit en temperatuur van onze snacks te garanderen.",
-    faq_q2: "Wat is het verschil met Canal Butler?",
-    faq_a2: "Office Butler is het B2B zusterbedrijf van Canal Butler. We maken gebruik van dezelfde keuken (Mokum Local Kitchen) en bieden dezelfde premium kwaliteit, maar dan specifiek afgestemd op levering op kantoor in plaats van op de grachten.",
-    faq_q3: "Hoe ver van tevoren moet ik bestellen?",
-    faq_a3: "Voor reguliere bestellingen vragen wij u minimaal 2 uur van tevoren te bestellen. Voor grote groepen (>30 personen) of een compleet assortiment horen wij dit graag minimaal 24 uur van tevoren."
+    faq_q1: "Op welke locaties in Amsterdam bezorgen jullie?",
+    faq_a1: "Wij bezorgen op vaste afgesproken aanlegsteigers, kades en overdrachtspunten langs de gehele Amsterdamse grachtengordel, Amstel en het Oosterdok.",
+    faq_q2: "Hoe blijven de snacks warm op het water?",
+    faq_a2: "Al onze hapjes worden vlak voor overdracht vers bereid in de Mokum Local Kitchen en direct in professionele thermoboxen overgedragen aan boord, zodat ze gegarandeerd heet en krokant geserveerd kunnen worden.",
+    faq_q3: "Hoe ver van tevoren moeten wij als rederij bestellen?",
+    faq_a3: "Bestellingen kunnen vooraf worden ingepland voor specifieke afvaarten. Voor reguliere vaarten adviseren wij minimaal 2 uur vooraf te bestellen, grotere arrangementen graag 24 uur vooraf."
   }
 };
 
@@ -563,6 +607,9 @@ export const fallbackStoreSettings: StoreSettings = {
 // MULTI-BRAND (ZUSTERBEDRIJVEN) ONDERSTEUNING
 // ==========================================
 export type BrandId = 'office_butler' | 'canal_butler' | 'snack_butler';
+
+export const CURRENT_BRAND = 'canal_butler';
+export const CENTRAL_MODERATOR_URL = 'https://www.office-butler.com/moderator';
 
 export interface BrandConfig {
   id: BrandId;
@@ -592,23 +639,6 @@ export const AVAILABLE_BRANDS: BrandConfig[] = [
   },
 ];
 
-/**
- * Het actieve merk voor deze specifieke website installatie.
- * Standaard 'office_butler'.
- * Op de Canal Butler remix kan dit worden overschreven met VITE_BRAND_ID='canal_butler'.
- */
-export const CURRENT_BRAND: BrandId = 
-  ((import.meta.env.VITE_BRAND_ID as string) as BrandId) || 'office_butler';
-
-/**
- * Optionele URL naar het centrale Moderator Dashboard (van Office Butler).
- * Als dit is ingesteld op een zusterwebsite (zoals Canal Butler),
- * wordt de beheerder bij het openen van het Moderator Dashboard direct
- * doorgestuurd naar het centrale dashboard van Office Butler.
- */
-export const CENTRAL_MODERATOR_URL: string = 
-  (import.meta.env.VITE_CENTRAL_MODERATOR_URL as string) || '';
-
 export interface BrandPageContentRow {
   brand_id: BrandId;
   page_content: Record<string, any>;
@@ -617,8 +647,9 @@ export interface BrandPageContentRow {
 
 /**
  * Haalt de pagina-inhoud / teksten op voor een specifiek merk uit de tabel brand_page_content.
+ * Standaard ingesteld op 'canal_butler'.
  */
-export async function fetchBrandPageContent(brandId: BrandId): Promise<Record<string, any> | null> {
+export async function fetchBrandPageContent(brandId: string = 'canal_butler'): Promise<Record<string, any> | null> {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
@@ -639,16 +670,10 @@ export async function fetchBrandPageContent(brandId: BrandId): Promise<Record<st
 }
 
 /**
- * Haalt de pagina-inhoud op voor het huidige actieve merk.
- */
-export async function fetchCurrentBrandPageContent(): Promise<Record<string, any> | null> {
-  return fetchBrandPageContent(CURRENT_BRAND);
-}
-
-/**
  * Slaat de pagina-inhoud / teksten op voor een specifiek merk in de tabel brand_page_content.
+ * Standaard ingesteld op 'canal_butler'.
  */
-export async function saveBrandPageContent(brandId: BrandId, content: Record<string, any>): Promise<boolean> {
+export async function saveBrandPageContent(brandId: string = 'canal_butler', content: Record<string, any>): Promise<boolean> {
   if (!supabase) return false;
   try {
     const { error } = await supabase
@@ -670,13 +695,4 @@ export async function saveBrandPageContent(brandId: BrandId, content: Record<str
   }
 }
 
-/**
- * Controleert of een item (product, bezorgmethode, verpakking) getoond mag worden op een specifiek merk.
- * Als allowed_brands NULL, leeg of niet gedefinieerd is, is het item standaard op ÁLLE merken zichtbaar.
- */
-export function isItemVisibleForBrand(allowedBrands?: string[] | null, targetBrand: BrandId = CURRENT_BRAND): boolean {
-  if (!allowedBrands || !Array.isArray(allowedBrands) || allowedBrands.length === 0) {
-    return true;
-  }
-  return allowedBrands.includes(targetBrand);
-}
+export { isBrandAllowed, getPricePriorityRank, resolveProductPrices } from './brandUtils';

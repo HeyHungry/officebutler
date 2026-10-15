@@ -126,12 +126,12 @@
   
   --color-ob-cream: #F4F6F9;
   --color-ob-cream-dark: #E2E8F0;
-  --color-ob-blue: #151f34;
-  --color-ob-blue-dark: #0d131f;
-  --color-ob-blue-light: #25334d;
-  --color-ob-accent: #5170ff;
-  --color-ob-accent-hover: #4060ee;
-  --color-ob-text: #05053D;
+  --color-ob-blue: #151f33;
+  --color-ob-blue-dark: #0b111c;
+  --color-ob-blue-light: #1e2c47;
+  --color-ob-accent: #eaaf47;
+  --color-ob-accent-hover: #d89e36;
+  --color-ob-text: #151f33;
   --color-ob-text-light: #3A435E;
   
   --animate-pulse-slow: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -209,7 +209,7 @@
 
 /* 180 degree linear gradient blue background */
 .bg-gradient-blue-180 {
-  background: linear-gradient(180deg, #151f34 0%, #5270ff 100%);
+  background: linear-gradient(180deg, #151f33 0%, #1e2c47 100%);
 }
 
 /* Custom Scrollbar for Horizontal Tables */

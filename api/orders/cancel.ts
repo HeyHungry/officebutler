@@ -124,7 +124,7 @@ export default async function handler(req: any, res: any) {
     if (apiKey) {
       try {
         const resend = new Resend(apiKey);
-        const recipientList = ['info@office-butler.com'];
+        const recipientList = ['info@office-butler.com', 'info@canal-butler.com'];
         if (customerEmail && customerEmail.includes('@') && !recipientList.includes(customerEmail)) {
           recipientList.push(customerEmail);
         }
@@ -136,9 +136,9 @@ export default async function handler(req: any, res: any) {
         const emailHtml = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; line-height: 1.6;">
             <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 16px; border-radius: 6px; margin-bottom: 20px;">
-              <h3 style="color: #991b1b; margin-top: 0; margin-bottom: 6px;">Bestelling Geannuleerd</h3>
+              <h3 style="color: #991b1b; margin-top: 0; margin-bottom: 6px;">Bestelling Geannuleerd (Canal Butler)</h3>
               <p style="margin: 0; color: #7f1d1d; font-size: 14px;">
-                Er is zojuist een bestelling geannuleerd via het Office Butler portaal voor <strong>${companyName || customerName || 'Klant'}</strong>.
+                Er is zojuist een bestelling geannuleerd via het Canal Butler portaal voor <strong>${companyName || customerName || 'Klant'}</strong>.
               </p>
             </div>
             <p><strong>Geannuleerde items:</strong></p>
@@ -146,15 +146,38 @@ export default async function handler(req: any, res: any) {
             <p><strong>Totaalbedrag:</strong> €${Number(totalPrice || 0).toFixed(2)}</p>
             <p><strong>Geplande bezorging:</strong> ${deliveryDate || 'N.v.t.'} om ${deliveryTime || 'N.v.t.'}</p>
             <p><strong>Reden van annulering:</strong> ${reason || 'Geen specifieke reden opgegeven'}</p>
+            <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Canal Butler.</p>
           </div>
         `;
 
-        await resend.emails.send({
-          from: 'Office Butler <info@office-butler.com>',
+        const fromAddress = process.env.RESEND_FROM?.trim() || 'Canal Butler <info@office-butler.com>';
+        let sendRes = await resend.emails.send({
+          from: fromAddress,
+          replyTo: 'info@canal-butler.com',
           to: recipientList,
-          subject: `❌ Bestelling Geannuleerd - ${companyName || customerName}`,
+          subject: `[Canal Butler] ❌ Bestelling Geannuleerd - ${companyName || customerName}`,
           html: emailHtml
         });
+        if (sendRes.error && (sendRes.error.name === 'validation_error' || sendRes.error.message?.includes('not verified') || (sendRes.error as any).statusCode === 403)) {
+          if (fromAddress !== 'Canal Butler <info@office-butler.com>') {
+            sendRes = await resend.emails.send({
+              from: 'Canal Butler <info@office-butler.com>',
+              replyTo: 'info@canal-butler.com',
+              to: recipientList,
+              subject: `[Canal Butler] ❌ Bestelling Geannuleerd - ${companyName || customerName}`,
+              html: emailHtml
+            });
+          }
+          if (sendRes.error && (sendRes.error.name === 'validation_error' || sendRes.error.message?.includes('not verified') || (sendRes.error as any).statusCode === 403)) {
+            await resend.emails.send({
+              from: 'Canal Butler <onboarding@resend.dev>',
+              replyTo: 'info@canal-butler.com',
+              to: recipientList,
+              subject: `[Canal Butler] ❌ Bestelling Geannuleerd - ${companyName || customerName}`,
+              html: emailHtml
+            });
+          }
+        }
       } catch (e) {}
     }
 

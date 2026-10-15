@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Edit3 } from 'lucide-react';
 import { useModerator } from '../contexts/ModeratorContext';
-import { getCustomTypographyStyle } from '../lib/typography';
+import { TypographyType, getCustomTypographyStyle } from '../lib/typography';
 
 interface EditableTextProps {
   contentKey: string;
@@ -10,6 +10,7 @@ interface EditableTextProps {
   defaultValue?: string;
   multiline?: boolean;
   allowHtml?: boolean;
+  type?: TypographyType;
   as?: React.ElementType;
   className?: string;
   style?: React.CSSProperties;
@@ -25,6 +26,7 @@ export function EditableText({
   defaultValue,
   multiline,
   allowHtml,
+  type,
   as: Component = 'span',
   className = '',
   style,
@@ -34,13 +36,25 @@ export function EditableText({
 }: EditableTextProps) {
   const { isAuthenticated, isModeratorView, openInlineEdit, storeSettings } = useModerator();
 
+  const inferredType: TypographyType =
+    type ||
+    (contentKey.toLowerCase().includes('title')
+      ? 'title'
+      : contentKey.toLowerCase().includes('subtitle')
+      ? 'subtitle'
+      : contentKey.toLowerCase().includes('btn') || contentKey.toLowerCase().includes('button')
+      ? 'button'
+      : contentKey.toLowerCase().includes('heading')
+      ? 'heading'
+      : 'paragraph');
+
   const customFont = storeSettings?.page_content?.[`${contentKey}_font`];
   const customSize = storeSettings?.page_content?.[`${contentKey}_size`];
 
   const computedStyle = useMemo(() => {
-    const typoStyle = getCustomTypographyStyle(customFont, customSize, contentKey);
+    const typoStyle = getCustomTypographyStyle(customFont, customSize, inferredType);
     return { ...style, ...typoStyle };
-  }, [style, customFont, customSize, contentKey]);
+  }, [style, customFont, customSize, inferredType]);
 
   const handleEdit = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -52,11 +66,11 @@ export function EditableText({
       defaultValue,
       multiline,
       allowHtml,
-      tag: typeof Component === 'string' ? Component : undefined
+      type: inferredType
     });
   };
 
-  // Normal public rendering when not in moderator view
+  // Normal public rendering when not in moderator view or not authenticated
   if (!isAuthenticated || !isModeratorView) {
     if (dangerouslySetInnerHTML) {
       return (

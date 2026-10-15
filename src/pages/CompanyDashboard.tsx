@@ -1,5 +1,5 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { supabase, ObCompany, CURRENT_BRAND } from '../lib/supabase';
+import { supabase, ObCompany, CURRENT_BRAND, isBrandAllowed, resolveProductPrices } from '../lib/supabase';
 import { 
   getAllOrderActionsStatus, 
   getApplicableTier, 
@@ -9,7 +9,7 @@ import {
 } from '../lib/orderDeadlines';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Building, MapPin, Users, Package, Save, CheckCircle2, Plus, Trash2, Mail, Lock, UserPlus, Eye, EyeOff, ShoppingBag, ListOrdered, Truck, Loader2, Edit2, XCircle, AlertTriangle, Calendar, Clock, X, Phone, KeyRound } from 'lucide-react';
+import { Building, MapPin, Users, Package, Save, CheckCircle2, Plus, Trash2, Mail, Lock, UserPlus, Eye, EyeOff, ShoppingBag, ListOrdered, Truck, Loader2, Edit2, XCircle, AlertTriangle, Calendar, Clock, X, Phone } from 'lucide-react';
 
 type Tab = 'settings' | 'addresses' | 'employees' | 'assortment' | 'orders';
 
@@ -65,11 +65,6 @@ export function CompanyDashboard() {
   const [newEmpPassword, setNewEmpPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
-  const [resettingEmployee, setResettingEmployee] = useState<any | null>(null);
-  const [newResetPassword, setNewResetPassword] = useState('');
-  const [showResetPassword, setShowResetPassword] = useState(false);
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
-  const [resetPasswordMessage, setResetPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [dbProducts, setDbProducts] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
 
@@ -470,7 +465,8 @@ export function CompanyDashboard() {
           const categoryRestrictionsMap: Record<string, string[]> = storeRes?.data?.page_content?.category_restricted_companies || {};
 
           if (prodsRes.data) {
-            const enriched = prodsRes.data.map((p: any) => ({
+            const brandFiltered = prodsRes.data.filter((p: any) => isBrandAllowed(p.allowed_brands, CURRENT_BRAND));
+            const enriched = brandFiltered.map((p: any) => ({
               ...p,
               hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
               allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
@@ -501,7 +497,10 @@ export function CompanyDashboard() {
 
         // Fetch all active delivery methods
         const { data: dmData } = await supabase.from('ob_delivery_methods').select('*').eq('is_active', true).order('sort_order', { ascending: true });
-        if (dmData) setAllDeliveryMethods(dmData);
+        if (dmData) {
+          const brandFilteredDm = dmData.filter((m: any) => isBrandAllowed(m.allowed_brands, CURRENT_BRAND));
+          setAllDeliveryMethods(brandFilteredDm);
+        }
         
         // Fetch selected delivery methods
         const { data: cdmData } = await supabase.from('ob_company_delivery_methods').select('delivery_method_id').eq('company_id', comp.id);
@@ -519,83 +518,8 @@ export function CompanyDashboard() {
         // Fetch product prices
         const { data: priceData } = await supabase.from('ob_product_prices').select('*');
         if (priceData) {
-          const pMap: Record<string, number> = {};
-          const allPrices = priceData;
-          
-          // 1. Universal default prices (no company_id, brand is null or 'office_butler')
-          allPrices
-            .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
-            .forEach((p: any) => {
-              const clean = (p.product_name || '').trim();
-              pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
-              pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
-            });
-
-          // 2. Concept / Brand specific default override
-          if (CURRENT_BRAND !== 'office_butler') {
-            allPrices
-              .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
-              .forEach((p: any) => {
-                const clean = (p.product_name || '').trim();
-                pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
-                pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
-              });
-          }
-
-          // 3. Company specific override (deal for this company)
-          allPrices
-            .filter((p: any) => p.company_id === comp.id)
-            .forEach((p: any) => {
-              const clean = (p.product_name || '').trim();
-              pMap[`${clean}_${p.portion_size}`] = parseFloat(p.price);
-              pMap[`${p.product_name}_${p.portion_size}`] = parseFloat(p.price);
-            });
-
-          // 4. Cross-link with prodsList
-          if (prodsList.length > 0) {
-            prodsList.forEach((prodItem: any) => {
-              const prodName = prodItem.name || '';
-              const cleanProdName = prodName.trim();
-              // A. Base default
-              allPrices
-                .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
-                .forEach((p: any) => {
-                  const pClean = (p.product_name || '').trim();
-                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
-                    const price = parseFloat(p.price);
-                    pMap[`${prodName}_${p.portion_size}`] = price;
-                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
-                  }
-                });
-
-              // B. Brand override
-              if (CURRENT_BRAND !== 'office_butler') {
-                allPrices
-                  .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
-                  .forEach((p: any) => {
-                    const pClean = (p.product_name || '').trim();
-                    if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
-                      const price = parseFloat(p.price);
-                      pMap[`${prodName}_${p.portion_size}`] = price;
-                      pMap[`${cleanProdName}_${p.portion_size}`] = price;
-                    }
-                  });
-              }
-
-              // C. Company deal override
-              allPrices
-                .filter((p: any) => p.company_id === comp.id)
-                .forEach((p: any) => {
-                  const pClean = (p.product_name || '').trim();
-                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
-                    const price = parseFloat(p.price);
-                    pMap[`${prodName}_${p.portion_size}`] = price;
-                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
-                  }
-                });
-            });
-          }
-
+          // Prioriteit voor prijs: 1. Bedrijf (match), 2. Merk (canal_butler), 3. Standaard
+          const pMap = resolveProductPrices(priceData, comp.id, CURRENT_BRAND, prodsList);
           setPriceMap(pMap);
         }
 
@@ -700,11 +624,10 @@ export function CompanyDashboard() {
     setError('');
 
     try {
-      const cleanEmail = newEmpEmail.trim().toLowerCase();
       const res = await fetch('/api/create-employee', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, password: newEmpPassword, companyId: company.id })
+        body: JSON.stringify({ email: newEmpEmail, password: newEmpPassword, companyId: company.id })
       });
       
       const data = await res.json();
@@ -721,41 +644,6 @@ export function CompanyDashboard() {
     }
 
     setIsSaving(false);
-  };
-
-  const handleResetEmployeePassword = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!resettingEmployee || !company) return;
-    setIsResettingPassword(true);
-    setResetPasswordMessage(null);
-
-    try {
-      const res = await fetch('/api/reset-employee-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: resettingEmployee.id,
-          newPassword: newResetPassword,
-          companyId: company.id
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Er is een fout opgetreden bij het herstellen van het wachtwoord');
-      }
-
-      setResetPasswordMessage({ type: 'success', text: `Wachtwoord voor ${resettingEmployee.first_name || 'medewerker'} is succesvol gewijzigd!` });
-      setTimeout(() => {
-        setResettingEmployee(null);
-        setNewResetPassword('');
-        setResetPasswordMessage(null);
-      }, 1800);
-    } catch (err: any) {
-      setResetPasswordMessage({ type: 'error', text: err.message });
-    } finally {
-      setIsResettingPassword(false);
-    }
   };
 
   const toggleProduct = (product: string) => {
@@ -862,31 +750,31 @@ export function CompanyDashboard() {
           <div className="w-full md:w-64 shrink-0">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <nav className="flex flex-row md:flex-col overflow-x-auto md:overflow-x-visible">
-                <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'settings' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
-                  <Building size={18} className={activeTab === 'settings' ? 'text-white' : 'text-[#5170ff]'} /> Bedrijfsinstellingen
+                <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'settings' ? 'bg-[#151f33] text-white border-l-4 border-[#eaaf47]' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#151f33] border-l-4 border-transparent'}`}>
+                  <Building size={18} className={activeTab === 'settings' ? 'text-[#eaaf47]' : 'text-gray-400'} /> Bedrijfsinstellingen
                 </button>
-                <button onClick={() => setActiveTab('addresses')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'addresses' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
-                  <MapPin size={18} className={activeTab === 'addresses' ? 'text-white' : 'text-[#5170ff]'} /> Afleveradressen
+                <button onClick={() => setActiveTab('addresses')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'addresses' ? 'bg-[#151f33] text-white border-l-4 border-[#eaaf47]' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#151f33] border-l-4 border-transparent'}`}>
+                  <MapPin size={18} className={activeTab === 'addresses' ? 'text-[#eaaf47]' : 'text-gray-400'} /> Afleveradressen
                 </button>
-                <button onClick={() => setActiveTab('employees')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'employees' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
-                  <Users size={18} className={activeTab === 'employees' ? 'text-white' : 'text-[#5170ff]'} /> Werknemers
+                <button onClick={() => setActiveTab('employees')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'employees' ? 'bg-[#151f33] text-white border-l-4 border-[#eaaf47]' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#151f33] border-l-4 border-transparent'}`}>
+                  <Users size={18} className={activeTab === 'employees' ? 'text-[#eaaf47]' : 'text-gray-400'} /> Werknemers
                 </button>
-                <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'orders' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
-                    <ShoppingBag size={18} className={activeTab === 'orders' ? 'text-white' : 'text-[#5170ff]'} /> Bestelgeschiedenis
-                  </button>
+                <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'orders' ? 'bg-[#151f33] text-white border-l-4 border-[#eaaf47]' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#151f33] border-l-4 border-transparent'}`}>
+                  <ShoppingBag size={18} className={activeTab === 'orders' ? 'text-[#eaaf47]' : 'text-gray-400'} /> Bestelgeschiedenis
+                </button>
                   
-                <button onClick={() => setActiveTab('assortment')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'assortment' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
-                  <ListOrdered size={20} className={activeTab === 'assortment' ? 'text-white' : 'text-[#5170ff]'} />
+                <button onClick={() => setActiveTab('assortment')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'assortment' ? 'bg-[#151f33] text-white border-l-4 border-[#eaaf47]' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#151f33] border-l-4 border-transparent'}`}>
+                  <ListOrdered size={20} className={activeTab === 'assortment' ? 'text-[#eaaf47]' : 'text-gray-400'} />
                   <span>Assortiment</span>
                 </button>
-                <button onClick={() => setActiveTab('delivery')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'delivery' ? 'bg-[#5170ff] text-white border-l-4 border-white' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#5170ff] border-l-4 border-transparent'}`}>
-                  <Truck size={20} className={activeTab === 'delivery' ? 'text-white' : 'text-[#5170ff]'} />
+                <button onClick={() => setActiveTab('delivery')} className={`w-full flex items-center gap-3 px-6 py-4 text-sm font-semibold transition-colors shrink-0 ${activeTab === 'delivery' ? 'bg-[#151f33] text-white border-l-4 border-[#eaaf47]' : 'text-gray-600 hover:bg-blue-50/50 hover:text-[#151f33] border-l-4 border-transparent'}`}>
+                  <Truck size={20} className={activeTab === 'delivery' ? 'text-[#eaaf47]' : 'text-gray-400'} />
                   <span>Bezorgopties</span>
                 </button>
 
                 <div className="md:mt-4 p-4 shrink-0 border-t border-gray-100">
-                  <button onClick={() => navigate('/order')} className="w-full flex justify-center items-center gap-2 px-6 py-3 bg-[#5170ff] text-white text-sm font-semibold rounded-lg hover:bg-[#4060ee] transition-colors shadow-sm">
-                    <ShoppingBag size={18} className="text-white" /> Zelf Bestellen
+                  <button onClick={() => navigate('/order')} className="w-full flex justify-center items-center gap-2 px-6 py-3 bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] text-sm font-bold rounded-lg transition-colors shadow-sm font-button-default cursor-pointer">
+                    <ShoppingBag size={18} className="text-[#151f33]" /> Zelf Bestellen
                   </button>
                 </div>
               </nav>
@@ -944,8 +832,8 @@ export function CompanyDashboard() {
                     />
                     <p className="text-xs text-gray-500 mt-1">Laat dit veld leeg als er geen limiet is. Bestellingen boven dit bedrag worden geblokkeerd.</p>
                   </div>
-                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
-                    <Save size={18} /> Opslaan
+                  <button type="submit" disabled={isSaving} className="bg-[#151f33] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#0c1322] transition-colors flex items-center gap-2 disabled:opacity-50 font-button-default cursor-pointer">
+                    <Save size={18} className="text-[#eaaf47]" /> Opslaan
                   </button>
                 </form>
               </div>
@@ -995,8 +883,8 @@ export function CompanyDashboard() {
                     <input type="text" value={newInstructions} onChange={e => setNewInstructions(e.target.value)} placeholder="Bijv: Bellen bij de poort" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue" />
                   </div>
                   
-                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
-                    <Plus size={18} /> Toevoegen
+                  <button type="submit" disabled={isSaving} className="bg-[#151f33] text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-[#0c1322] transition-colors flex items-center gap-2 disabled:opacity-50 font-button-default cursor-pointer">
+                    <Plus size={18} className="text-[#eaaf47]" /> Toevoegen
                   </button>
                 </form>
               </div>
@@ -1022,7 +910,7 @@ export function CompanyDashboard() {
                       <input type="text" value={allowedDomain} onChange={e => setAllowedDomain(e.target.value)} placeholder="@bedrijf.nl" className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-ob-blue focus:ring-1 focus:ring-ob-blue" />
                     </div>
                     
-                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
+                    <button type="submit" disabled={isSaving} className="bg-[#151f33] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#0c1322] transition-colors flex items-center gap-2 disabled:opacity-50 font-button-default cursor-pointer">
                       Opslaan
                     </button>
                   </div>
@@ -1058,8 +946,8 @@ export function CompanyDashboard() {
                     </div>
                   </div>
                   
-                  <button type="submit" disabled={isSaving} className="bg-[#5170ff] text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50">
-                    <UserPlus size={18} /> Aanmaken
+                  <button type="submit" disabled={isSaving} className="bg-[#151f33] text-white px-5 py-2.5 rounded-lg font-semibold hover:bg-[#0c1322] transition-colors flex items-center gap-2 disabled:opacity-50 font-button-default cursor-pointer">
+                    <UserPlus size={18} className="text-[#eaaf47]" /> Aanmaken
                   </button>
                 </form>
 
@@ -1075,9 +963,9 @@ export function CompanyDashboard() {
                   ) : (
                     <ul className="divide-y divide-gray-100">
                       {employees.map((emp, idx) => (
-                        <li key={`dash-emp-${emp.id || idx}-${idx}`} className="p-4 px-6 flex items-center justify-between gap-4 flex-wrap sm:flex-nowrap">
+                        <li key={`dash-emp-${emp.id || idx}-${idx}`} className="p-4 px-6 flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-[#5170ff] text-white flex items-center justify-center font-bold shrink-0">
+                            <div className="w-10 h-10 rounded-full bg-[#151f33] text-[#eaaf47] border border-[#eaaf47]/30 flex items-center justify-center font-bold">
                               {emp.first_name ? emp.first_name.charAt(0).toUpperCase() : <Users size={16} />}
                             </div>
                             <div>
@@ -1085,117 +973,12 @@ export function CompanyDashboard() {
                               <p className="text-xs text-gray-400">Account ID: {emp.id.substring(0, 8)}...</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setResettingEmployee(emp);
-                                setNewResetPassword('');
-                                setShowResetPassword(false);
-                                setResetPasswordMessage(null);
-                              }}
-                              className="px-3 py-1.5 text-xs font-semibold text-[#5170ff] bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 inline-flex items-center gap-1.5"
-                            >
-                              <KeyRound size={13} />
-                              Wachtwoord Wijzigen
-                            </button>
-                            <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">Werknemer</span>
-                          </div>
+                          <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">Werknemer</span>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
-
-                {/* Modal voor wachtwoord herstellen / wijzigen */}
-                {resettingEmployee && (
-                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setResettingEmployee(null);
-                          setNewResetPassword('');
-                          setResetPasswordMessage(null);
-                        }}
-                        className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg"
-                      >
-                        <X size={20} />
-                      </button>
-
-                      <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 text-[#5170ff] flex items-center justify-center shrink-0">
-                          <KeyRound size={20} />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-bold text-ob-text">Wachtwoord Wijzigen</h3>
-                          <p className="text-xs text-gray-500">{resettingEmployee.first_name || 'Medewerker'}</p>
-                        </div>
-                      </div>
-
-                      {resetPasswordMessage && (
-                        <div className={`p-3 rounded-lg text-sm mb-4 font-medium ${
-                          resetPasswordMessage.type === 'success'
-                            ? 'bg-green-50 text-green-800 border border-green-200'
-                            : 'bg-red-50 text-red-800 border border-red-200'
-                        }`}>
-                          {resetPasswordMessage.text}
-                        </div>
-                      )}
-
-                      <form onSubmit={handleResetEmployeePassword} className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-semibold text-ob-text mb-1.5">Nieuw Wachtwoord</label>
-                          <div className="relative">
-                            <input
-                              type={showResetPassword ? "text" : "password"}
-                              required
-                              minLength={6}
-                              value={newResetPassword}
-                              onChange={(e) => setNewResetPassword(e.target.value)}
-                              placeholder="Minimaal 6 tekens"
-                              className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:border-[#5170ff] focus:ring-1 focus:ring-[#5170ff]"
-                            />
-                            <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                            <button
-                              type="button"
-                              onClick={() => setShowResetPassword(!showResetPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
-                            >
-                              {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-end gap-3 pt-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setResettingEmployee(null);
-                              setNewResetPassword('');
-                              setResetPasswordMessage(null);
-                            }}
-                            className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50"
-                          >
-                            Annuleren
-                          </button>
-                          <button
-                            type="submit"
-                            disabled={isResettingPassword || !newResetPassword}
-                            className="px-5 py-2 bg-[#5170ff] text-white rounded-lg text-sm font-semibold hover:bg-[#4060ee] disabled:opacity-50 inline-flex items-center gap-2"
-                          >
-                            {isResettingPassword ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                            Opslaan & Activeren
-                          </button>
-                        </div>
-                      </form>
-                    </motion.div>
-                  </div>
-                )}
               </div>
             )}
 
@@ -1411,9 +1194,9 @@ export function CompanyDashboard() {
                     <h2 className="text-xl font-heading-default font-bold text-[#05053D] mb-2">Bezorgopties Beheren</h2>
                     <p className="text-sm text-gray-500 font-paragraph-default">Bepaal welke bezorgopties medewerkers kunnen kiezen bij hun bestelling.</p>
                   </div>
-                  <button onClick={handleSaveDeliveryMethods} disabled={isSaving} className="flex items-center justify-center gap-2 bg-[#5170ff] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-70 shrink-0 font-button-default">
-                    {isSaving && <Loader2 size={16} className="animate-spin" />}
-                    <Save size={18} /> Opties Opslaan
+                  <button onClick={handleSaveDeliveryMethods} disabled={isSaving} className="flex items-center justify-center gap-2 bg-[#151f33] text-white px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-[#0c1322] transition-colors disabled:opacity-70 shrink-0 font-button-default cursor-pointer">
+                    {isSaving && <Loader2 size={16} className="animate-spin text-[#eaaf47]" />}
+                    <Save size={18} className="text-[#eaaf47]" /> Opties Opslaan
                   </button>
                 </div>
                 
@@ -1449,8 +1232,8 @@ export function CompanyDashboard() {
                     <h2 className="text-xl font-bold text-ob-text mb-1">Beschikbaar Assortiment</h2>
                     <p className="text-gray-500 text-sm">Vink aan welke producten uw werknemers mogen bestellen.</p>
                   </div>
-                  <button onClick={handleSaveAssortment} disabled={isSaving} className="bg-[#5170ff] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#4060ee] transition-colors flex items-center gap-2 disabled:opacity-50 shrink-0">
-                    <Save size={18} /> Assortiment Opslaan
+                  <button onClick={handleSaveAssortment} disabled={isSaving} className="bg-[#151f33] text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-[#0c1322] transition-colors flex items-center gap-2 disabled:opacity-50 shrink-0 font-button-default cursor-pointer">
+                    <Save size={18} className="text-[#eaaf47]" /> Assortiment Opslaan
                   </button>
                 </div>
                 
@@ -1622,7 +1405,7 @@ export function CompanyDashboard() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <ShoppingBag size={14} className="text-[#5170ff]" /> Producten in deze Bestelling ({modifyItems.length})
+                        <ShoppingBag size={14} className="text-[#eaaf47]" /> Producten in deze Bestelling ({modifyItems.length})
                       </label>
                       <span className="text-[11px] text-gray-500">
                         Minimaal 1 product vereist
@@ -1764,7 +1547,7 @@ export function CompanyDashboard() {
                               type="button"
                               onClick={handleAddProduct}
                               disabled={!addProdName}
-                              className="w-full px-3 py-1.5 text-xs font-bold text-white bg-[#5170ff] hover:bg-[#4060ee] disabled:opacity-40 rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                              className="w-full px-3 py-1.5 text-xs font-bold text-[#151f33] bg-[#eaaf47] hover:bg-[#d89e36] disabled:opacity-40 rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer shadow-2xs font-button-default"
                             >
                               <Plus size={14} /> Toevoegen
                             </button>
@@ -1804,7 +1587,7 @@ export function CompanyDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <MapPin size={13} className="text-[#5170ff]" /> Bezorglocatie / Afleveradres
+                            <MapPin size={13} className="text-[#eaaf47]" /> Bezorglocatie / Afleveradres
                           </span>
                           {!modalActions.change_location.allowed && (
                             <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
@@ -1831,7 +1614,7 @@ export function CompanyDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <Calendar size={13} className="text-[#5170ff]" /> Nieuwe Bezorgdatum
+                            <Calendar size={13} className="text-[#eaaf47]" /> Nieuwe Bezorgdatum
                           </span>
                           {!modalActions.change_time.allowed && (
                             <span className="text-[10px] text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-1">
@@ -1852,7 +1635,7 @@ export function CompanyDashboard() {
                       <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center justify-between">
                           <span className="flex items-center gap-1.5">
-                            <Clock size={13} className="text-[#5170ff]" /> Nieuwe Bezorgtijd
+                            <Clock size={13} className="text-[#eaaf47]" /> Nieuwe Bezorgtijd
                           </span>
                           {!modalActions.change_time.allowed && (
                             <span className="text-[10px] text-blue-800 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-1">
@@ -1873,7 +1656,7 @@ export function CompanyDashboard() {
 
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1.5">
-                        <Phone size={13} className="text-[#5170ff]" /> Telefoonnummer Contactpersoon / Chauffeur
+                        <Phone size={13} className="text-[#eaaf47]" /> Telefoonnummer Contactpersoon / Chauffeur
                       </label>
                       <input
                         type="tel"
@@ -1923,7 +1706,7 @@ export function CompanyDashboard() {
                         {/* Locatie wijzigen */}
                         <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs flex flex-col justify-between space-y-1">
                           <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
-                            <MapPin size={13} className="text-[#5170ff] shrink-0" />
+                            <MapPin size={13} className="text-[#eaaf47] shrink-0" />
                             <span>Locatie wijzigen</span>
                           </div>
                           <div className="font-bold text-slate-900 text-xs sm:text-[13px]">
@@ -1934,7 +1717,7 @@ export function CompanyDashboard() {
                         {/* Tijdstip wijzigen */}
                         <div className="p-3 bg-white rounded-xl border border-slate-200/80 shadow-2xs flex flex-col justify-between space-y-1">
                           <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-medium">
-                            <Calendar size={13} className="text-[#5170ff] shrink-0" />
+                            <Calendar size={13} className="text-[#eaaf47] shrink-0" />
                             <span>Tijdstip wijzigen</span>
                           </div>
                           <div className="font-bold text-slate-900 text-xs sm:text-[13px]">
@@ -1979,7 +1762,7 @@ export function CompanyDashboard() {
                     <button
                       type="submit"
                       disabled={isModifying || modifyItems.length === 0}
-                      className="px-5 py-2 text-sm font-semibold text-white bg-[#5170ff] hover:bg-blue-600 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 shadow-xs cursor-pointer"
+                      className="px-6 py-2.5 text-sm font-bold text-[#151f33] bg-[#eaaf47] hover:bg-[#d89e36] rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 shadow-xs cursor-pointer font-button-default"
                     >
                       {isModifying ? (
                         <>

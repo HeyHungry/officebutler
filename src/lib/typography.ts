@@ -23,84 +23,82 @@ export const FONT_OPTIONS: { id: FontOptionKey; label: string; group: string }[]
   { id: 'agrandir_bold', label: 'Agrandir Bold', group: 'Agrandir' },
 ];
 
-/**
- * Base font sizes in rem for standard elements:
- * - Titels -> ~4.5rem (72px desktop)
- * - Kopjes -> ~1.5rem (24px)
- * - Ondertitels -> ~1.25rem (20px)
- * - Paragrafen -> ~1.0rem (16px)
- * - Knoppen & bullets -> ~0.875rem (14px)
- */
 export const BASE_REM_BY_TYPE: Record<TypographyType, number> = {
-  title: 4.5,
-  heading: 1.5,
-  subtitle: 1.25,
-  paragraph: 1.0,
-  button: 0.875,
-  bullet: 0.875,
+  title: 4.5, // 4.5rem (~72px)
+  subtitle: 1.25, // 1.25rem (~20px)
+  button: 0.875, // 0.875rem (~14px)
+  bullet: 0.875, // 0.875rem (~14px)
+  paragraph: 1.0, // 1rem (~16px)
+  heading: 1.5, // 1.5rem (~24px)
 };
 
-export function inferTypographyType(key?: string): TypographyType {
-  if (!key) return 'paragraph';
-  const lower = key.toLowerCase();
-  if (lower.includes('title') && !lower.includes('sub') && !lower.includes('pre')) return 'title';
-  if (lower.includes('subtitle') || lower.includes('desc') || lower.includes('intro')) return 'subtitle';
-  if (lower.includes('btn') || lower.includes('button') || lower.includes('link') || lower.includes('badge')) return 'button';
-  if (lower.includes('pre_title') || lower.includes('head') || lower.includes('step') || lower.includes('q') || lower.includes('point')) return 'heading';
-  return 'paragraph';
-}
-
+/**
+ * Resolves the effective font-size CSS string from custom inputs.
+ * - 'auto', 'default', '100%', '100', empty -> returns undefined so responsive CSS/Tailwind classes are preserved.
+ * - Percentages (e.g. 120%, 150%) -> calculated from baseRem * (num / 100).
+ * - Explicit CSS units like '48px', '64px', '76px', '88px', '2rem' are returned as-is.
+ */
 export function resolveEffectiveFontSize(
   customSize?: string | number | null,
-  type?: TypographyType
+  type: TypographyType = 'paragraph'
 ): string | undefined {
   if (customSize === undefined || customSize === null) return undefined;
-  const rawVal = String(customSize).trim();
-  if (!rawVal || rawVal === 'auto' || rawVal === 'default' || rawVal === 'normal' || rawVal === 'inherit') {
+  const raw = String(customSize).trim().toLowerCase();
+
+  // If auto, default, 100% or empty: return undefined to protect original responsive Tailwind classes
+  if (raw === '' || raw === 'auto' || raw === 'default' || raw === '100%' || raw === '100') {
     return undefined;
   }
 
-  // 100% means standard/original design size - never override with an inline font size
-  if (rawVal === '100%' || rawVal === '100') {
-    return undefined;
-  }
-
-  const effectiveType = type || 'paragraph';
-  const baseRem = BASE_REM_BY_TYPE[effectiveType] || 1.0;
-
-  // 1. Explicit CSS units (px, rem, em, pt, vh, vw)
-  if (rawVal.endsWith('px') || rawVal.endsWith('rem') || rawVal.endsWith('em') || rawVal.endsWith('pt') || rawVal.endsWith('vw')) {
-    return rawVal;
-  }
-
-  // 2. Percentage scaling (e.g. "120%", "150%", "80%")
-  if (rawVal.endsWith('%')) {
-    const num = parseFloat(rawVal);
-    if (!num || num === 100) return undefined;
-    const ratio = num / 100;
-    const computedRem = baseRem * ratio;
-    return `${Number(computedRem.toFixed(3))}rem`;
-  }
-
-  // 3. Raw numbers
-  if (/^\d+(\.\d+)?$/.test(rawVal)) {
-    const num = parseFloat(rawVal);
-    if (num === 100) return undefined;
-    // Values between 50 and 300 are treated as percentage scale (e.g. 120 -> 120%)
-    if (num >= 50 && num <= 300) {
-      const ratio = num / 100;
-      const computedRem = baseRem * ratio;
-      return `${Number(computedRem.toFixed(3))}rem`;
+  // Percentage (e.g. 120%, 150%, 80%)
+  if (raw.endsWith('%')) {
+    const num = parseFloat(raw);
+    if (!isNaN(num) && num > 0) {
+      const baseRem = BASE_REM_BY_TYPE[type] ?? 1.0;
+      // Cap percentage for non-titles to avoid layout breakage
+      const safePercent = type !== 'title' ? Math.min(num, 180) : Math.min(num, 200);
+      const calculatedRem = Number((baseRem * (safePercent / 100)).toFixed(3));
+      return `${calculatedRem}rem`;
     }
-    // Values >= 8 and < 50 are treated as pixel values (e.g. 18 -> 18px)
-    if (num >= 8 && num < 50) {
+  }
+
+  // Explicit CSS units (e.g. 48px, 64px, 76px, 88px, 2rem, 1.5em)
+  if (/^\d+(\.\d+)?(px|rem|em|vw|vh|pt)$/i.test(raw)) {
+    if (raw.endsWith('px')) {
+      const pxNum = parseFloat(raw);
+      // Safety cap: non-title text should never exceed 48px
+      if (type !== 'title' && pxNum > 48) {
+        if (pxNum >= 80) {
+          // Plain percentage entered previously with px attached or converted
+          const baseRem = BASE_REM_BY_TYPE[type] ?? 1.0;
+          return `${Number((baseRem * (Math.min(pxNum, 180) / 100)).toFixed(3))}rem`;
+        }
+        return '24px';
+      }
+    }
+    return raw;
+  }
+
+  // Plain number without unit (e.g. '48', '64', '120', '240')
+  if (/^\d+(\.\d+)?$/.test(raw)) {
+    const num = parseFloat(raw);
+    if (num > 0) {
+      // If number is >= 80, it was intended as a percentage (e.g. 100, 120, 150, 180, 240)
+      if (num >= 80) {
+        const baseRem = BASE_REM_BY_TYPE[type] ?? 1.0;
+        const safePercent = type !== 'title' ? Math.min(num, 180) : Math.min(num, 200);
+        const calculatedRem = Number((baseRem * (safePercent / 100)).toFixed(3));
+        return `${calculatedRem}rem`;
+      }
+      // Safety cap for plain px values on non-titles
+      if (type !== 'title' && num > 40) {
+        return '24px';
+      }
       return `${num}px`;
     }
-    // Default fallback to px
-    return `${num}px`;
   }
 
-  return undefined;
+  return raw;
 }
 
 /**
@@ -159,9 +157,9 @@ export function getTypographyStyle(
     style.letterSpacing = '0.08em';
   }
 
-  const computedFontSize = resolveEffectiveFontSize(customSize, type);
-  if (computedFontSize) {
-    style.fontSize = computedFontSize;
+  const effectiveSize = resolveEffectiveFontSize(customSize, type);
+  if (effectiveSize) {
+    style.fontSize = effectiveSize;
   }
 
   return style;
@@ -188,7 +186,7 @@ export function getDefaultFontForType(type: TypographyType): FontOptionKey {
 export function getCustomTypographyStyle(
   customFont?: string | null,
   customSize?: string | number | null,
-  typeOrKey?: TypographyType | string
+  type: TypographyType = 'paragraph'
 ): React.CSSProperties {
   const style: React.CSSProperties = {};
 
@@ -225,14 +223,9 @@ export function getCustomTypographyStyle(
     }
   }
 
-  const effectiveType: TypographyType = 
-    typeOrKey && (typeOrKey in BASE_REM_BY_TYPE)
-      ? (typeOrKey as TypographyType)
-      : inferTypographyType(typeOrKey);
-
-  const computedFontSize = resolveEffectiveFontSize(customSize, effectiveType);
-  if (computedFontSize) {
-    style.fontSize = computedFontSize;
+  const effectiveSize = resolveEffectiveFontSize(customSize, type);
+  if (effectiveSize) {
+    style.fontSize = effectiveSize;
   }
 
   return style;

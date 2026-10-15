@@ -1,6 +1,13 @@
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
-import { sendOrderToBiteberry } from "./biteberryShared";
+import { 
+  sendOrderToBiteberry, 
+  adminClient, 
+  parseDutchAddress, 
+  parseDeliverySchedule 
+} from "./biteberryShared";
+
+export { parseDutchAddress, parseDeliverySchedule };
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
@@ -29,26 +36,23 @@ export default async function handler(req: any, res: any) {
       finalTotal
     } = req.body;
     const apiKey = process.env.RESEND_API_KEY;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || "https://rqqotumbdsghvkkmquqo.supabase.co";
 
     const supabaseAdmin = (serviceKey && supabaseUrl)
       ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-      : null;
+      : adminClient;
 
-    const rawBrand = (req.body.brand || process.env.VITE_BRAND_ID || 'office_butler').trim().toLowerCase();
-    const brandName = rawBrand.includes('canal') ? 'Canal Butler' : (rawBrand.includes('snack') ? 'Snack Butler' : 'Office Butler');
-    const brandFromEmail = rawBrand.includes('canal') ? 'Canal Butler <info@office-butler.com>' : 'Office Butler <info@office-butler.com>';
-
-    // 1. BiteBerry Integration: ALWAYS forward order to BiteBerry via Office Butler integration
+    // 1. BiteBerry Integration: ALWAYS forward order to BiteBerry via Canal Butler integration
     let biteberryResult: any = null;
     try {
       biteberryResult = await sendOrderToBiteberry({
+        brand: 'canal_butler',
+        brandPlatform: 'canal',
         customerName: guestName || "Gast Klant",
         email: guestEmail || undefined,
         phone,
         rawAddress: guestAddress || 'Adres op aanvraag',
-        brand: req.body.brand || (process.env.VITE_BRAND_ID as string) || 'office_butler',
         orderLines,
         selections,
         prices,
@@ -129,8 +133,8 @@ export default async function handler(req: any, res: any) {
         const emailHtml = `
           <div style="font-family: sans-serif; max-w-xl; margin: 0 auto; color: #333;">
             <div style="background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
-              <h3 style="margin-top: 0; color: #0d47a1;">Interne Notitie (Office Butler) - GAST BESTELLING</h3>
-              <p style="margin: 5px 0;">Er is zojuist een <strong>particuliere/eenmalige</strong> bestelling geplaatst door <strong>${guestName}</strong>.</p>
+              <h3 style="margin-top: 0; color: #0d47a1;">Interne Notitie (Canal Butler) - GAST BESTELLING</h3>
+              <p style="margin: 5px 0;">Er is zojuist een bestelling geplaatst via Canal Butler door <strong>${guestName}</strong>.</p>
               <p style="margin: 5px 0;">Controleer deze factuur en stuur deze vervolgens handmatig door naar: <a href="mailto:${guestEmail}">${guestEmail}</a></p>
               ${discountCode ? `
               <div style="margin-top: 10px; padding: 8px 12px; background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px; color: #1b5e20;">
@@ -141,9 +145,9 @@ export default async function handler(req: any, res: any) {
               ` : ''}
             </div>
 
-            <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur (Eenmalig)</h2>
+            <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur (Canal Butler)</h2>
             <p>Beste ${guestName},</p>
-            <p>Bedankt voor uw eenmalige bestelling via Office Butler. Hieronder vindt u het overzicht van uw bestelling.</p>
+            <p>Bedankt voor uw bestelling via Canal Butler. Hieronder vindt u het overzicht van uw bestelling.</p>
             
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
               <thead>
@@ -198,19 +202,47 @@ export default async function handler(req: any, res: any) {
               ${notes ? `<p style="margin: 5px 0;"><strong>Extra Notities:</strong> ${notes}</p>` : ''}
             </div>
             
-            <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van ${brandName}.</p>
+            <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Canal Butler.</p>
           </div>
         `;
 
-        await resend.emails.send({
-          from: brandFromEmail,
-          to: ['info@office-butler.com'],
-          subject: discountCode 
-            ? `[${brandName}] Nieuwe GAST Bestelling & Factuur [Korting: ${discountCode}] - ${guestName}`
-            : `[${brandName}] Nieuwe GAST Bestelling & Factuur - ${guestName}`,
+        const fromAddress = process.env.RESEND_FROM?.trim() || 'Canal Butler <info@office-butler.com>';
+
+        const recipients = ['info@office-butler.com', 'info@canal-butler.com'];
+
+        const emailSubject = discountCode 
+          ? `[Canal Butler] Nieuwe GAST Bestelling & Factuur [Korting: ${discountCode}] - ${guestName}`
+          : `[Canal Butler] Nieuwe GAST Bestelling & Factuur - ${guestName}`;
+
+        let sendRes = await resend.emails.send({
+          from: fromAddress,
+          replyTo: 'info@canal-butler.com',
+          to: recipients,
+          subject: emailSubject,
           html: emailHtml
         });
-        emailSent = true;
+
+        if (sendRes.error && (sendRes.error.name === 'validation_error' || sendRes.error.message?.includes('not verified') || (sendRes.error as any).statusCode === 403)) {
+          if (fromAddress !== 'Canal Butler <info@office-butler.com>') {
+            sendRes = await resend.emails.send({
+              from: 'Canal Butler <info@office-butler.com>',
+              replyTo: 'info@canal-butler.com',
+              to: recipients,
+              subject: emailSubject,
+              html: emailHtml
+            });
+          }
+          if (sendRes.error && (sendRes.error.name === 'validation_error' || sendRes.error.message?.includes('not verified') || (sendRes.error as any).statusCode === 403)) {
+            sendRes = await resend.emails.send({
+              from: 'Canal Butler <onboarding@resend.dev>',
+              replyTo: 'info@canal-butler.com',
+              to: recipients,
+              subject: emailSubject,
+              html: emailHtml
+            });
+          }
+        }
+        emailSent = !sendRes.error;
       } catch (mailErr) {
         console.error("Error sending guest invoice email (non-blocking):", mailErr);
       }

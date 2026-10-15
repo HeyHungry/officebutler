@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { supabase, StoreSettings, saveBrandPageContent, CURRENT_BRAND, CENTRAL_MODERATOR_URL } from '../lib/supabase';
+import { supabase, StoreSettings, CURRENT_BRAND, CENTRAL_MODERATOR_URL, saveBrandPageContent } from '../lib/supabase';
+import { TypographyType } from '../lib/typography';
 
 export interface InlineEditField {
   key: string;
@@ -8,8 +9,7 @@ export interface InlineEditField {
   defaultValue?: string;
   multiline?: boolean;
   allowHtml?: boolean;
-  tag?: string;
-  type?: string;
+  type?: TypographyType;
 }
 
 interface ModeratorContextType {
@@ -29,7 +29,9 @@ interface ModeratorContextType {
     size?: string
   ) => Promise<boolean>;
   openModPanel: () => void;
+  openCentralDashboard: () => void;
   setOpenModPanelHandler: (handler: () => void) => void;
+  logoutModerator: () => Promise<void>;
   storeSettings?: StoreSettings;
 }
 
@@ -55,29 +57,73 @@ export function ModeratorProvider({
   const [editingField, setEditingField] = useState<InlineEditField | null>(null);
   const [openModPanelCallback, setOpenModPanelCallback] = useState<(() => void) | null>(null);
 
-  // Check Supabase Auth session on mount and listen to changes
+  // Controleer Supabase Auth sessie voor moderator account
   useEffect(() => {
-    if (supabase) {
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          setIsAuthenticated(true);
-        }
-      });
+    if (!supabase) {
+      setIsAuthenticated(false);
+      return;
+    }
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setIsAuthenticated(!!session);
-        if (!session) {
+    const checkModeratorSession = async (session: any) => {
+      if (!session?.user?.id) {
+        setIsAuthenticated(false);
+        setIsModeratorViewState(false);
+        try {
+          localStorage.removeItem('ob_moderator_view_active');
+        } catch {}
+        return;
+      }
+
+      try {
+        const { data: profile } = await supabase
+          .from('ob_user_profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        // Als het profiel specifiek een niet-admin rol heeft (bv. employee)
+        if (profile && profile.role && profile.role !== 'admin') {
+          setIsAuthenticated(false);
           setIsModeratorViewState(false);
           try {
             localStorage.removeItem('ob_moderator_view_active');
           } catch {}
+          return;
         }
-      });
 
-      return () => {
-        subscription.unsubscribe();
-      };
+        // Geldige sessie van moderator account in Supabase
+        setIsAuthenticated(true);
+      } catch (err) {
+        console.warn('[ModeratorContext] Fout bij verifiëren sessie:', err);
+        // Geldige Supabase sessie behouden
+        setIsAuthenticated(true);
+      }
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      checkModeratorSession(session);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      checkModeratorSession(session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const logoutModerator = useCallback(async () => {
+    if (supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch {}
     }
+    setIsAuthenticated(false);
+    setIsModeratorViewState(false);
+    try {
+      localStorage.removeItem('ob_moderator_view_active');
+    } catch {}
   }, []);
 
   const setIsModeratorView = useCallback((val: boolean) => {
@@ -109,17 +155,13 @@ export function ModeratorProvider({
     setOpenModPanelCallback(() => handler);
   }, []);
 
+  const openCentralDashboard = useCallback(() => {
+    window.open(`${CENTRAL_MODERATOR_URL}${CENTRAL_MODERATOR_URL.includes('?') ? '&' : '?'}brand=${CURRENT_BRAND}`, '_blank');
+  }, []);
+
   const openModPanel = useCallback(() => {
-    if (CENTRAL_MODERATOR_URL) {
-      const separator = CENTRAL_MODERATOR_URL.includes('?') ? '&' : '?';
-      const targetUrl = `${CENTRAL_MODERATOR_URL}${separator}brand=${CURRENT_BRAND}&panel=open&tab=content`;
-      window.open(targetUrl, '_blank');
-      return;
-    }
-    if (openModPanelCallback) {
-      openModPanelCallback();
-    }
-  }, [openModPanelCallback]);
+    openCentralDashboard();
+  }, [openCentralDashboard]);
 
   const saveFieldContent = useCallback(
     async (
@@ -131,26 +173,22 @@ export function ModeratorProvider({
     ): Promise<boolean> => {
       try {
         const targetKey = lang === 'en' ? `${key}_en` : key;
-        const updatedPC = { ...(storeSettings?.page_content || {}) };
+        const currentPC = { ...(storeSettings?.page_content || {}) };
         
-        updatedPC[targetKey] = value;
+        currentPC[targetKey] = value;
 
-        // Clean up font override if 'auto' or empty so it cleanly reverts to original
-        if (font !== undefined) {
-          if (!font || font === 'auto') {
-            delete updatedPC[`${key}_font`];
-          } else {
-            updatedPC[`${key}_font`] = font;
-          }
+        // Font override: verwijder bij 'auto' zodat het default lettertype actief is
+        if (!font || font === 'auto') {
+          delete currentPC[`${key}_font`];
+        } else {
+          currentPC[`${key}_font`] = font;
         }
 
-        // Clean up size override if 'auto', '', or '100%' so it cleanly reverts to original
-        if (size !== undefined) {
-          if (!size || size === 'auto' || size === '100%' || size === 'default') {
-            delete updatedPC[`${key}_size`];
-          } else {
-            updatedPC[`${key}_size`] = size;
-          }
+        // Size override: verwijder bij 'auto', 'default', '100%' zodat originele responsieve classes actief zijn
+        if (!size || size === 'auto' || size === '100%' || size === 'default') {
+          delete currentPC[`${key}_size`];
+        } else {
+          currentPC[`${key}_size`] = size;
         }
 
         const updatedSettings: StoreSettings = {
@@ -161,38 +199,28 @@ export function ModeratorProvider({
             pickup_url: '',
             delivery_url: ''
           }),
-          page_content: updatedPC
+          page_content: currentPC
         };
 
-        // 1. Live state update directly in app
+        // 1. Live state update direct in de app zodat potloodjes en UI meteen verversen
         if (onStoreSettingsUpdated) {
           onStoreSettingsUpdated(updatedSettings);
         }
 
-        // 2. Persist to Supabase if connected
+        // 2. Cache in localStorage voor instant behoud
+        try {
+          localStorage.setItem('canal_butler_page_content', JSON.stringify(currentPC));
+          localStorage.setItem(`brand_page_content_${CURRENT_BRAND}`, JSON.stringify(currentPC));
+        } catch {}
+
+        // 3. Sla op naar Supabase brand_page_content met brand_id = 'canal_butler'
         if (supabase) {
-          try {
-            await saveBrandPageContent(CURRENT_BRAND, updatedPC);
-          } catch (e) {
-            console.error(`Fout bij opslaan brand_page_content voor ${CURRENT_BRAND}:`, e);
-          }
-
-          // If on canal_butler, also keep store_settings id=1 in sync for backward compatibility
-          if (CURRENT_BRAND === 'canal_butler') {
-            const { error } = await supabase
-              .from('store_settings')
-              .update({ page_content: updatedPC })
-              .eq('id', 1);
-
-            if (error) {
-              console.error('Fout bij opslaan naar Supabase store_settings voor canal_butler:', error);
-            }
-          }
+          await saveBrandPageContent('canal_butler', currentPC);
         }
 
         return true;
       } catch (err) {
-        console.error('Fout bij opslaan tekst:', err);
+        console.error('Fout bij opslaan tekst in brand_page_content voor canal_butler:', err);
         return false;
       }
     },
@@ -212,7 +240,9 @@ export function ModeratorProvider({
         closeInlineEdit,
         saveFieldContent,
         openModPanel,
+        openCentralDashboard,
         setOpenModPanelHandler,
+        logoutModerator,
         storeSettings
       }}
     >
