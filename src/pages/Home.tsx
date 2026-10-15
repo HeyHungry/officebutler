@@ -20,35 +20,18 @@ export function Home({ settings, storeSettings }: { settings: SharedSettings, st
     ...DEFAULT_SECTION_ORDER
   ]));
 
-  // Achtergrondkleuren per sectie voor perfecte golvende overgangen
-  const sectionBgMap: Record<HomepageSectionKey, 'white' | 'cream'> = {
-    hero: 'cream',
-    menu: 'cream',
-    how_it_works: 'white',
-    assortments: 'cream',
-    business: 'white',
-    contact: 'cream'
-  };
-
-  const getWaveColor = (index: number) => {
-    const nextKey = fullOrder[index + 1] as HomepageSectionKey | undefined;
-    if (!nextKey) return 'text-ob-cream';
-    return (sectionBgMap[nextKey] || 'cream') === 'white' ? 'text-white' : 'text-ob-cream';
-  };
-
-  const renderSection = (key: HomepageSectionKey, index: number) => {
-    const waveColor = getWaveColor(index);
+  const renderSection = (key: HomepageSectionKey) => {
     switch (key) {
       case 'hero':
-        return <Hero content={content} waveColor={waveColor} />;
+        return <Hero content={content} />;
       case 'how_it_works':
-        return <HowItWorks content={content} waveColor={waveColor} />;
+        return <HowItWorks content={content} />;
       case 'menu':
-        return <Menu content={content} waveColor={waveColor} />;
+        return <Menu content={content} />;
       case 'business':
-        return <BusinessRegistration content={content} waveColor={waveColor} />;
+        return <BusinessRegistration content={content} />;
       case 'assortments':
-        return <Assortments content={content} waveColor={waveColor} />;
+        return <Assortments content={content} />;
       case 'contact':
         return <ContactFAQ settings={settings} storeSettings={storeSettings} content={content} />;
       default:
@@ -60,7 +43,7 @@ export function Home({ settings, storeSettings }: { settings: SharedSettings, st
     <main className="font-serif flex-grow">
       {fullOrder.map((sectionKey, index) => (
         <div key={`section-${sectionKey}-${index}`} className="contents">
-          {renderSection(sectionKey as HomepageSectionKey, index)}
+          {renderSection(sectionKey as HomepageSectionKey)}
         </div>
       ))}
     </main>

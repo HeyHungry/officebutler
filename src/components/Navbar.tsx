@@ -77,7 +77,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
   const navLinks = [
     { key: 'nav_link_how', defaultName: 'Hoe het werkt', href: '/#how-it-works' },
     { key: 'nav_link_menu', defaultName: 'Assortiment', href: '/#menu' },
-    { key: 'nav_link_business', defaultName: 'Voor Rederijen', href: '/#business' },
+    { key: 'nav_link_business', defaultName: 'Voor Bedrijven', href: '/#business' },
     { key: 'nav_link_contact', defaultName: 'Contact', href: '/#contact' },
   ];
 
@@ -93,25 +93,17 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
       className={`fixed top-0 left-0 right-0 z-40 transition-all duration-300 ${
         isScrolled ? 'shadow-lg' : ''
       } py-2 md:py-2.5`}
-      style={{ backgroundColor: '#151f33' }}
+      style={{ backgroundColor: '#151f34' }}
     >
       <div className="max-w-7xl mx-auto px-6 lg:px-8 flex items-center justify-between">
         <div className="flex items-center gap-6 xl:gap-10 shrink-0 ">
           <a href="/" className="flex items-center justify-center shrink-0">
-            <div className="flex items-center justify-center h-12 md:h-14">
-              {(() => {
-                const rawLogo = content?.header_logo_url || 'https://i.imgur.com/psrYTWD.png';
-                const logoSrc = rawLogo.startsWith('https://imgur.com/') 
-                  ? `https://i.imgur.com/${rawLogo.replace('https://imgur.com/', '').split(/[?#/]/)[0]}.png` 
-                  : rawLogo;
-                return (
-                  <img 
-                    src={logoSrc} 
-                    alt="Canal Butler" 
-                    className="h-10 md:h-12 w-auto object-contain transition-all duration-300" 
-                  />
-                );
-              })()}
+            <div className="overflow-hidden flex items-center justify-center h-13 md:h-14">
+              <img 
+                src={LOGO_DATA_URI} 
+                alt="Office Butler" 
+                className="h-26 md:h-30 w-auto object-contain max-w-none transition-all duration-300" 
+              />
             </div>
           </a>
           
@@ -149,12 +141,12 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
         {/* Desktop Actions - Right aligned */}
         <div className="hidden lg:flex items-center justify-end gap-5 xl:gap-8 shrink-0 ">
           {/* Language Switcher */}
-          <div className="flex items-center bg-[#0d1424] border border-[#eaaf47]/40 rounded-full p-0.5 text-xs shadow-sm transition-all duration-300">
+          <div className="flex items-center bg-[#5170ff] rounded-full p-0.5 text-xs shadow-[0_0_15px_rgba(81,112,255,0.45)] transition-all duration-300">
             <button 
               onClick={() => setLanguage('nl')}
               className={`px-2.5 py-1 rounded-full font-sans text-xs font-semibold tracking-wider transition-all cursor-pointer ${
                 language === 'nl' 
-                  ? 'bg-[#eaaf47] text-[#151f33] shadow-sm font-bold' 
+                  ? 'bg-white text-[#5170ff] shadow-sm' 
                   : 'text-white/85 hover:text-white'
               }`}
               title="Nederlands"
@@ -165,7 +157,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
               onClick={() => setLanguage('en')}
               className={`px-2.5 py-1 rounded-full font-sans text-xs font-semibold tracking-wider transition-all cursor-pointer ${
                 language === 'en' 
-                  ? 'bg-[#eaaf47] text-[#151f33] shadow-sm font-bold' 
+                  ? 'bg-white text-[#5170ff] shadow-sm' 
                   : 'text-white/85 hover:text-white'
               }`}
               title="English"
@@ -176,7 +168,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
 
           <a 
             href="/auth"
-            className="text-white/80 hover:text-[#eaaf47] transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap font-button-default inline-flex items-center"
+            className="text-white/80 hover:text-white transition-colors duration-300 text-[15px] uppercase tracking-widest font-semibold whitespace-nowrap font-button-default inline-flex items-center"
             style={getTypographyStyle('button', content?.nav_btn_login_font, content?.nav_btn_login_size)}
           >
             <EditableText
@@ -190,7 +182,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
           </a>
           <button 
             onClick={openStep1} 
-            className="bg-[#eaaf47] hover:bg-[#d89e36] rounded-xl text-[#151f33] px-6 py-2.5 shadow-[0_0_20px_rgba(234,175,71,0.4)] hover:shadow-[0_0_30px_rgba(234,175,71,0.7)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer font-button-default inline-flex items-center"
+            className="bg-[#5170ff] hover:bg-[#4060ee] rounded-xl text-white px-6 py-2.5 shadow-[0_0_20px_rgba(81,112,255,0.5)] hover:shadow-[0_0_30px_rgba(81,112,255,0.8)] hover:-translate-y-0.5 transition-all duration-300 tracking-wider text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer font-button-default inline-flex items-center"
             style={getTypographyStyle('button', content?.nav_btn_order_font, content?.nav_btn_order_size)}
           >
             <EditableText
@@ -206,11 +198,11 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
 
         {/* Mobile Menu Toggle & Mobile Lang */}
         <div className="lg:hidden flex items-center gap-3">
-          <div className="flex items-center bg-[#0d1424] border border-[#eaaf47]/40 rounded-full p-0.5 text-[11px] shadow-sm">
+          <div className="flex items-center bg-[#5170ff] rounded-full p-0.5 text-[11px] shadow-[0_0_15px_rgba(81,112,255,0.45)]">
             <button 
               onClick={() => setLanguage('nl')}
               className={`px-2 py-0.5 rounded-full font-sans font-semibold transition-all cursor-pointer ${
-                language === 'nl' ? 'bg-[#eaaf47] text-[#151f33] font-bold shadow-sm' : 'text-white/85 hover:text-white'
+                language === 'nl' ? 'bg-white text-[#5170ff] shadow-sm' : 'text-white/85 hover:text-white'
               }`}
             >
               NL
@@ -218,7 +210,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
             <button 
               onClick={() => setLanguage('en')}
               className={`px-2 py-0.5 rounded-full font-sans font-semibold transition-all cursor-pointer ${
-                language === 'en' ? 'bg-[#eaaf47] text-[#151f33] font-bold shadow-sm' : 'text-white/85 hover:text-white'
+                language === 'en' ? 'bg-white text-[#5170ff] shadow-sm' : 'text-white/85 hover:text-white'
               }`}
             >
               EN
@@ -304,7 +296,7 @@ export function Navbar({ storeSettings }: { storeSettings?: StoreSettings }) {
               </a>
               <button 
                 onClick={() => { openStep1(); setIsMobileMenuOpen(false); }}
-                className="bg-[#eaaf47] text-[#151f33] px-8 py-4 text-lg mt-4 inline-block mx-auto hover:bg-[#d89e36] transition-colors font-button-default font-bold rounded-xl shadow-md cursor-pointer"
+                className="bg-[#5170ff] text-white px-8 py-4 text-lg mt-4 inline-block mx-auto hover:bg-[#4060ee] transition-colors font-button-default rounded-xl shadow-md"
                 style={getTypographyStyle('button', content?.nav_btn_order_font, content?.nav_btn_order_size)}
               >
                 {content?.nav_btn_order || t('BESTEL NU')}

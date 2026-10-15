@@ -1,5 +1,5 @@
 import React, { useState, FormEvent, MouseEvent, useEffect } from 'react';
-import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption, CURRENT_BRAND, isBrandAllowed, resolveProductPrices } from '../lib/supabase';
+import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption, isItemVisibleForBrand, CURRENT_BRAND } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
@@ -49,26 +49,18 @@ export function GuestOrdering() {
   const [guestEmail, setGuestEmail] = useState('');
   const [guestBillingInfo, setGuestBillingInfo] = useState('');
   const location = useLocation();
-  const sessionPref = sessionStorage.getItem('deliveryPref');
   const searchParams = new URLSearchParams(location.search);
-  const modeParam = searchParams.get('mode') || searchParams.get('deliveryMode');
-  const initialDeliveryMode = (location.state?.deliveryMode === 'scheduled' || sessionPref === 'scheduled' || modeParam === 'scheduled') ? 'scheduled' : 'zsm';
+  const sessionPref = sessionStorage.getItem('deliveryPref');
+  const explicitPref = (location.state?.deliveryMode || searchParams.get('deliveryMode') || searchParams.get('mode')) as 'zsm' | 'scheduled' | undefined;
+  const initialDeliveryMode = explicitPref 
+    ? explicitPref 
+    : (sessionPref === 'scheduled' ? 'scheduled' : 'zsm');
 
   const [guestAddress, setGuestAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [notes, setNotes] = useState('');
   
   const [deliveryMode, setDeliveryMode] = useState<'zsm' | 'scheduled'>(initialDeliveryMode);
-
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const m = params.get('mode') || params.get('deliveryMode');
-    if (location.state?.deliveryMode === 'scheduled' || m === 'scheduled') {
-      setDeliveryMode('scheduled');
-    } else if (location.state?.deliveryMode === 'zsm' || m === 'zsm') {
-      setDeliveryMode('zsm');
-    }
-  }, [location]);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryTime, setDeliveryTime] = useState('');
 
@@ -130,7 +122,7 @@ export function GuestOrdering() {
           setDiscountCodes(loadedCodes);
           const prodTranslations: Record<string, { extra_info_en?: string }> = storeRes?.data?.page_content?.product_translations || {};
           if (prodsRes.data) {
-            const mappedProds = prodsRes.data.map((p: any) => ({
+            prods = prodsRes.data.map((p: any) => ({
               ...p,
               brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
               extra_info: p.extra_info || '',
@@ -138,12 +130,63 @@ export function GuestOrdering() {
               hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
               allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
             }));
-            // Toon een product alleen als allowed_brands IS NULL of leeg is (standaard = alle merken), OF allowed_brands bevat 'canal_butler'
-            prods = mappedProds.filter((p: any) => isBrandAllowed(p.allowed_brands, CURRENT_BRAND));
           }
           if (pricesRes.data) {
-            // Prioriteit voor prijs: 1. Bedrijf (match), 2. Merk (canal_butler), 3. Standaard
-            const pMap = resolveProductPrices(pricesRes.data, null, CURRENT_BRAND, prods);
+            const pMap: Record<string, number> = {};
+            const allPriceRows = pricesRes.data;
+
+            // 1. Universal standard prices (no company_id, brand is null or 'office_butler')
+            allPriceRows
+              .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+              .forEach((p: any) => {
+                const cleanName = (p.product_name || '').trim();
+                const price = parseFloat(p.price);
+                pMap[`${cleanName}_${p.portion_size}`] = price;
+                pMap[`${p.product_name}_${p.portion_size}`] = price;
+              });
+
+            // 2. Concept/Brand specific price override (no company_id, brand === CURRENT_BRAND)
+            if (CURRENT_BRAND !== 'office_butler') {
+              allPriceRows
+                .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                .forEach((p: any) => {
+                  const cleanName = (p.product_name || '').trim();
+                  const price = parseFloat(p.price);
+                  pMap[`${cleanName}_${p.portion_size}`] = price;
+                  pMap[`${p.product_name}_${p.portion_size}`] = price;
+                });
+            }
+
+            // Cross-link with prods
+            if (prods) {
+              prods.forEach((prodItem: any) => {
+                const prodName = prodItem.name || '';
+                const cleanProdName = prodName.trim();
+                allPriceRows
+                  .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+                  .forEach((p: any) => {
+                    const pClean = (p.product_name || '').trim();
+                    if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                      const price = parseFloat(p.price);
+                      pMap[`${prodName}_${p.portion_size}`] = price;
+                      pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                    }
+                  });
+
+                if (CURRENT_BRAND !== 'office_butler') {
+                  allPriceRows
+                    .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                    .forEach((p: any) => {
+                      const pClean = (p.product_name || '').trim();
+                      if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                        const price = parseFloat(p.price);
+                        pMap[`${prodName}_${p.portion_size}`] = price;
+                        pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                      }
+                    });
+                }
+              });
+            }
             setPrices(pMap);
           }
         } catch (e) {
@@ -154,6 +197,8 @@ export function GuestOrdering() {
           const grouped = prods.reduce((acc, item) => {
             const st = (item.status || '').toLowerCase();
             if (['inactive', 'inactief', 'verborgen'].includes(st)) return acc;
+            // Exclude products not allowed on current website / concept
+            if (!isItemVisibleForBrand(item.allowed_brands)) return acc;
             // Exclude products restricted to specific companies from guest ordering
             if (item.allowed_company_ids && Array.isArray(item.allowed_company_ids) && item.allowed_company_ids.length > 0) {
               return acc;
@@ -194,13 +239,13 @@ export function GuestOrdering() {
         const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').eq('is_active', true).order('sort_order', { ascending: true });
         if (dmError) console.error('Error fetching delivery methods:', dmError);
         if (dmData && dmData.length > 0) {
-          // Toon bezorgoptie alleen als allowed_brands leeg/null is OF 'canal_butler' bevat
-          const brandAllowedDm = dmData.filter((m: any) => isBrandAllowed(m.allowed_brands, CURRENT_BRAND));
-          const enrichedDm = brandAllowedDm.map((m: any) => ({
-            ...m,
-            name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
-            description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
-          }));
+          const enrichedDm = dmData
+            .filter((m: any) => isItemVisibleForBrand(m.allowed_brands))
+            .map((m: any) => ({
+              ...m,
+              name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
+              description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
+            }));
           setDeliveryMethods(enrichedDm);
           if (enrichedDm.length > 0) {
             setSelectedDeliveryMethod(enrichedDm[0]);
@@ -396,7 +441,8 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
               portion_size: sizeNum,
               price: price,
               qty: qty as number,
-              lineTotal: price * (qty as number)
+              lineTotal: price * (qty as number),
+              variant: variant || undefined
             });
             
             for (let i = 0; i < (qty as number); i++) {
@@ -493,6 +539,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
             body: JSON.stringify({
               guestName,
               guestEmail,
+              brand: CURRENT_BRAND,
               guestBillingInfo,
               guestAddress,
               selections,
@@ -585,7 +632,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
 
   const rawPackagingOptions: PackagingOption[] = pageContent?.packaging_options || [];
   const availablePackagingOptions = rawPackagingOptions.filter((opt: PackagingOption) => {
-    return opt.is_active && opt.available_for_guests && isBrandAllowed(opt.allowed_brands, CURRENT_BRAND);
+    return opt.is_active && opt.available_for_guests && isItemVisibleForBrand(opt.allowed_brands);
   });
 
   const packagingPrice = Number(selectedPackagingOption?.price) || 0;
@@ -667,9 +714,8 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
   if (orderSuccess) {
     const successTitle = pageContent?.guest_success_title || pageContent?.order_success_title || "Bestelling Ontvangen!";
     const defaultMsg = `Bedankt voor uw bestelling${guestName ? `, ${guestName}` : ''}. We hebben uw aanvraag goed ontvangen.`;
-    const configuredMsg = (typeof pageContent?.guest_success_message === 'string' && pageContent.guest_success_message.trim())
-      ? pageContent.guest_success_message.replace('{guestName}', guestName || '')
-      : defaultMsg;
+    const rawMsg = typeof pageContent?.guest_success_message === 'string' ? pageContent.guest_success_message : defaultMsg;
+    const configuredMsg = rawMsg.replace('{guestName}', guestName || '');
     const delayNotice = pageContent?.delivery_delay_notice || " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later).";
     const invoiceNotice = pageContent?.guest_invoice_notice || " De factuur is verstuurd naar uw e-mail.";
 
@@ -685,7 +731,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
           </p>
           <Link 
             to="/"
-            className="inline-block bg-[#eaaf47] text-[#151f33] px-8 py-3 rounded-xl font-bold hover:bg-[#d89e36] transition-colors shadow-sm"
+            className="inline-block bg-[#5170ff] text-white px-8 py-3 rounded-xl font-semibold hover:bg-[#4060ee] transition-colors shadow-sm"
           >
             {pageContent?.guest_success_button || "Terug naar home"}
           </Link>
@@ -819,7 +865,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                         >
                           <span className="font-paragraph-default">{category.title}</span>
                           {countInCat > 0 && (
-                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isCatActive ? 'bg-white/20 text-white' : 'bg-[#eaaf47] text-[#151f33]'}`}>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isCatActive ? 'bg-white/20 text-white' : 'bg-[#5170ff] text-white'}`}>
                               {countInCat}
                             </span>
                           )}
@@ -829,7 +875,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                     <button
                       type="button"
                       onClick={scrollToOrder}
-                      className="shrink-0 ml-auto px-3 py-1.5 bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] rounded-full text-xs font-bold font-button-default tracking-wide flex items-center gap-1 shadow-xs cursor-pointer"
+                      className="shrink-0 ml-auto px-3 py-1.5 bg-[#5170ff] hover:bg-[#4060ee] text-white rounded-full text-xs font-bold font-button-default tracking-wide flex items-center gap-1 shadow-xs cursor-pointer"
                     >
                       <span>{t('Bestellen', 'Order')}</span>
                       <ArrowDown size={12} />
@@ -1094,7 +1140,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-gray-100 pb-6">
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <Building size={16} className="text-ob-accent" /> Naam / Bedrijfsnaam
+                    <Building size={16} className="text-[#5170ff]" /> Naam / Bedrijfsnaam
                   </label>
                   <input 
                     type="text" 
@@ -1107,7 +1153,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <Mail size={16} className="text-ob-accent" /> Factuur E-mailadres
+                    <Mail size={16} className="text-[#5170ff]" /> Factuur E-mailadres
                   </label>
                   <input 
                     type="email" 
@@ -1135,7 +1181,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-gray-100 pb-6">
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <MapPin size={16} className="text-ob-accent" /> Volledig Bezorgadres
+                    <MapPin size={16} className="text-[#5170ff]" /> Volledig Bezorgadres
                   </label>
                   <textarea 
                     required
@@ -1148,7 +1194,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                    <Phone size={16} className="text-ob-accent" /> Telefoonnummer
+                    <Phone size={16} className="text-[#5170ff]" /> Telefoonnummer
                   </label>
                   <input 
                     type="tel" 
@@ -1164,7 +1210,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
               {/* Delivery Time Selection */}
               <div className="border-b border-gray-100 pb-6">
                 <label className="block text-sm font-semibold text-ob-text mb-3 flex items-center gap-2">
-                  <Clock size={16} className="text-ob-accent" /> Bezorgmoment
+                  <Clock size={16} className="text-[#5170ff]" /> Bezorgmoment
                 </label>
                 
                 <div className="flex gap-4 mb-4">
@@ -1174,7 +1220,10 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                       name="guestDeliveryMode" 
                       value="zsm" 
                       checked={deliveryMode === 'zsm'} 
-                      onChange={() => setDeliveryMode('zsm')}
+                      onChange={() => {
+                        setDeliveryMode('zsm');
+                        try { sessionStorage.setItem('deliveryPref', 'zsm'); } catch {}
+                      }}
                       className="text-ob-blue focus:ring-ob-blue"
                     />
                     <span className="text-sm font-medium">Zo snel mogelijk</span>
@@ -1185,7 +1234,10 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                       name="guestDeliveryMode" 
                       value="scheduled" 
                       checked={deliveryMode === 'scheduled'} 
-                      onChange={() => setDeliveryMode('scheduled')}
+                      onChange={() => {
+                        setDeliveryMode('scheduled');
+                        try { sessionStorage.setItem('deliveryPref', 'scheduled'); } catch {}
+                      }}
                       className="text-ob-blue focus:ring-ob-blue"
                     />
                     <span className="text-sm font-medium">Kies datum & tijd</span>
@@ -1196,7 +1248,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                   <div className="grid grid-cols-2 gap-4 mt-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Calendar size={14} className="text-ob-accent" /> Datum
+                        <Calendar size={14} className="text-[#5170ff]" /> Datum
                       </label>
                       <input 
                         type="date" 
@@ -1208,7 +1260,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Clock size={14} className="text-ob-accent" /> Tijd
+                        <Clock size={14} className="text-[#5170ff]" /> Tijd
                       </label>
                       <input 
                         type="time" 
@@ -1436,7 +1488,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
           {/* Legal / Privacy Notice */}
           <div className="pt-2">
             <div className="flex items-start gap-2.5 text-xs text-gray-500 bg-gray-50 p-3 rounded-xl border border-gray-150">
-              <ShieldCheck size={16} className="text-ob-accent shrink-0 mt-0.5" />
+              <ShieldCheck size={16} className="text-[#5170ff] shrink-0 mt-0.5" />
               <div className="leading-relaxed">
                 <span>
                   {t(
@@ -1447,7 +1499,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                 <button
                   type="button"
                   onClick={() => setIsPrivacyModalOpen(true)}
-                  className="text-ob-blue hover:text-ob-accent hover:underline font-semibold cursor-pointer inline-flex items-center gap-0.5"
+                  className="text-[#5170ff] hover:underline font-semibold cursor-pointer inline-flex items-center gap-0.5"
                 >
                   {t('Privacy Policy', 'Privacy Policy')}
                 </button>
@@ -1461,7 +1513,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
             <button 
               type="submit" 
               disabled={isSubmitting || Object.keys(selections).length === 0 || !guestName || !guestEmail || !guestAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
-              className="w-full bg-[#eaaf47] text-[#151f33] py-4 rounded-xl font-bold text-lg hover:bg-[#d89e36] hover:shadow-[0_0_20px_rgba(234,175,71,0.5)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg font-button-default cursor-pointer"
+              className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg font-button-default cursor-pointer"
             >
               {isSubmitting ? (pageContent?.btn_submitting || t('Bezig met plaatsen...', 'Placing order...')) : <><ShoppingBag size={20} /> {(language === 'en' && pageContent?.guest_btn_submit_en) ? pageContent.guest_btn_submit_en : (pageContent?.guest_btn_submit ? t(pageContent.guest_btn_submit) : t('Bestelling Plaatsen', 'Place Order'))} (€{finalTotalAmount.toFixed(2)})</>}
             </button>
@@ -1516,7 +1568,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
               </div>
 
               {/* Direct Naar Bestellen CTA Card */}
-              <div className="bg-gradient-to-br from-white to-amber-50/30 rounded-2xl shadow-sm border border-amber-100/60 p-5 space-y-3.5">
+              <div className="bg-gradient-to-br from-white to-blue-50/40 rounded-2xl shadow-sm border border-blue-100/80 p-5 space-y-3.5">
                 <div className="flex items-center justify-between pb-2 border-b border-gray-150">
                   <span className="text-xs uppercase tracking-wider font-bold text-gray-500 font-button-default">
                     <EditableText
@@ -1529,7 +1581,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                     />
                   </span>
                   {selectedItemsList.length > 0 && (
-                    <span className="text-[11px] font-semibold text-[#151f33] bg-[#eaaf47]/20 px-2 py-0.5 rounded-full border border-[#eaaf47]/40">
+                    <span className="text-[11px] font-semibold text-[#5170ff] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
                       {selectedItemsList.reduce((acc, i) => acc + i.qty, 0)} {selectedItemsList.reduce((acc, i) => acc + i.qty, 0) === 1 ? t('portie', 'portion') : t('porties', 'portions')}
                     </span>
                   )}
@@ -1541,12 +1593,12 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                     {t('Selecteer snacks uit het assortiment hiernaast', 'Select snacks from the assortment')}
                   </div>
                 ) : (
-                  <div className="bg-white/90 rounded-xl p-3 border border-amber-100/80 shadow-2xs space-y-2 max-h-52 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
+                  <div className="bg-white/90 rounded-xl p-3 border border-blue-100/80 shadow-2xs space-y-2 max-h-52 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
                     {selectedItemsList.map((item) => (
                       <div key={item.key} className="pt-2 first:pt-0 flex items-start justify-between text-xs gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="font-semibold text-gray-900 truncate">
-                            <span className="text-[#eaaf47] font-bold mr-1">{item.qty}x</span>
+                            <span className="text-[#5170ff] font-bold mr-1">{item.qty}x</span>
                             {item.product}
                           </div>
                           <div className="text-[11px] text-gray-500 font-normal">
@@ -1581,7 +1633,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                 <button
                   type="button"
                   onClick={scrollToOrder}
-                  className="w-full bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all font-button-default text-xs tracking-wider cursor-pointer"
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all font-button-default text-xs tracking-wider cursor-pointer"
                 >
                   <ArrowDown size={16} />
                   <EditableText
@@ -1614,10 +1666,10 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
           <button
             type="button"
             onClick={scrollToOrder}
-            className="w-full bg-[#151f33] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-[#eaaf47]/30 hover:bg-[#1a2740] transition-all cursor-pointer"
+            className="w-full bg-[#151f34] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 hover:bg-[#1e2a44] transition-all cursor-pointer"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#eaaf47] text-[#151f33] flex items-center justify-center text-xs font-bold font-heading-default">
+              <div className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-xs font-bold font-heading-default">
                 {totalSelectedItems}
               </div>
               <div className="text-left">
@@ -1634,7 +1686,7 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
                 <span className="text-sm font-bold text-white block font-heading-default">€{finalTotalAmount.toFixed(2)}</span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] px-3.5 py-2 rounded-xl text-xs font-bold font-button-default tracking-wider shadow-sm">
+            <div className="flex items-center gap-1.5 bg-[#5170ff] hover:bg-[#4060ee] px-3.5 py-2 rounded-xl text-xs font-bold font-button-default tracking-wider shadow-sm">
               <EditableText
                 contentKey="order_mobile_btn_scroll"
                 label="Mobiele Knop 'Naar Bestellen'"

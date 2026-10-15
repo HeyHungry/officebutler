@@ -1,18 +1,26 @@
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
-import { 
-  sendOrderToBiteberry, 
-  adminClient, 
-  parseDutchAddress, 
-  parseDeliverySchedule 
-} from "./biteberryShared";
-
-export { parseDutchAddress, parseDeliverySchedule };
+import { sendOrderToBiteberry } from "./biteberryShared";
 
 export default async function handler(req: any, res: any) {
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
   
   try {
+    let body = req.body;
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch (_) {}
+    } else if (Buffer.isBuffer(body)) {
+      try { body = JSON.parse(body.toString('utf8')); } catch (_) {}
+    }
+    body = body || {};
+
     const { 
       companyId, 
       companyName: reqCompanyName, 
@@ -30,15 +38,27 @@ export default async function handler(req: any, res: any) {
       deliveryDate, 
       deliveryTime, 
       deliveryMethod, 
-      deliveryMethodPrice 
-    } = req.body;
+      deliveryMethodPrice,
+      packagingOption,
+      packagingPrice,
+      discountCode,
+      discountType,
+      discountValue,
+      discountAmount,
+      freeProductInfo,
+      finalTotal
+    } = body;
     const apiKey = process.env.RESEND_API_KEY;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-    const supabaseUrl = process.env.VITE_SUPABASE_URL || "https://rqqotumbdsghvkkmquqo.supabase.co";
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 
     const supabaseAdmin = (serviceKey && supabaseUrl)
       ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-      : adminClient;
+      : null;
+
+    const rawBrand = (body.brand || process.env.VITE_BRAND_ID || 'office_butler').trim().toLowerCase();
+    const brandName = rawBrand.includes('canal') ? 'Canal Butler' : (rawBrand.includes('snack') ? 'Snack Butler' : 'Office Butler');
+    const brandFromEmail = process.env.RESEND_FROM_EMAIL || (rawBrand.includes('canal') ? 'Canal Butler <info@office-butler.com>' : 'Office Butler <info@office-butler.com>');
 
     let company: any = null;
     let address: any = null;
@@ -66,12 +86,11 @@ export default async function handler(req: any, res: any) {
     let biteberryResult: any = null;
     try {
       biteberryResult = await sendOrderToBiteberry({
-        brand: 'canal_butler',
-        brandPlatform: 'canal',
         customerName: effectiveCustomerName,
         companyName: effectiveCompanyName,
         email: effectiveEmail,
         phone,
+        brand: body.brand || (process.env.VITE_BRAND_ID as string) || 'office_butler',
         rawAddress: effectiveRawAddress,
         addressLabel: effectiveAddressLabel,
         orderLines,
@@ -83,6 +102,9 @@ export default async function handler(req: any, res: any) {
         deliveryMethodPrice,
         notes,
         billingInfo: company?.billing_info,
+        discountCode: body.discountCode,
+        discountAmount: body.discountAmount,
+        freeProductInfo: body.freeProductInfo,
         isTest: false,
         supabaseAdmin
       });
@@ -153,14 +175,14 @@ export default async function handler(req: any, res: any) {
         const emailHtml = `
           <div style="font-family: sans-serif; max-w-xl; margin: 0 auto; color: #333;">
             <div style="background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
-              <h3 style="margin-top: 0; color: #0d47a1;">Interne Notitie (Canal Butler)</h3>
-              <p style="margin: 5px 0;">Er is zojuist een nieuwe bestelling geplaatst via Canal Butler door <strong>${effectiveCompanyName}</strong>.</p>
+              <h3 style="margin-top: 0; color: #0d47a1;">Interne Notitie (Office Butler)</h3>
+              <p style="margin: 5px 0;">Er is zojuist een nieuwe bestelling geplaatst door <strong>${effectiveCompanyName}</strong>.</p>
               <p style="margin: 5px 0;">Controleer deze factuur en stuur deze vervolgens handmatig door naar: <a href="mailto:${emailRecipient}">${emailRecipient}</a></p>
             </div>
 
-            <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur (Canal Butler)</h2>
+            <h2 style="color: #05053D;">Bevestiging Bestelling & Factuur</h2>
             <p>Beste ${effectiveCompanyName},</p>
-            <p>Bedankt voor uw bestelling via Canal Butler. Hieronder vindt u het overzicht van uw bestelling.</p>
+            <p>Bedankt voor uw bestelling via Office Butler. Hieronder vindt u het overzicht van uw bestelling.</p>
             
             <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
               <thead>
@@ -193,43 +215,22 @@ export default async function handler(req: any, res: any) {
               ${company?.billing_info ? `<br/><p style="margin: 5px 0;"><strong>Factuurgegevens:</strong><br/>${company.billing_info}</p>` : ''}
             </div>
             
-            <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van Canal Butler.</p>
+            <p style="margin-top: 20px; font-size: 12px; color: #888;">Dit is een automatisch gegenereerd bericht van ${brandName}.</p>
           </div>
         `;
 
-        const fromAddress = process.env.RESEND_FROM?.trim() || 'Canal Butler <info@office-butler.com>';
+        const recipientList: string[] = ['info@office-butler.com'];
+        if (effectiveEmail && effectiveEmail.includes('@') && !recipientList.includes(effectiveEmail.trim())) {
+          recipientList.push(effectiveEmail.trim());
+        }
 
-        const recipients = ['info@office-butler.com', 'info@canal-butler.com'];
-
-        let sendRes = await resend.emails.send({
-          from: fromAddress,
-          replyTo: 'info@canal-butler.com',
-          to: recipients,
-          subject: `[Canal Butler] Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
+        await resend.emails.send({
+          from: brandFromEmail,
+          to: recipientList,
+          subject: `[${brandName}] Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
           html: emailHtml
         });
-
-        if (sendRes.error && (sendRes.error.name === 'validation_error' || sendRes.error.message?.includes('not verified') || (sendRes.error as any).statusCode === 403)) {
-          if (fromAddress !== 'Canal Butler <info@office-butler.com>') {
-            sendRes = await resend.emails.send({
-              from: 'Canal Butler <info@office-butler.com>',
-              replyTo: 'info@canal-butler.com',
-              to: recipients,
-              subject: `[Canal Butler] Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
-              html: emailHtml
-            });
-          }
-          if (sendRes.error && (sendRes.error.name === 'validation_error' || sendRes.error.message?.includes('not verified') || (sendRes.error as any).statusCode === 403)) {
-            sendRes = await resend.emails.send({
-              from: 'Canal Butler <onboarding@resend.dev>',
-              replyTo: 'info@canal-butler.com',
-              to: recipients,
-              subject: `[Canal Butler] Nieuwe Bestelling & Factuur - ${effectiveCompanyName}`,
-              html: emailHtml
-            });
-          }
-        }
-        emailSent = !sendRes.error;
+        emailSent = true;
       } catch (mailErr) {
         console.error("Error sending invoice email (non-blocking):", mailErr);
       }

@@ -1,12 +1,13 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, Edit3, Settings, LogOut } from 'lucide-react';
+import { ShieldCheck, Edit3, Sliders, Settings } from 'lucide-react';
 import { useModerator } from '../contexts/ModeratorContext';
+import { CENTRAL_MODERATOR_URL } from '../lib/supabase';
 
 export function ModeratorViewWidget() {
-  const { isAuthenticated, isModeratorView, toggleModeratorView, openCentralDashboard, logoutModerator } = useModerator();
+  const { isAuthenticated, isModeratorView, toggleModeratorView, openModPanel } = useModerator();
 
-  // Alleen zichtbaar wanneer de gebruiker is ingelogd als moderator
+  // Show only if authenticated as moderator
   if (!isAuthenticated) return null;
 
   return (
@@ -63,27 +64,16 @@ export function ModeratorViewWidget() {
             </div>
           </button>
 
-          {/* Quick link naar het centrale Dashboard */}
+          {/* Quick link to full Moderator Panel */}
           <div className="h-4 w-[1px] bg-white/15 mx-0.5" />
           <button
             type="button"
-            onClick={openCentralDashboard}
+            onClick={openModPanel}
             className="p-1.5 rounded-full hover:bg-white/15 text-white/70 hover:text-white transition-colors cursor-pointer"
-            title="Naar Centraal Dashboard"
-            aria-label="Naar Centraal Dashboard"
+            title={CENTRAL_MODERATOR_URL ? "Open Centraal Moderator Dashboard (Office Butler)" : "Open volledig Moderator Paneel"}
+            aria-label="Open Moderator Paneel"
           >
             <Settings size={14} />
-          </button>
-
-          {/* Uitloggen */}
-          <button
-            type="button"
-            onClick={logoutModerator}
-            className="p-1.5 rounded-full hover:bg-red-500/20 text-white/50 hover:text-red-300 transition-colors cursor-pointer"
-            title="Uitloggen als moderator"
-            aria-label="Uitloggen als moderator"
-          >
-            <LogOut size={13} />
           </button>
         </div>
       </motion.div>

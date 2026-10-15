@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent, MouseEvent } from 'react';
-import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption, CURRENT_BRAND, isBrandAllowed, resolveProductPrices } from '../lib/supabase';
+import { supabase, sortVariantsByCategory, DiscountCode, validateDiscountCode, recordDiscountCodeUsage, PackagingOption, isItemVisibleForBrand, CURRENT_BRAND } from '../lib/supabase';
 import { getTypographyStyle } from '../lib/typography';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
@@ -103,6 +103,7 @@ export function EmployeeOrdering() {
 
   // Packaging option state
   const [selectedPackagingOption, setSelectedPackagingOption] = useState<PackagingOption | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>('');
 
   const handleApplyCoupon = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -251,12 +252,15 @@ export function EmployeeOrdering() {
   const rawPackagingOptions: PackagingOption[] = pageContent?.packaging_options || [];
   const availablePackagingOptions = rawPackagingOptions.filter((opt: PackagingOption) => {
     if (!opt.is_active) return false;
-    if (!isBrandAllowed(opt.allowed_brands, CURRENT_BRAND)) return false;
-    if (opt.available_for_all_companies) return true;
-    if (opt.allowed_company_ids && companyId && (
+    const hasCompanyException = opt.allowed_company_ids && companyId && (
       opt.allowed_company_ids.includes(companyId) || 
       (companyName && opt.allowed_company_ids.includes(companyName))
-    )) return true;
+    );
+    if (!hasCompanyException && !isItemVisibleForBrand(opt.allowed_brands)) {
+      return false;
+    }
+    if (opt.available_for_all_companies) return true;
+    if (hasCompanyException) return true;
     return false;
   });
 
@@ -347,7 +351,7 @@ export function EmployeeOrdering() {
           setDiscountCodes(loadedCodes);
         }
         if (prodsRes.data) {
-          const mappedProds = prodsRes.data.map((p: any) => ({
+          prods = prodsRes.data.map((p: any) => ({
             ...p,
             brand: p.brand || brandsMap[p.id] || brandsMap[p.name] || '',
             extra_info: p.extra_info || '',
@@ -355,8 +359,6 @@ export function EmployeeOrdering() {
             hide_image: p.hide_image != null ? Boolean(p.hide_image) : Boolean(hideImagesMap[p.id] || hideImagesMap[p.name] || hideImagesMap[(p.name || '').trim()]),
             allowed_company_ids: p.allowed_company_ids || companyRestrictionsMap[p.id] || companyRestrictionsMap[p.name] || companyRestrictionsMap[(p.name || '').trim()] || []
           }));
-          // Toon een product alleen als allowed_brands IS NULL of leeg is (standaard = alle merken), OF allowed_brands bevat 'canal_butler'
-          prods = mappedProds.filter((p: any) => isBrandAllowed(p.allowed_brands, CURRENT_BRAND));
         }
       } catch (e) {
         console.warn('No products table or store_settings');
@@ -364,8 +366,86 @@ export function EmployeeOrdering() {
       if (prods) setDbProducts(prods);
       const { data: priceData } = await supabase.from('ob_product_prices').select('*');
       if (priceData) {
-        // Prioriteit voor prijs: 1. Bedrijf (match), 2. Merk (canal_butler), 3. Standaard
-        const pMap = resolveProductPrices(priceData, compId, CURRENT_BRAND, prods);
+        const pMap: PriceMap = {};
+        const allPrices = priceData;
+        
+        // 1. Universal standard prices (no company_id, brand is null or 'office_butler')
+        allPrices
+          .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+          .forEach((p: any) => {
+            const cleanName = (p.product_name || '').trim();
+            const price = parseFloat(p.price);
+            pMap[`${cleanName}_${p.portion_size}`] = price;
+            pMap[`${p.product_name}_${p.portion_size}`] = price;
+          });
+
+        // 2. Concept / Brand specific standard price override (no company_id, brand === CURRENT_BRAND)
+        if (CURRENT_BRAND !== 'office_butler') {
+          allPrices
+            .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+            .forEach((p: any) => {
+              const cleanName = (p.product_name || '').trim();
+              const price = parseFloat(p.price);
+              pMap[`${cleanName}_${p.portion_size}`] = price;
+              pMap[`${p.product_name}_${p.portion_size}`] = price;
+            });
+        }
+
+        // 3. Company specific override (highest priority: specific deals for this company)
+        allPrices
+          .filter((p: any) => p.company_id === compId)
+          .forEach((p: any) => {
+            const cleanName = (p.product_name || '').trim();
+            const price = parseFloat(p.price);
+            pMap[`${cleanName}_${p.portion_size}`] = price;
+            pMap[`${p.product_name}_${p.portion_size}`] = price;
+          });
+
+        // Cross-link with dbProducts in case product.name has whitespace or different casing
+        if (prods) {
+          prods.forEach((prodItem: any) => {
+            const prodName = prodItem.name || '';
+            const cleanProdName = prodName.trim();
+            // A. Base default
+            allPrices
+              .filter((p: any) => !p.company_id && (!p.brand || p.brand === 'office_butler'))
+              .forEach((p: any) => {
+                const pClean = (p.product_name || '').trim();
+                if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                  const price = parseFloat(p.price);
+                  pMap[`${prodName}_${p.portion_size}`] = price;
+                  pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                }
+              });
+
+            // B. Brand override
+            if (CURRENT_BRAND !== 'office_butler') {
+              allPrices
+                .filter((p: any) => !p.company_id && p.brand === CURRENT_BRAND)
+                .forEach((p: any) => {
+                  const pClean = (p.product_name || '').trim();
+                  if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                    const price = parseFloat(p.price);
+                    pMap[`${prodName}_${p.portion_size}`] = price;
+                    pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                  }
+                });
+            }
+
+            // C. Company deal override
+            allPrices
+              .filter((p: any) => p.company_id === compId)
+              .forEach((p: any) => {
+                const pClean = (p.product_name || '').trim();
+                if (pClean.toLowerCase() === cleanProdName.toLowerCase()) {
+                  const price = parseFloat(p.price);
+                  pMap[`${prodName}_${p.portion_size}`] = price;
+                  pMap[`${cleanProdName}_${p.portion_size}`] = price;
+                }
+              });
+          });
+        }
+        
         setPrices(pMap);
       }
 
@@ -373,19 +453,20 @@ export function EmployeeOrdering() {
       const { data: cdmData, error: cdmError } = await supabase.from('ob_company_delivery_methods').select('delivery_method_id').eq('company_id', compId);
       if (cdmError) console.error('Error fetching company delivery methods:', cdmError);
       
-      const enrichDeliveryList = (list: any[]) => (list || []).map((m: any) => ({
-        ...m,
-        name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
-        description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
-      }));
+      const enrichDeliveryList = (list: any[]) => (list || [])
+        .filter((m: any) => isItemVisibleForBrand(m.allowed_brands))
+        .map((m: any) => ({
+          ...m,
+          name_en: m.name_en || deliveryTrans[m.id]?.name_en || deliveryTrans[m.name]?.name_en || '',
+          description_en: m.description_en || deliveryTrans[m.id]?.description_en || deliveryTrans[m.name]?.description_en || ''
+        }));
 
       if (cdmData && cdmData.length > 0) {
         const allowedIds = cdmData.map(a => a.delivery_method_id);
         const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').in('id', allowedIds).eq('is_active', true).order('sort_order', { ascending: true });
         if (dmError) console.error('Error fetching delivery methods:', dmError);
         if (dmData && dmData.length > 0) {
-          const brandAllowedDm = dmData.filter((m: any) => isBrandAllowed(m.allowed_brands, CURRENT_BRAND));
-          const enriched = enrichDeliveryList(brandAllowedDm);
+          const enriched = enrichDeliveryList(dmData);
           setDeliveryMethods(enriched);
           if (enriched.length > 0) {
             setSelectedDeliveryMethod(enriched[0]);
@@ -396,8 +477,7 @@ export function EmployeeOrdering() {
         const { data: dmData, error: dmError } = await supabase.from('ob_delivery_methods').select('*').eq('is_active', true).order('sort_order', { ascending: true });
         if (dmError) console.error('Error fetching fallback delivery methods:', dmError);
         if (dmData && dmData.length > 0) {
-          const brandAllowedDm = dmData.filter((m: any) => isBrandAllowed(m.allowed_brands, CURRENT_BRAND));
-          const enriched = enrichDeliveryList(brandAllowedDm);
+          const enriched = enrichDeliveryList(dmData);
           setDeliveryMethods(enriched);
           if (enriched.length > 0) {
             setSelectedDeliveryMethod(enriched[0]);
@@ -510,7 +590,8 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
               portion_size: sizeNum,
               price: price,
               qty: qty as number,
-              lineTotal: price * (qty as number)
+              lineTotal: price * (qty as number),
+              variant: variant || undefined
             });
             
             for (let i = 0; i < (qty as number); i++) {
@@ -627,10 +708,10 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
             headers: { 'Content-Type': 'application/json' },
             
             body: JSON.stringify({
+              brand: CURRENT_BRAND,
               companyId,
               companyName: companyName,
               customerName: companyName,
-              email: userEmail,
               rawAddress: selectedAddressObj?.address_line || selectedAddressObj?.label,
               addressLabel: selectedAddressObj?.label,
               selections,
@@ -675,6 +756,61 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
     setIsSubmitting(false);
   };
 
+  if (isLoading) {
+    return <div className="min-h-screen bg-[#f4f6f9] pt-32 flex items-center justify-center font-serif text-ob-blue">Laden...</div>;
+  }
+
+  if (orderSuccess) {
+    const successTitle = pageContent?.emp_success_title || "Bestelling Geplaatst!";
+    const successMsg = pageContent?.emp_success_message || "Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.";
+    const delayNotice = pageContent?.delivery_delay_notice || "Opmerking: Wegens een technische vertraging bij onze e-mailprovider duren bevestigingsmails momenteel iets langer dan gebruikelijk.";
+    const modifyTitle = pageContent?.emp_modify_title || "Bestelling wijzigen of annuleren?";
+    const modifyNotice = pageContent?.emp_success_notice || "U kunt deze bestelling te allen tijde inzien, aanpassen of annuleren via uw Bedrijfsdashboard.";
+
+    return (
+      <div className="min-h-screen bg-[#f4f6f9] pt-32 pb-20 font-serif flex items-center justify-center px-6">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white p-10 rounded-2xl shadow-sm border border-gray-200 text-center max-w-md w-full"
+        >
+          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 size={40} />
+          </div>
+          <h2 className="text-3xl font-bold text-ob-text mb-4">{successTitle}</h2>
+          <p className="text-gray-600 mb-6 leading-relaxed">
+            {successMsg}
+            {emailFailed && <span className="block mt-4 text-orange-600 text-sm">{delayNotice}</span>}
+          </p>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 mb-6 text-xs text-blue-900 text-left">
+            💡 <strong>{modifyTitle}</strong><br />
+            {modifyNotice}
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="w-full bg-[#5170ff] text-white py-3 rounded-lg font-semibold hover:bg-blue-600 transition-colors"
+            >
+              {pageContent?.emp_btn_dashboard || "Ga naar Bedrijfsdashboard"}
+            </button>
+            <button 
+              onClick={() => {
+                setOrderSuccess(false);
+                setSelections({});
+                setNotes('');
+              }}
+              className="w-full bg-gray-100 text-gray-700 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-sm"
+            >
+              {pageContent?.emp_btn_new || "Nieuwe Bestelling Plaatsen"}
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   const itemsToRender = dbProducts.length > 0 
     ? dbProducts.filter(p => {
         if (!assortment.includes(p.name)) return false;
@@ -685,8 +821,12 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
           if (!categoryRestrictions[cat].includes(companyId)) return false;
         }
 
-        if (p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0) {
+        const hasCompanyException = p.allowed_company_ids && Array.isArray(p.allowed_company_ids) && p.allowed_company_ids.length > 0;
+        if (hasCompanyException) {
           if (!p.allowed_company_ids.includes(companyId)) return false;
+        } else {
+          // If not restricted to specific companies, enforce concept / brand visibility
+          if (!isItemVisibleForBrand(p.allowed_brands)) return false;
         }
         return true;
       })
@@ -728,9 +868,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
     };
   });
   categoryList.sort((a, b) => a.minSortOrder - b.minSortOrder);
-
   const totalSelectedItems = Object.keys(selections).length;
-  const [activeCategory, setActiveCategory] = useState<string>('');
 
   const scrollToCategory = (catTitle: string) => {
     setActiveCategory(catTitle);
@@ -762,88 +900,6 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
       });
     }
   };
-
-  useEffect(() => {
-    if (isLoading || orderSuccess || categoryList.length === 0) return;
-    if (!activeCategory && categoryList[0]) {
-      setActiveCategory(categoryList[0].title);
-    }
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const catTitle = entry.target.getAttribute('data-category-title');
-            if (catTitle) {
-              setActiveCategory(catTitle);
-            }
-          }
-        });
-      },
-      { rootMargin: '-20% 0px -65% 0px', threshold: 0 }
-    );
-
-    categoryList.forEach((cat) => {
-      const el = document.getElementById(`emp-cat-${encodeURIComponent(cat.title)}`);
-      if (el) observer.observe(el);
-    });
-
-    return () => observer.disconnect();
-  }, [categoryList, isLoading, orderSuccess]);
-
-  if (isLoading) {
-    return <div className="min-h-screen bg-[#f4f6f9] pt-32 flex items-center justify-center font-serif text-ob-blue">Laden...</div>;
-  }
-
-  if (orderSuccess) {
-    const successTitle = pageContent?.emp_success_title || "Bestelling Geplaatst!";
-    const successMsg = pageContent?.emp_success_message || "Uw kantoorborrel is succesvol besteld en zal op de gekozen afleverlocatie worden bezorgd.";
-    const delayNotice = pageContent?.delivery_delay_notice || "Opmerking: Wegens een technische vertraging bij onze e-mailprovider duren bevestigingsmails momenteel iets langer dan gebruikelijk.";
-    const modifyTitle = pageContent?.emp_modify_title || "Bestelling wijzigen of annuleren?";
-    const modifyNotice = pageContent?.emp_success_notice || "U kunt deze bestelling te allen tijde inzien, aanpassen of annuleren via uw Bedrijfsdashboard.";
-
-    return (
-      <div className="min-h-screen bg-[#f4f6f9] pt-32 pb-20 font-serif flex items-center justify-center px-6">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-white p-10 rounded-2xl shadow-sm border border-gray-200 text-center max-w-md w-full"
-        >
-          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 size={40} />
-          </div>
-          <h2 className="text-3xl font-bold text-ob-text mb-4">{successTitle}</h2>
-          <p className="text-gray-600 mb-6 leading-relaxed">
-            {successMsg}
-            {emailFailed && <span className="block mt-4 text-orange-600 text-sm">{delayNotice}</span>}
-          </p>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 mb-6 text-xs text-blue-900 text-left">
-            💡 <strong>{modifyTitle}</strong><br />
-            {modifyNotice}
-          </div>
-
-          <div className="flex flex-col gap-2.5">
-            <button 
-              onClick={() => navigate('/dashboard')}
-              className="w-full bg-[#eaaf47] text-[#151f33] py-3 rounded-lg font-bold hover:bg-[#d89e36] transition-colors"
-            >
-              {pageContent?.emp_btn_dashboard || "Ga naar Bedrijfsdashboard"}
-            </button>
-            <button 
-              onClick={() => {
-                setOrderSuccess(false);
-                setSelections({});
-                setNotes('');
-              }}
-              className="w-full bg-gray-100 text-gray-700 py-2.5 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-sm"
-            >
-              {pageContent?.emp_btn_new || "Nieuwe Bestelling Plaatsen"}
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#f4f6f9] pt-28 pb-20 font-serif">
@@ -967,7 +1023,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                         >
                           <span className="font-paragraph-default">{category.title}</span>
                           {countInCat > 0 && (
-                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isCatActive ? 'bg-white/20 text-white' : 'bg-[#eaaf47] text-[#151f33]'}`}>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${isCatActive ? 'bg-white/20 text-white' : 'bg-[#5170ff] text-white'}`}>
                               {countInCat}
                             </span>
                           )}
@@ -977,7 +1033,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                     <button
                       type="button"
                       onClick={scrollToOrder}
-                      className="shrink-0 ml-auto px-3 py-1.5 bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] rounded-full text-xs font-bold font-button-default tracking-wide flex items-center gap-1 shadow-xs cursor-pointer"
+                      className="shrink-0 ml-auto px-3 py-1.5 bg-[#5170ff] hover:bg-[#4060ee] text-white rounded-full text-xs font-bold font-button-default tracking-wide flex items-center gap-1 shadow-xs cursor-pointer"
                     >
                       <span>{t('Bestellen', 'Order')}</span>
                       <ArrowDown size={12} />
@@ -1270,14 +1326,14 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
           {/* Step 2: Delivery Details */}
           <section id="emp-order-details-section" className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200 scroll-mt-28">
             <h2 className="text-2xl font-normal text-ob-text mb-6 flex items-center gap-2.5 font-title-default">
-              <span className="w-8 h-8 rounded-full bg-ob-accent text-ob-blue flex items-center justify-center text-sm shadow-xs font-bold font-heading-default">2</span> 
+              <span className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-sm shadow-xs font-bold font-heading-default">2</span> 
               Aflevergegevens
             </h2>
             
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                  <MapPin size={16} className="text-ob-accent" /> Kies Afleverlocatie
+                  <MapPin size={16} className="text-[#5170ff]" /> Kies Afleverlocatie
                 </label>
                 <select 
                   required
@@ -1303,7 +1359,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
               {/* Delivery Time Selection */}
               <div className="border-b border-gray-100 pb-6 mb-6">
                 <label className="block text-sm font-semibold text-ob-text mb-3 flex items-center gap-2">
-                  <Clock size={16} className="text-ob-accent" /> Bezorgmoment
+                  <Clock size={16} className="text-[#5170ff]" /> Bezorgmoment
                 </label>
                 
                 <div className="flex gap-4 mb-4">
@@ -1335,7 +1391,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                   <div className="grid grid-cols-2 gap-4 mt-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Calendar size={14} className="text-ob-accent" /> Datum
+                        <Calendar size={14} className="text-[#5170ff]" /> Datum
                       </label>
                       <input 
                         type="date" 
@@ -1347,7 +1403,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
-                        <Clock size={14} className="text-ob-accent" /> Tijd
+                        <Clock size={14} className="text-[#5170ff]" /> Tijd
                       </label>
                       <input 
                         type="time" 
@@ -1361,7 +1417,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
               </div>
               <div>
                 <label className="block text-sm font-semibold text-ob-text mb-2 flex items-center gap-2">
-                  <Phone size={16} className="text-ob-accent" /> Telefoonnummer contactpersoon
+                  <Phone size={16} className="text-[#5170ff]" /> Telefoonnummer contactpersoon
                 </label>
                 <input 
                   type="tel" 
@@ -1485,7 +1541,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                     <button
                       type="button"
                       onClick={handleApplyCoupon}
-                      className="px-6 py-3 bg-[#151f34] hover:bg-[#0c1322] text-white rounded-xl font-bold text-sm transition-colors cursor-pointer shadow-sm font-button-default"
+                      className="px-6 py-3 bg-[#5170ff] hover:bg-blue-600 text-white rounded-xl font-bold text-sm transition-colors cursor-pointer shadow-sm"
                     >
                       Toepassen
                     </button>
@@ -1589,7 +1645,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
           {/* Legal / Privacy Notice */}
           <div className="pt-2">
             <div className="flex items-start gap-2.5 text-xs text-gray-500 bg-gray-50 p-3 rounded-xl border border-gray-150">
-              <ShieldCheck size={16} className="text-ob-accent shrink-0 mt-0.5" />
+              <ShieldCheck size={16} className="text-[#5170ff] shrink-0 mt-0.5" />
               <div className="leading-relaxed">
                 <span>
                   {t(
@@ -1600,7 +1656,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                 <button
                   type="button"
                   onClick={() => setIsPrivacyModalOpen(true)}
-                  className="text-ob-blue hover:text-ob-accent hover:underline font-semibold cursor-pointer inline-flex items-center gap-0.5"
+                  className="text-[#5170ff] hover:underline font-semibold cursor-pointer inline-flex items-center gap-0.5"
                 >
                   {t('Privacy Policy', 'Privacy Policy')}
                 </button>
@@ -1614,7 +1670,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
             <button 
               type="submit" 
               disabled={isSubmitting || Object.keys(selections).length === 0 || !selectedAddress || !phone || (deliveryMode === 'scheduled' && (!deliveryDate || !deliveryTime))}
-              className="w-full bg-[#eaaf47] text-[#151f33] py-4 rounded-xl font-bold text-lg hover:bg-[#d89e36] hover:shadow-[0_0_20px_rgba(234,175,71,0.5)] transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg font-button-default cursor-pointer"
+              className="w-full bg-[#5170ff] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg font-button-default cursor-pointer"
             >
               {isSubmitting ? (pageContent?.btn_submitting || t('Bezig met plaatsen...', 'Placing order...')) : <><ShoppingBag size={20} /> {(language === 'en' && pageContent?.emp_btn_submit_en) ? pageContent.emp_btn_submit_en : (pageContent?.emp_btn_submit ? t(pageContent.emp_btn_submit) : t('Bestelling Plaatsen', 'Place Order'))} (€{finalTotalAmount.toFixed(2)})</>}
             </button>
@@ -1682,7 +1738,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                     />
                   </span>
                   {selectedItemsList.length > 0 && (
-                    <span className="text-[11px] font-semibold text-[#151f33] bg-[#eaaf47]/20 px-2 py-0.5 rounded-full border border-[#eaaf47]/40">
+                    <span className="text-[11px] font-semibold text-[#5170ff] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
                       {selectedItemsList.reduce((acc, i) => acc + i.qty, 0)} {selectedItemsList.reduce((acc, i) => acc + i.qty, 0) === 1 ? t('portie', 'portion') : t('porties', 'portions')}
                     </span>
                   )}
@@ -1694,12 +1750,12 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                     {t('Selecteer snacks uit het assortiment hiernaast', 'Select snacks from the assortment')}
                   </div>
                 ) : (
-                  <div className="bg-white/90 rounded-xl p-3 border border-amber-100/80 shadow-2xs space-y-2 max-h-52 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
+                  <div className="bg-white/90 rounded-xl p-3 border border-blue-100/80 shadow-2xs space-y-2 max-h-52 overflow-y-auto custom-scrollbar divide-y divide-gray-100">
                     {selectedItemsList.map((item) => (
                       <div key={item.key} className="pt-2 first:pt-0 flex items-start justify-between text-xs gap-2">
                         <div className="min-w-0 flex-1">
                           <div className="font-semibold text-gray-900 truncate">
-                            <span className="text-[#eaaf47] font-bold mr-1">{item.qty}x</span>
+                            <span className="text-[#5170ff] font-bold mr-1">{item.qty}x</span>
                             {item.product}
                           </div>
                           <div className="text-[11px] text-gray-500 font-normal">
@@ -1734,7 +1790,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                 <button
                   type="button"
                   onClick={scrollToOrder}
-                  className="w-full bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all font-button-default text-xs tracking-wider cursor-pointer"
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all font-button-default text-xs tracking-wider cursor-pointer"
                 >
                   <ArrowDown size={16} />
                   <EditableText
@@ -1767,10 +1823,10 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
           <button
             type="button"
             onClick={scrollToOrder}
-            className="w-full bg-[#151f33] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-[#eaaf47]/30 hover:bg-[#1a2740] transition-all cursor-pointer"
+            className="w-full bg-[#151f34] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between border border-white/10 hover:bg-[#1e2a44] transition-all cursor-pointer"
           >
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-[#eaaf47] text-[#151f33] flex items-center justify-center text-xs font-bold font-heading-default">
+              <div className="w-8 h-8 rounded-full bg-[#5170ff] text-white flex items-center justify-center text-xs font-bold font-heading-default">
                 {totalSelectedItems}
               </div>
               <div className="text-left">
@@ -1787,7 +1843,7 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                 <span className="text-sm font-bold text-white block font-heading-default">€{finalTotalAmount.toFixed(2)}</span>
               </div>
             </div>
-            <div className="flex items-center gap-1.5 bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] px-3.5 py-2 rounded-xl text-xs font-bold font-button-default tracking-wider shadow-sm">
+            <div className="flex items-center gap-1.5 bg-[#5170ff] hover:bg-[#4060ee] px-3.5 py-2 rounded-xl text-xs font-bold font-button-default tracking-wider shadow-sm">
               <EditableText
                 contentKey="order_mobile_btn_scroll"
                 label="Mobiele Knop 'Naar Bestellen'"

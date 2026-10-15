@@ -42,14 +42,14 @@ export default async function handler(req: any, res: any) {
     const resend = new Resend(apiKey);
 
     const isMonthly = invoiceType === 'monthly';
-    const brandName = sellerDetails.brandName || 'Canal Butler';
+    const brandName = sellerDetails.brandName || 'Office Butler';
     const logoUrl = sellerDetails.logoUrl || 'https://i.imgur.com/ymXR7tL.png';
     const sellerName = sellerDetails.name || 'Mokum Local Kitchen';
     const sellerKvk = sellerDetails.kvk || '99852667';
     const sellerVat = sellerDetails.vat || 'NL868877037B01';
     const sellerIban = sellerDetails.iban || 'NL16ABNA0153600063';
     const sellerBic = sellerDetails.bic || 'ABNANL2A';
-    const sellerEmail = sellerDetails.email || 'info@canal-butler.com';
+    const sellerEmail = sellerDetails.email || 'info@office-butler.com';
     const sellerAddress = sellerDetails.address || 'Muiderstraat 18-s, 1011 RB Amsterdam';
     const paymentDays = sellerDetails.paymentTermsDays || 14;
 
@@ -62,10 +62,8 @@ export default async function handler(req: any, res: any) {
     let subject = customSubject;
     if (!subject) {
       subject = isMonthly
-        ? `[Canal Butler] Verzamelfactuur ${monthName || ''} - ${invoiceNumber} - ${clientName}`
-        : `[Canal Butler] Factuur ${invoiceNumber} - ${clientName} (${sellerName})`;
-    } else if (!subject.toLowerCase().includes("canal butler")) {
-      subject = `[Canal Butler] ${subject}`;
+        ? `Verzamelfactuur ${monthName || ''} - ${invoiceNumber} - ${clientName}`
+        : `Factuur ${invoiceNumber} - ${clientName} (${sellerName})`;
     }
 
     // Build Items Table HTML
@@ -137,8 +135,8 @@ export default async function handler(req: any, res: any) {
 
     // Intro & Outro text
     const defaultIntro = isMonthly
-      ? `Beste ${clientName},<br/><br/>Hierbij ontvangt u de officiële verzamelfactuur via Canal Butler voor alle geleverde cateringopdrachten in ${monthName || 'afgelopen periode'}. In onderstaand overzicht vindt u de details per levering.`
-      : `Beste ${clientName},<br/><br/>Bedankt voor uw bestelling via Canal Butler. Hieronder vindt u het overzicht van uw bestelling en factuur met alle specificaties.`;
+      ? `Beste ${clientName},<br/><br/>Hierbij ontvangt u de officiële verzamelfactuur voor alle geleverde cateringopdrachten in ${monthName || 'afgelopen periode'}. In onderstaand overzicht vindt u de details per levering.`
+      : `Beste ${clientName},<br/><br/>Hartelijk dank voor uw bestelling. Hieronder vindt u de factuurspecificatie met alle details en betaalgegevens.`;
 
     const introHtml = customIntro 
       ? customIntro
@@ -325,8 +323,7 @@ export default async function handler(req: any, res: any) {
                   KVK: ${sellerKvk} • BTW: ${sellerVat} • E-mail: ${sellerEmail}
                 </td>
                 <td style="text-align: right; vertical-align: top;">
-                  Verzonden via <strong>Canal Butler Platform</strong><br/>
-                  <span style="font-size: 10px; color: #94a3b8;">Dit is een automatisch gegenereerd bericht van Canal Butler.</span>
+                  Verzonden via <strong>Office Butler Platform</strong>
                 </td>
               </tr>
             </table>
@@ -338,47 +335,15 @@ export default async function handler(req: any, res: any) {
     `;
 
     // Send email to customer via Resend, and CC the administrator
-    const ccList = [sellerEmail || 'info@canal-butler.com'];
+    const ccList = [sellerEmail || 'info@office-butler.com'];
 
-    const fromAddress = process.env.RESEND_FROM?.trim() || `${sellerName} <info@office-butler.com>`;
-
-    let { data, error } = await resend.emails.send({
-      from: fromAddress,
-      replyTo: sellerEmail || 'info@canal-butler.com',
+    const { data, error } = await resend.emails.send({
+      from: `${sellerName} <info@office-butler.com>`,
       to: [recipientEmail],
       cc: ccList,
       subject: subject,
       html: emailHtml,
     });
-
-    if (error && (error.name === 'validation_error' || error.message?.includes('not verified') || (error as any).statusCode === 403)) {
-      if (fromAddress !== `${sellerName} <info@office-butler.com>`) {
-        console.warn(`[Resend] Domain verification issue for "${fromAddress}", falling back to verified domain office-butler.com...`);
-        const fallback = await resend.emails.send({
-          from: `${sellerName} <info@office-butler.com>`,
-          replyTo: sellerEmail || 'info@canal-butler.com',
-          to: [recipientEmail],
-          cc: ccList,
-          subject: subject,
-          html: emailHtml,
-        });
-        data = fallback.data;
-        error = fallback.error;
-      }
-      if (error && (error.name === 'validation_error' || error.message?.includes('not verified') || (error as any).statusCode === 403)) {
-        console.warn(`[Resend] Falling back to onboarding@resend.dev...`);
-        const fallbackDev = await resend.emails.send({
-          from: `${sellerName} <onboarding@resend.dev>`,
-          replyTo: sellerEmail || 'info@canal-butler.com',
-          to: [recipientEmail],
-          cc: ccList,
-          subject: subject,
-          html: emailHtml,
-        });
-        data = fallbackDev.data;
-        error = fallbackDev.error;
-      }
-    }
 
     if (error) {
       console.error("Resend error sending direct invoice:", error);

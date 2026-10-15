@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, CURRENT_BRAND, isBrandAllowed } from '../lib/supabase';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical } from 'lucide-react';
+import { supabase, AVAILABLE_BRANDS } from '../lib/supabase';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, GripVertical, Globe } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -14,7 +14,7 @@ export type ObDeliveryMethod = {
   price: number;
   image_url: string;
   is_active: boolean;
-  allowed_brands?: string[] | string | null;
+  allowed_brands?: string[];
   sort_order?: number;
 };
 
@@ -62,6 +62,11 @@ function SortableRow({ p, editingId, renderEditRow, handleEdit, handleDelete }: 
             {p.description_en && (
               <span className="text-xs text-gray-400 italic block mt-0.5">🇬🇧 {p.description_en}</span>
             )}
+            {p.allowed_brands && p.allowed_brands.length > 0 && (
+              <span className="text-[10px] text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded w-fit mt-1 border border-teal-200 font-medium flex items-center gap-1">
+                🌐 Alleen op: {p.allowed_brands.map((b: string) => AVAILABLE_BRANDS.find(ab => ab.id === b)?.name || b).join(', ')}
+              </span>
+            )}
           </div>
         </div>
       </td>
@@ -102,9 +107,7 @@ export function DeliveryOptionsManager() {
       ]);
       const deliveryTrans: Record<string, { name_en?: string; description_en?: string }> = storeRes?.data?.page_content?.delivery_translations || {};
       if (methodsRes.data) {
-        // Toon de optie alleen als allowed_brands leeg/null is OF 'canal_butler' bevat
-        const brandAllowed = methodsRes.data.filter((m: any) => isBrandAllowed(m.allowed_brands, CURRENT_BRAND));
-        const enriched = brandAllowed.map((m: any) => ({
+        const enriched = methodsRes.data.map((m: any) => ({
           ...m,
           name_en: m.name_en || deliveryTrans[m.id]?.name_en || '',
           description_en: m.description_en || deliveryTrans[m.id]?.description_en || ''
@@ -156,6 +159,7 @@ export function DeliveryOptionsManager() {
     try {
       const nameEn = editForm.name_en?.trim() || '';
       const descEn = editForm.description_en?.trim() || '';
+      const allowedBrandsToSave = editForm.allowed_brands && editForm.allowed_brands.length > 0 ? editForm.allowed_brands : null;
       let savedMethod: any = null;
 
       if (editingId === 'new') {
@@ -167,19 +171,21 @@ export function DeliveryOptionsManager() {
           price: editForm.price || 0,
           image_url: editForm.image_url || '',
           is_active: editForm.is_active !== undefined ? editForm.is_active : true,
+          allowed_brands: allowedBrandsToSave,
           sort_order: methods.length
         };
         let { data, error } = await supabase.from('ob_delivery_methods').insert(insertPayload).select();
-        if (error && (error.message?.toLowerCase().includes('name_en') || error.message?.toLowerCase().includes('description_en'))) {
+        if (error && (error.message?.toLowerCase().includes('name_en') || error.message?.toLowerCase().includes('description_en') || error.message?.toLowerCase().includes('allowed_brands'))) {
           delete insertPayload.name_en;
           delete insertPayload.description_en;
+          if (error.message?.toLowerCase().includes('allowed_brands')) delete insertPayload.allowed_brands;
           const retry = await supabase.from('ob_delivery_methods').insert(insertPayload).select();
           data = retry.data;
           error = retry.error;
         }
         if (error) { alert('Error: ' + error.message); }
         if (data && data[0]) {
-          savedMethod = { ...data[0], name_en: nameEn, description_en: descEn };
+          savedMethod = { ...data[0], name_en: nameEn, description_en: descEn, allowed_brands: allowedBrandsToSave || [] };
           setMethods([...methods, savedMethod]);
         }
       } else {
@@ -190,19 +196,21 @@ export function DeliveryOptionsManager() {
           description_en: descEn || null,
           price: editForm.price,
           image_url: editForm.image_url,
-          is_active: editForm.is_active
+          is_active: editForm.is_active,
+          allowed_brands: allowedBrandsToSave
         };
         let { data, error } = await supabase.from('ob_delivery_methods').update(updatePayload).eq('id', editingId).select();
-        if (error && (error.message?.toLowerCase().includes('name_en') || error.message?.toLowerCase().includes('description_en'))) {
+        if (error && (error.message?.toLowerCase().includes('name_en') || error.message?.toLowerCase().includes('description_en') || error.message?.toLowerCase().includes('allowed_brands'))) {
           delete updatePayload.name_en;
           delete updatePayload.description_en;
+          if (error.message?.toLowerCase().includes('allowed_brands')) delete updatePayload.allowed_brands;
           const retry = await supabase.from('ob_delivery_methods').update(updatePayload).eq('id', editingId).select();
           data = retry.data;
           error = retry.error;
         }
         if (error) { alert('Error: ' + error.message); }
         if (data && data[0]) {
-          savedMethod = { ...data[0], name_en: nameEn, description_en: descEn };
+          savedMethod = { ...data[0], name_en: nameEn, description_en: descEn, allowed_brands: allowedBrandsToSave || [] };
           setMethods(methods.map(p => p.id === editingId ? savedMethod : p));
         }
       }
@@ -271,9 +279,48 @@ export function DeliveryOptionsManager() {
             <span className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider block flex items-center gap-1">🇬🇧 Description (English / Engels)</span>
             <input type="text" placeholder="Description in English" className="w-full px-2 py-1.5 border border-amber-300 bg-amber-50/20 rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.description_en || ''} onChange={e => setEditForm({...editForm, description_en: e.target.value})} />
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1 mb-2">
             <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider block">Afbeelding URL</span>
             <input type="text" placeholder="Afbeelding URL" className="w-full px-2 py-1.5 border rounded text-xs focus:border-[#151f33] focus:outline-none" value={editForm.image_url || ''} onChange={e => setEditForm({...editForm, image_url: e.target.value})} />
+          </div>
+          <div className="bg-teal-50/70 p-2 rounded border border-teal-200 mt-2">
+            <span className="text-[10px] font-semibold text-teal-950 uppercase tracking-wider block mb-1 flex items-center gap-1">
+              <Globe size={11} className="text-teal-700" />
+              Zichtbaarheid per website:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {AVAILABLE_BRANDS.map(brand => {
+                const isSelected = (editForm.allowed_brands || []).includes(brand.id);
+                return (
+                  <label
+                    key={`dm-brand-${brand.id}`}
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-[11px] font-medium cursor-pointer transition-all ${
+                      isSelected
+                        ? 'bg-teal-600 text-white border-teal-700'
+                        : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={(e) => {
+                        const current = editForm.allowed_brands || [];
+                        const updated = e.target.checked
+                          ? [...current, brand.id]
+                          : current.filter(b => b !== brand.id);
+                        setEditForm({ ...editForm, allowed_brands: updated });
+                      }}
+                      className="sr-only"
+                    />
+                    <span>{brand.name}</span>
+                    {isSelected && <Check size={11} className="stroke-[3]" />}
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-teal-800/80 mt-1">
+              {(editForm.allowed_brands || []).length === 0 ? '🟢 Zichtbaar op alle websites' : '🎯 Alleen op aangevinkte website(s)'}
+            </p>
           </div>
         </td>
         <td className="px-2 py-2 align-top">

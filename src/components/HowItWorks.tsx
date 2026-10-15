@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { getTypographyStyle } from '../lib/typography';
 import { EditableText } from './EditableText';
 
-export function HowItWorks({ content, waveColor = 'text-ob-cream' }: { content?: any; waveColor?: string }) {
+export function HowItWorks({ content }: { content?: any }) {
   const { t } = useLanguage();
   const steps = [
     {
@@ -13,13 +13,13 @@ export function HowItWorks({ content, waveColor = 'text-ob-cream' }: { content?:
       titleKey: 'how_step1_title',
       titleLabel: 'Stap 1 Titel',
       titleVal: content?.how_step1_title,
-      defaultTitle: t("1. Stel Vaarpakket Samen", "1. Choose Cruise Package"),
+      defaultTitle: t("1. Bestel of Meld Aan", "1. Order or Register"),
       titleSize: content?.how_step1_title_size,
       titleFont: content?.how_step1_title_font,
       descKey: 'how_step1_desc',
       descLabel: 'Stap 1 Beschrijving',
       descVal: content?.how_step1_desc,
-      defaultDesc: t("Kies uit onze samengestelde borrelboxen of stel zelf uw ideale hapjes en gekoelde dranken samen voor uw gasten aan boord."),
+      defaultDesc: t("Bestel direct voor de vrijmibo, of meld uw bedrijf aan voor een vaste, gepersonaliseerde bestellink voor het personeel."),
       descSize: content?.how_step1_desc_size,
       descFont: content?.how_step1_desc_font
     },
@@ -28,13 +28,13 @@ export function HowItWorks({ content, waveColor = 'text-ob-cream' }: { content?:
       titleKey: 'how_step2_title',
       titleLabel: 'Stap 2 Titel',
       titleVal: content?.how_step2_title,
-      defaultTitle: t("2. Tijd & Aanlegsteiger", "2. Time & Dock Location"),
+      defaultTitle: t("2. Wij Bereiden Voor", "2. We Prepare"),
       titleSize: content?.how_step2_title_size,
       titleFont: content?.how_step2_title_font,
       descKey: 'how_step2_desc',
       descLabel: 'Stap 2 Beschrijving',
       descVal: content?.how_step2_desc,
-      defaultDesc: t("Geef uw vaartijd en vaste aanlegsteiger of kade in Amsterdam door voor een stipte, naadloze overdracht aan boord."),
+      defaultDesc: t("Onze chefs in de Mokum Local Kitchen bereiden de warme snacks en verzamelen de gekoelde dranken op het afgesproken moment."),
       descSize: content?.how_step2_desc_size,
       descFont: content?.how_step2_desc_font
     },
@@ -43,27 +43,27 @@ export function HowItWorks({ content, waveColor = 'text-ob-cream' }: { content?:
       titleKey: 'how_step3_title',
       titleLabel: 'Stap 3 Titel',
       titleVal: content?.how_step3_title,
-      defaultTitle: t("3. Warm Bezorgd aan Boord", "3. Delivered Warm On Board"),
+      defaultTitle: t("3. Bezorging op Kantoor", "3. Office Delivery"),
       titleSize: content?.how_step3_title_size,
       titleFont: content?.how_step3_title_font,
       descKey: 'how_step3_desc',
       descLabel: 'Stap 3 Beschrijving',
       descVal: content?.how_step3_desc,
-      defaultDesc: t("Onze butlers leveren de snacks warm en krokant in thermoboxen direct af aan de schipper of bemanning op de afgesproken locatie."),
+      defaultDesc: t("Wij leveren alles vers, warm en gekoeld af bij u op kantoor in Amsterdam, precies op tijd voor de borrel of het evenement."),
       descSize: content?.how_step3_desc_size,
       descFont: content?.how_step3_desc_font
     }
   ];
 
   return (
-    <section id="how-it-works" className="pt-20 pb-28 md:pb-36 bg-white relative overflow-hidden">
+    <section id="how-it-works" className="py-24 bg-white relative">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="text-center mb-16">
           <EditableText
             contentKey="how_title"
             label="Hoe Het Werkt Titel"
             value={content?.how_title}
-            defaultValue={t("Hoe Werkt Canal Butler?", "How Does Canal Butler Work?")}
+            defaultValue={t("Hoe Werkt Office Butler?", "How Does Office Butler Work?")}
             as="h2"
             className="text-3xl md:text-5xl text-ob-text mb-4 font-title-default"
             style={getTypographyStyle('title', content?.how_title_font, content?.how_title_size)}
@@ -96,7 +96,7 @@ export function HowItWorks({ content, waveColor = 'text-ob-cream' }: { content?:
               transition={{ duration: 0.6, delay: index * 0.2 }}
               className="relative z-10 flex flex-col items-center text-center group"
             >
-              <div className="w-24 h-24 bg-ob-cream rounded-full flex items-center justify-center text-[#eaaf47] mb-6 shadow-sm border border-ob-cream-dark group-hover:border-[#eaaf47] group-hover:text-[#d89e36] transition-colors duration-300">
+              <div className="w-24 h-24 bg-ob-cream rounded-full flex items-center justify-center text-[#5170ff] mb-6 shadow-sm border border-ob-cream-dark group-hover:border-[#5170ff] group-hover:text-[#5170ff] transition-colors duration-300">
                 {step.icon}
               </div>
               <EditableText
@@ -121,22 +121,6 @@ export function HowItWorks({ content, waveColor = 'text-ob-cream' }: { content?:
             </motion.div>
           ))}
         </div>
-      </div>
-
-      {/* Golvende overgang naar de volgende sectie (Canal Wave) */}
-      <div className="absolute -bottom-1 left-0 right-0 w-full overflow-hidden leading-none z-10 pointer-events-none">
-        <svg 
-          viewBox="0 0 1440 100" 
-          fill="none" 
-          xmlns="http://www.w3.org/2000/svg"
-          className={`relative block w-full h-8 md:h-14 lg:h-18 ${waveColor}`}
-          preserveAspectRatio="none"
-        >
-          <path 
-            d="M0,50 C320,10 520,15 780,65 C1040,110 1260,75 1440,35 L1440,100 L0,100 Z" 
-            fill="currentColor"
-          />
-        </svg>
       </div>
     </section>
   );

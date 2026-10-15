@@ -1,4 +1,4 @@
-import { StoreSettings, sortVariantsByCategory, supabase, CategoryVariantRulesMap, CURRENT_BRAND, isBrandAllowed } from '../lib/supabase';
+import { StoreSettings, sortVariantsByCategory, supabase, CategoryVariantRulesMap, isItemVisibleForBrand } from '../lib/supabase';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
@@ -26,7 +26,7 @@ type MenuCategory = {
   items: MenuItem[];
 };
 
-export function Menu({ content, waveColor = 'text-white' }: { content?: any; waveColor?: string }) {
+export function Menu({ content }: { content?: any }) {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
   const [categories, setCategories] = useState<MenuCategory[]>([]);
@@ -75,9 +75,7 @@ export function Menu({ content, waveColor = 'text-white' }: { content?: any; wav
         setCategoryDescriptions(catDescMap);
         setCategoryVariantRules(catVariantRules);
 
-        // Toon een product alleen als allowed_brands IS NULL of leeg is (standaard = alle merken), OF allowed_brands bevat 'canal_butler'
-        const brandFiltered = (data || []).filter((item: any) => isBrandAllowed(item.allowed_brands, CURRENT_BRAND));
-        const itemsWithBrands = brandFiltered.map((item: any) => ({
+        const itemsWithBrands = (data || []).map((item: any) => ({
           ...item,
           brand: item.brand || brandsMap[item.id] || brandsMap[item.name] || '',
           extra_info: item.extra_info || '',
@@ -91,6 +89,9 @@ export function Menu({ content, waveColor = 'text-white' }: { content?: any; wav
           // You might only want 'actief' and 'meest gekozen' etc. Let's just group them.
           if (['verborgen', 'inactief', 'hidden', 'inactive'].includes((item.status || '').toLowerCase())) return acc;
           
+          // Exclude products not allowed on current website / concept
+          if (!isItemVisibleForBrand(item.allowed_brands)) return acc;
+
           // Exclude products restricted to specific companies from the public menu
           if (item.allowed_company_ids && Array.isArray(item.allowed_company_ids) && item.allowed_company_ids.length > 0) {
             return acc;
@@ -143,14 +144,14 @@ export function Menu({ content, waveColor = 'text-white' }: { content?: any; wav
   }, []);
 
   return (
-    <section id="menu" className="pt-20 pb-28 md:pb-36 bg-ob-cream relative overflow-hidden">
+    <section id="menu" className="py-24 bg-ob-cream">
       <div className="max-w-7xl mx-auto px-6 lg:px-8">
         <div className="text-center mb-20">
           <EditableText
             contentKey="menu_title"
             label="Menu Titel"
             value={content?.menu_title}
-            defaultValue="Onze Selectie voor Rederijen"
+            defaultValue="Onze Selectie"
             as="h2"
             className="text-3xl md:text-5xl text-ob-text mb-4 font-title-default"
             style={getTypographyStyle('title', content?.menu_title_font, content?.menu_title_size)}
@@ -159,7 +160,7 @@ export function Menu({ content, waveColor = 'text-white' }: { content?: any; wav
             contentKey="menu_subtitle"
             label="Menu Ondertitel"
             value={content?.menu_subtitle}
-            defaultValue="Hoogwaardige snacks en gekoelde dranken, vers bereid in de Mokum Local Kitchen en warm aan boord bezorgd."
+            defaultValue="Hoogwaardige snacks, vers bereid in de Mokum Local Kitchen."
             multiline
             as="p"
             className="text-ob-text-light max-w-2xl mx-auto font-subtitle-default"
@@ -327,7 +328,7 @@ export function Menu({ content, waveColor = 'text-white' }: { content?: any; wav
                     setInfoModalProduct(null);
                     navigate('/guest-order');
                   }}
-                  className="w-full bg-[#eaaf47] hover:bg-[#d89e36] text-[#151f33] py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-button-default"
+                  className="w-full bg-[#5170ff] hover:bg-[#4060ee] text-white py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg cursor-pointer font-button-default"
                 >
                   <ShoppingBag size={18} />
                   {t('Bestellen', 'Order')}
@@ -337,22 +338,6 @@ export function Menu({ content, waveColor = 'text-white' }: { content?: any; wav
           </div>
         </div>
       )}
-
-      {/* Golvende overgang naar de volgende sectie (Canal Wave) */}
-      <div className="absolute -bottom-1 left-0 right-0 w-full overflow-hidden leading-none z-10 pointer-events-none">
-        <svg 
-          viewBox="0 0 1440 100" 
-          fill="none" 
-          xmlns="http://www.w3.org/2000/svg"
-          className={`relative block w-full h-8 md:h-14 lg:h-18 ${waveColor}`}
-          preserveAspectRatio="none"
-        >
-          <path 
-            d="M0,50 C320,10 520,15 780,65 C1040,110 1260,75 1440,35 L1440,100 L0,100 Z" 
-            fill="currentColor"
-          />
-        </svg>
-      </div>
     </section>
   );
 }

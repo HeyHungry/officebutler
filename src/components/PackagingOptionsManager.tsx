@@ -1,5 +1,5 @@
 import React, { useState, FormEvent } from 'react';
-import { supabase, StoreSettings, PackagingOption, ObCompany } from '../lib/supabase';
+import { supabase, StoreSettings, PackagingOption, ObCompany, AVAILABLE_BRANDS } from '../lib/supabase';
 import { Package, Plus, Trash2, Edit2, Check, X, AlertCircle, Building2, Users, Search, ArrowUp, ArrowDown, Globe, Image as ImageIcon } from 'lucide-react';
 
 type PackagingOptionsManagerProps = {
@@ -29,6 +29,7 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
   const [availableForGuests, setAvailableForGuests] = useState(false);
   const [availableForAllCompanies, setAvailableForAllCompanies] = useState(true);
   const [allowedCompanyIds, setAllowedCompanyIds] = useState<string[]>([]);
+  const [allowedBrands, setAllowedBrands] = useState<string[]>([]);
   const [companySearch, setCompanySearch] = useState('');
 
   const resetForm = () => {
@@ -42,6 +43,7 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
     setAvailableForGuests(false);
     setAvailableForAllCompanies(true);
     setAllowedCompanyIds([]);
+    setAllowedBrands([]);
     setCompanySearch('');
   };
 
@@ -68,6 +70,7 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
     setAvailableForGuests(Boolean(opt.available_for_guests));
     setAvailableForAllCompanies(opt.available_for_all_companies ?? true);
     setAllowedCompanyIds(opt.allowed_company_ids || []);
+    setAllowedBrands(opt.allowed_brands || []);
     setCompanySearch('');
   };
 
@@ -207,6 +210,7 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
         available_for_guests: availableForGuests,
         available_for_all_companies: availableForAllCompanies,
         allowed_company_ids: !availableForAllCompanies ? allowedCompanyIds : undefined,
+        allowed_brands: allowedBrands.length > 0 ? allowedBrands : undefined,
         created_at: new Date().toISOString(),
         sort_order: options.length
       };
@@ -228,7 +232,8 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
             is_active: isActive,
             available_for_guests: availableForGuests,
             available_for_all_companies: availableForAllCompanies,
-            allowed_company_ids: !availableForAllCompanies ? allowedCompanyIds : undefined
+            allowed_company_ids: !availableForAllCompanies ? allowedCompanyIds : undefined,
+            allowed_brands: allowedBrands.length > 0 ? allowedBrands : undefined
           };
         }
         return o;
@@ -553,6 +558,61 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
               </div>
             </div>
 
+            {/* Website / Brand Visibility */}
+            <div className="bg-teal-50/60 border border-teal-200/80 rounded-xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-teal-950 flex items-center gap-1.5">
+                  <Globe size={14} className="text-teal-700" />
+                  🌐 Zichtbaarheid per website / concept
+                </span>
+                {allowedBrands.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAllowedBrands([])}
+                    className="text-[11px] text-teal-700 hover:text-teal-900 underline font-medium cursor-pointer"
+                  >
+                    Toon op alle websites
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-teal-800/90">
+                {allowedBrands.length === 0 ? (
+                  <span>🟢 <strong>Standaard:</strong> Zichtbaar op álle websites (Office Butler, Canal Butler & Snack Butler).</span>
+                ) : (
+                  <span>🎯 <strong>Exclusief:</strong> Alleen zichtbaar op de hieronder aangevinkte website(s).</span>
+                )}
+              </p>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                {AVAILABLE_BRANDS.map(brand => {
+                  const isSelected = allowedBrands.includes(brand.id);
+                  return (
+                    <label
+                      key={`pack-brand-${brand.id}`}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-teal-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          const updated = e.target.checked
+                            ? [...allowedBrands, brand.id]
+                            : allowedBrands.filter(b => b !== brand.id);
+                          setAllowedBrands(updated);
+                        }}
+                        className="sr-only"
+                      />
+                      <span>{brand.badge}</span>
+                      {isSelected && <Check size={12} className="stroke-[3]" />}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Active toggle */}
             <div className="flex items-center gap-2 pt-1">
               <label className="flex items-center gap-2 cursor-pointer text-sm font-semibold text-gray-700">
@@ -691,6 +751,11 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
                             )}
                             {item.description_en && (
                               <span className="text-[11px] text-gray-400 italic line-clamp-1">EN: {item.description_en}</span>
+                            )}
+                            {item.allowed_brands && item.allowed_brands.length > 0 && (
+                              <span className="text-[10px] text-teal-800 bg-teal-50 px-1.5 py-0.5 rounded w-fit mt-1 border border-teal-200 font-medium flex items-center gap-1">
+                                🌐 Alleen op: {item.allowed_brands.map((b: string) => AVAILABLE_BRANDS.find(ab => ab.id === b)?.name || b).join(', ')}
+                              </span>
                             )}
                           </div>
                         </div>

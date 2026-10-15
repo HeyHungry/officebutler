@@ -15,7 +15,7 @@ export function Footer({
   return (
     <footer 
       className="font-serif text-white relative w-full min-w-full overflow-hidden"
-      style={{ backgroundColor: '#151f33' }}
+      style={{ backgroundColor: '#151f34' }}
     >
       {/* Checkered top border */}
       <div 
@@ -27,7 +27,7 @@ export function Footer({
           `,
           backgroundPosition: '0 0, 12px 12px',
           backgroundSize: '24px 24px',
-          backgroundColor: '#151f33'
+          backgroundColor: '#151f34'
         }}
       />
 
@@ -96,27 +96,27 @@ export function Footer({
         <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-sm font-sans mb-8 text-white/70">
           <span className="text-white/40 text-xs uppercase tracking-wider font-semibold">Ontdek ook onze andere concepten:</span>
           <a 
-            href="https://office-butler.com" 
-            target="_blank" 
-            rel="noopener noreferrer" 
-            className="hover:text-[#eaaf47] transition-colors flex items-center gap-1.5 text-white/90 hover:underline underline-offset-4"
-          >
-            Office Butler ↗
-          </a>
-          <span className="text-white/30">•</span>
-          <a 
             href="https://snackbutler.nl" 
             target="_blank" 
             rel="noopener noreferrer" 
-            className="hover:text-[#eaaf47] transition-colors flex items-center gap-1.5 text-white/90 hover:underline underline-offset-4"
+            className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-white/90 hover:underline underline-offset-4"
           >
             Snack Butler ↗
+          </a>
+          <span className="text-white/30">•</span>
+          <a 
+            href="https://canalbutler.nl" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="hover:text-amber-400 transition-colors flex items-center gap-1.5 text-white/90 hover:underline underline-offset-4"
+          >
+            Canal Butler ↗
           </a>
         </div>
 
         {/* Bottom info & Legal */}
         <div className="flex justify-center items-center gap-3 sm:gap-6 flex-wrap text-sm text-white/50 font-sans mb-4">
-          <span>&copy; {currentYear} Canal Butler</span>
+          <span>&copy; {currentYear} Office Butler</span>
           <span className="text-white/20">•</span>
           <span className="text-white/70">Mokum Local Kitchen (KvK 99852667)</span>
           <span className="text-white/20">•</span>
