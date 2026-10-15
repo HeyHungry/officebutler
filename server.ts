@@ -251,13 +251,17 @@ ${JSON.stringify(toTranslate, null, 2)}
     const zipcode = postalCodeMatch ? postalCodeMatch[1].toUpperCase() : "1011 RB";
     
     let city = "Amsterdam";
+    let streetLine = text;
     if (postalCodeMatch) {
-      const afterZip = text.slice(text.indexOf(postalCodeMatch[0]) + postalCodeMatch[0].length).trim();
+      const idx = text.indexOf(postalCodeMatch[0]);
+      const beforeZip = text.slice(0, idx).trim().replace(/,\s*$/, '');
+      if (beforeZip) streetLine = beforeZip;
+      const afterZip = text.slice(idx + postalCodeMatch[0].length).trim();
       const cityWord = afterZip.split(/[,;\n]/)[0].trim();
       if (cityWord) city = cityWord;
     }
 
-    const line1 = text || "Keizersgracht 123";
+    const line1 = streetLine || "Keizersgracht 123";
     const noteParts: string[] = [];
     if (label) noteParts.push(`Locatie: ${label}`);
     if (notes) noteParts.push(notes);
@@ -274,14 +278,29 @@ ${JSON.stringify(toTranslate, null, 2)}
 
   // Helper to parse deliveryDate and deliveryTime into BiteBerry ISO scheduled date-times
   function parseDeliverySchedule(deliveryDate?: string, deliveryTime?: string) {
+    const now = new Date();
     if (!deliveryDate || !deliveryTime || deliveryTime.toLowerCase().includes("snel") || deliveryTime.toLowerCase().includes("zsm")) {
-      return { scheduled_order: false };
+      const finishedAt = new Date(now.getTime() + 45 * 60 * 1000);
+      const readyAt = new Date(now.getTime() + 20 * 60 * 1000);
+      return {
+        scheduled_order: false,
+        is_future: false,
+        estimated_finished_at: finishedAt.toISOString(),
+        estimated_ready_at: readyAt.toISOString()
+      };
     }
 
     const timeMatch = deliveryTime.match(/(\d{1,2}):(\d{2})/);
     const dateMatch = deliveryDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!timeMatch || !dateMatch) {
-      return { scheduled_order: false };
+      const finishedAt = new Date(now.getTime() + 45 * 60 * 1000);
+      const readyAt = new Date(now.getTime() + 20 * 60 * 1000);
+      return {
+        scheduled_order: false,
+        is_future: false,
+        estimated_finished_at: finishedAt.toISOString(),
+        estimated_ready_at: readyAt.toISOString()
+      };
     }
 
     const [_, y, m, d] = dateMatch;
@@ -306,7 +325,13 @@ ${JSON.stringify(toTranslate, null, 2)}
 
     const finishedAt = new Date(`${isoLocal}${formattedOffset}`);
     if (isNaN(finishedAt.getTime())) {
-      return { scheduled_order: false };
+      const defaultFinished = new Date(now.getTime() + 45 * 60 * 1000);
+      const defaultReady = new Date(now.getTime() + 20 * 60 * 1000);
+      return {
+        scheduled_order: false,
+        estimated_finished_at: defaultFinished.toISOString(),
+        estimated_ready_at: defaultReady.toISOString()
+      };
     }
 
     const readyAt = new Date(finishedAt.getTime() - 30 * 60 * 1000); // 30 minutes before delivery for kitchen prep
@@ -328,6 +353,7 @@ ${JSON.stringify(toTranslate, null, 2)}
     rawAddress: string;
     addressLabel?: string;
     companyName?: string;
+    brand?: string;
     orderLines?: any[];
     selections?: any;
     prices?: any;
@@ -350,8 +376,8 @@ ${JSON.stringify(toTranslate, null, 2)}
         storefrontId = "322e275f-c3d3-44bd-876c-f30ecf713227";
       }
 
-      let kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string }> = {};
-      let dbProducts: { id: string; name: string }[] = [];
+      let kitchenInfoMap: Record<string, { kitchen_name?: string; ingredients?: string; prep_instructions?: string; variant_kitchen_names?: Record<string, string> }> = {};
+      let dbProducts: { id: string; name: string; variant_kitchen_names?: Record<string, string> }[] = [];
       const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
       const supabaseUrl = process.env.VITE_SUPABASE_URL;
       if (serviceKey && supabaseUrl) {
@@ -384,17 +410,38 @@ ${JSON.stringify(toTranslate, null, 2)}
         return { success: false, reason: "No API key configured" };
       }
 
+      // Determine brand details (office, canal, snack)
+      const rawBrand = (params.brand || process.env.VITE_BRAND_ID || 'office_butler').trim().toLowerCase();
+      let brandCourier = "office butler";
+      let brandPlatform = "office";
+      let brandName = "Office Butler";
+      let brandPrefix = "OB";
+
+      if (rawBrand.includes('canal')) {
+        brandCourier = "canal butler";
+        brandPlatform = "canal";
+        brandName = "Canal Butler";
+        brandPrefix = "CB";
+      } else if (rawBrand.includes('snack')) {
+        brandCourier = "snack butler";
+        brandPlatform = "snack";
+        brandName = "Snack Butler";
+        brandPrefix = "SB";
+      }
+
       // 1. Process items / order lines
-      const parsedLines: { name: string; qty: number; price: number; taxRate?: number }[] = [];
+      const parsedLines: { name: string; qty: number; price: number; taxRate?: number; variant?: string }[] = [];
       if (params.orderLines && Array.isArray(params.orderLines) && params.orderLines.length > 0) {
         for (const line of params.orderLines) {
-          const isDelivery = Boolean(line.product_name && line.product_name.startsWith("Bezorging:"));
-          const portionSuffix = (!isDelivery && line.portion_size) ? ` (${line.portion_size} stuks)` : "";
+          const isDelivery = Boolean(line.product_name && (line.product_name.startsWith("Bezorging:") || line.product_name.toLowerCase().includes("levering:")));
+          const alreadyHasPortion = Boolean(line.product_name && (line.product_name.toLowerCase().includes("stuks") || line.product_name.toLowerCase().includes("stuk")));
+          const portionSuffix = (!isDelivery && !alreadyHasPortion && line.portion_size) ? ` (${line.portion_size} stuks)` : "";
           parsedLines.push({
             name: `${line.product_name}${portionSuffix}`,
             qty: Math.max(1, Number(line.qty) || 1),
             price: Math.max(0, Number(line.price) || 0),
-            taxRate: isDelivery ? 21 : 9
+            taxRate: isDelivery ? 21 : 9,
+            variant: line.variant || undefined
           });
         }
       } else if (params.selections && typeof params.selections === "object") {
@@ -411,7 +458,8 @@ ${JSON.stringify(toTranslate, null, 2)}
               name: `${finalProd} (${size} stuks)`,
               qty: Math.max(1, Number(qty) || 1),
               price: Math.max(0, Number(price) || 0),
-              taxRate: 9
+              taxRate: 9,
+              variant: variant || undefined
             });
           }
         }
@@ -422,9 +470,9 @@ ${JSON.stringify(toTranslate, null, 2)}
         ? Number(params.deliveryMethodPrice)
         : 0;
 
-      if (deliveryPriceNum > 0 && !parsedLines.some(l => l.name.startsWith("Bezorging"))) {
+      if (deliveryPriceNum > 0 && !parsedLines.some(l => l.name.toLowerCase().includes("bezorging") || l.name.toLowerCase().includes("levering"))) {
         parsedLines.push({
-          name: `Bezorging: ${params.deliveryMethod || "Standaard Bezorging"}`,
+          name: `${brandName} levering: ${params.deliveryMethod || "Standaard Bezorging"}`,
           qty: 1,
           price: deliveryPriceNum,
           taxRate: 21
@@ -513,21 +561,52 @@ ${JSON.stringify(toTranslate, null, 2)}
       const address = parseDutchAddress(params.rawAddress, params.addressLabel, params.notes);
       const scheduleInfo = parseDeliverySchedule(params.deliveryDate, params.deliveryTime);
 
-      // 5. English Kitchen Notes for Order Ticket / Display (Opmerking voor de keuken)
-      // Build English product instructions & ingredients for the kitchen staff:
-      const kitchenProductLines: string[] = [];
+      // English delivery method translation
+      let engDeliveryMethod = "Standard Delivery";
+      const rawDeliveryMethod = (params.deliveryMethod || "").trim().toLowerCase();
+      if (rawDeliveryMethod) {
+        if (rawDeliveryMethod.includes("uitpakken") || rawDeliveryMethod.includes("stallen") || rawDeliveryMethod.includes("setup")) {
+          engDeliveryMethod = "Unpack & Setup";
+        } else if (rawDeliveryMethod.includes("butler") || rawDeliveryMethod.includes("premium")) {
+          engDeliveryMethod = "Butler Service";
+        } else if (rawDeliveryMethod.includes("kade") || rawDeliveryMethod.includes("dock")) {
+          engDeliveryMethod = "Dockside Delivery";
+        } else if (rawDeliveryMethod.includes("afhaal") || rawDeliveryMethod.includes("pickup") || rawDeliveryMethod.includes("ophalen")) {
+          engDeliveryMethod = "Pick-up";
+        } else if (rawDeliveryMethod.includes("gratis") || rawDeliveryMethod.includes("standaard") || rawDeliveryMethod.includes("bezorging") || rawDeliveryMethod.includes("delivery")) {
+          engDeliveryMethod = "Standard Delivery";
+        } else {
+          engDeliveryMethod = params.deliveryMethod ? params.deliveryMethod.trim() : "Standard Delivery";
+        }
+      }
+
+      // Build product kitchen data (kitchen_name, ingredients, prep_instructions)
+      const kitchenProducts: {
+        qty: number;
+        kitchenName: string;
+        portionStr: string;
+        ingredients?: string;
+        prepInstructions?: string;
+      }[] = [];
+
       for (const line of parsedLines) {
-        if (line.name.startsWith("Bezorging:") || line.name.startsWith("GRATIS:")) continue;
+        if (line.name.startsWith("Bezorging:") || line.name.toLowerCase().includes("levering:") || line.name.startsWith("GRATIS:")) continue;
         const rawName = line.name || "";
         const cleanName = rawName.replace(/\s*\(\d+\s*stuks\)/i, "").replace(/\s*\[\+.*?\]/g, "").trim();
 
+        // Extract variant from line.variant or parentheses (e.g. "Bitterballen (Vega)" -> variant "Vega", base "Bitterballen")
+        const variantInParen = cleanName.match(/\(([^)]+)\)$/);
+        const detectedVariant = (line.variant || (variantInParen ? variantInParen[1].trim() : "")).trim();
+        const baseNameWithoutVariant = detectedVariant ? cleanName.replace(/\s*\([^)]+\)$/, "").trim() : cleanName;
+
         const prod = dbProducts.find((p: any) =>
+          p.name?.trim().toLowerCase() === baseNameWithoutVariant.toLowerCase() ||
           p.name?.trim().toLowerCase() === cleanName.toLowerCase() ||
-          p.name?.trim().toLowerCase().includes(cleanName.toLowerCase()) ||
           cleanName.toLowerCase().includes(p.name?.trim().toLowerCase())
         );
 
         const match = (prod && kitchenInfoMap[prod.id]) ||
+                      kitchenInfoMap[baseNameWithoutVariant] ||
                       kitchenInfoMap[cleanName] ||
                       kitchenInfoMap[rawName] ||
                       Object.entries(kitchenInfoMap).find(([key]) => {
@@ -537,54 +616,119 @@ ${JSON.stringify(toTranslate, null, 2)}
 
         const portionMatch = rawName.match(/\((\d+\s*stuks)\)/i);
         const portionStr = portionMatch ? ` (${portionMatch[1]})` : "";
-        const enTitle = match?.kitchen_name ? `${match.kitchen_name} [${cleanName}]` : cleanName;
 
-        const parts: string[] = [`• ${line.qty}x ${enTitle}${portionStr}`];
-        if (match?.prep_instructions) parts.push(`  Prep: ${match.prep_instructions}`);
-        if (match?.ingredients) parts.push(`  Ingredients: ${match.ingredients}`);
-        kitchenProductLines.push(parts.join("\n"));
-      }
-
-      // Delivery time & method translated to English for English-speaking kitchen staff:
-      let engDeliveryTime = (params.deliveryTime || 'ASAP').trim();
-      engDeliveryTime = engDeliveryTime
-        .replace(/zo snel mogelijk/gi, 'ASAP')
-        .replace(/z\.s\.m\./gi, 'ASAP');
-
-      let engDeliveryMethod = params.deliveryMethod ? params.deliveryMethod.trim() : null;
-      if (engDeliveryMethod) {
-        if (/uitpakken/i.test(engDeliveryMethod)) {
-          engDeliveryMethod = "Unpack & Setup (Delivered warm)";
-        } else if (/drempel/i.test(engDeliveryMethod)) {
-          engDeliveryMethod = "Doorstep / Threshold delivery";
-        } else if (/warm/i.test(engDeliveryMethod)) {
-          engDeliveryMethod = "Delivered warm";
-        } else if (/koud/i.test(engDeliveryMethod)) {
-          engDeliveryMethod = "Delivered cold";
+        // Check for variant-specific kitchen name
+        let kTitle = "";
+        const variantMap = (match as any)?.variant_kitchen_names || (prod as any)?.variant_kitchen_names || {};
+        if (detectedVariant && variantMap) {
+          if (variantMap[detectedVariant]?.trim()) {
+            kTitle = variantMap[detectedVariant].trim();
+          } else {
+            const foundKey = Object.keys(variantMap).find(k => k.trim().toLowerCase() === detectedVariant.toLowerCase());
+            if (foundKey && variantMap[foundKey]?.trim()) {
+              kTitle = variantMap[foundKey].trim();
+            }
+          }
         }
+
+        // If no variant-specific kitchen name was configured:
+        if (!kTitle) {
+          const baseKName = match?.kitchen_name?.trim();
+          if (baseKName) {
+            // If base kitchen name doesn't mention variant yet, append variant so kitchen clearly sees it!
+            if (detectedVariant && !baseKName.toLowerCase().includes(detectedVariant.toLowerCase())) {
+              kTitle = `${baseKName} (${detectedVariant})`;
+            } else {
+              kTitle = baseKName;
+            }
+          } else {
+            kTitle = cleanName;
+          }
+        }
+
+        kitchenProducts.push({
+          qty: line.qty,
+          kitchenName: kTitle,
+          portionStr,
+          ingredients: match?.ingredients?.trim() || undefined,
+          prepInstructions: match?.prep_instructions?.trim() || undefined
+        });
       }
 
-      const metaKitchenParts = [
-        isTestOrder ? "🚨 FAKE TEST ORDER - DO NOT PREPARE OR DELIVER! 🚨" : "🏢 CHANNEL: OFFICE BUTLER",
-        `📅 Delivery: ${params.deliveryDate || 'ASAP'} at ${engDeliveryTime}`,
-        engDeliveryMethod ? `🚚 Method: ${engDeliveryMethod}` : null,
-        params.notes ? `📝 Customer note: ${params.notes}` : null,
-        params.discountCode ? `🎟️ Promo code: ${params.discountCode}` : null
-      ].filter(Boolean) as string[];
+      // 1. Opmerking voor de koerier (courier_note):
+      // - brandnaam kort en klein zonder veel emojies en poespas (office butler / canal butler / snack butler)
+      // - Bezorgadres
+      // - Engelse vertaling van de gekozen bezorgmethode
+      // - Extra opmerking bij "extra notities" (indien ingevoerd door de klant)
+      // - Contact telefoonnummer en naam van de klant
+      // - Keukennamen en hoeveelheden van de producten
+      // Gescheiden door witregels/enters tussen de elementen
+      const courierAddress = [address.line1, address.zipcode, address.city].filter(Boolean).join(", ") || (params.rawAddress ? params.rawAddress.trim() : "Adres op aanvraag");
+      const courierSections: string[] = [
+        brandCourier,
+        courierAddress,
+        engDeliveryMethod
+      ];
 
-      const kitchenSections: string[] = [metaKitchenParts.join(" | ")];
-      if (kitchenProductLines.length > 0) {
-        kitchenSections.push(`🍳 KITCHEN PRODUCT INSTRUCTIONS & INGREDIENTS:\n${kitchenProductLines.join("\n\n")}`);
+      if (params.notes && params.notes.trim()) {
+        courierSections.push(params.notes.trim());
       }
-      const finalKitchenNote = kitchenSections.join("\n\n");
 
-      const operatorNoteParts = [
-        isTestOrder ? "🚨 FAKE TEST - NO ACTION REQUIRED 🚨" : "🏢 CHANNEL: OFFICE BUTLER",
-        params.companyName ? `Company: ${params.companyName}` : `Customer: ${params.customerName}`,
-        params.email ? `Email: ${params.email}` : null,
-        `Tel: ${cleanPhone}`,
-        params.billingInfo ? `Billing info: ${params.billingInfo.replace(/\n/g, ' ')}` : null
-      ].filter(Boolean);
+      courierSections.push(`${cleanPhone} - ${effectiveCustomerName}`);
+
+      if (kitchenProducts.length > 0) {
+        const productLines = kitchenProducts.map(kp => `${kp.qty}x ${kp.kitchenName}${kp.portionStr}`).join("\n");
+        courierSections.push(productLines);
+      }
+
+      const finalCourierNote = courierSections.filter(Boolean).join("\n\n");
+
+      // 2. Opmerking voor de operator (operator_note):
+      // naam klant, bedrijf van de klant, email van de klant , bestelplatform (office,canal,snack)
+      // Gescheiden door witregels/enters tussen de elementen
+      const effectiveEmail = (params.email && params.email.includes('@')) ? params.email.trim() : "info@office-butler.com";
+      const companyDisplay = params.companyName?.trim() || "Geen bedrijf";
+      const operatorSections: string[] = [
+        effectiveCustomerName,
+        companyDisplay,
+        effectiveEmail,
+        brandPlatform
+      ];
+      const finalOperatorNote = operatorSections.filter(Boolean).join("\n\n");
+
+      // 3. Opmerking voor de keuken (kitchen_note):
+      // - bestelplatform (office,canal,snack)
+      // - Keukennaam + aantallen
+      // - Ingredienten als deze zijn ingevuld (bereidingswijze weggelaten ivm speciale Biteberry chef app)
+      // - naam klant en bedrijf + Extra opmerking
+      // Gescheiden door witregels/enters tussen de elementen
+      const kitchenSections: string[] = [
+        brandPlatform
+      ];
+
+      if (kitchenProducts.length > 0) {
+        const itemBlocks: string[] = [];
+        for (const kp of kitchenProducts) {
+          const itemParts = [`${kp.kitchenName} - ${kp.qty}x${kp.portionStr}`];
+          if (kp.ingredients) {
+            itemParts.push(`Ingrediënten: ${kp.ingredients}`);
+          }
+          // Bereidingswijze bewust weggelaten; dit wordt via de Biteberry Chef app beheerd
+          itemBlocks.push(itemParts.join("\n"));
+        }
+        kitchenSections.push(itemBlocks.join("\n\n"));
+      }
+
+      const clientAndCompany = params.companyName?.trim()
+        ? `${effectiveCustomerName} (${params.companyName.trim()})`
+        : effectiveCustomerName;
+      kitchenSections.push(clientAndCompany);
+
+      if (params.notes && params.notes.trim()) {
+        kitchenSections.push(`Extra opmerking: ${params.notes.trim()}`);
+      }
+
+      const finalKitchenNote = kitchenSections.filter(Boolean).join("\n\n").trim();
 
       const orderPayload = {
         order: {
@@ -595,20 +739,20 @@ ${JSON.stringify(toTranslate, null, 2)}
           scheduled_order: scheduleInfo.scheduled_order,
           estimated_finished_at: scheduleInfo.estimated_finished_at,
           estimated_ready_at: scheduleInfo.estimated_ready_at,
-          external_id: `OB-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+          external_id: `${brandPrefix}-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
           kitchen_note: finalKitchenNote,
-          operator_note: operatorNoteParts.join(" | "),
+          operator_note: finalOperatorNote,
           sub_total: subTotalCents,
           grand_total: grandTotalCents,
           contact_details: {
             first_name: firstName,
             last_name: lastName,
-            email: (params.email && params.email.includes('@')) ? params.email.trim() : "info@office-butler.com",
+            email: effectiveEmail,
             phone: {
               number: cleanPhone,
               country_code: "+31"
             },
-            courier_note: `Office Butler delivery for ${params.companyName || params.customerName}`,
+            courier_note: finalCourierNote,
             address: {
               line1: address.line1 || "Keizersgracht 123",
               city: address.city || "Amsterdam",
@@ -626,7 +770,9 @@ ${JSON.stringify(toTranslate, null, 2)}
               amount: grandTotalCents,
               status: "paid",
               payment_type: "other",
-              external_id: `OB-PAY-${Date.now()}`
+              name: "Op factuur",
+              description: "Op factuur",
+              external_id: `${brandPrefix}-PAY-${Date.now()}`
             }
           ]
         }
@@ -722,6 +868,7 @@ ${JSON.stringify(toTranslate, null, 2)}
           companyName: effectiveCompanyName,
           email: effectiveEmail,
           phone,
+          brand: req.body.brand || (process.env.VITE_BRAND_ID as string) || 'office_butler',
           rawAddress: effectiveRawAddress,
           addressLabel: effectiveAddressLabel,
           orderLines,
@@ -938,6 +1085,7 @@ ${JSON.stringify(toTranslate, null, 2)}
           email: guestEmail || undefined,
           phone,
           rawAddress: guestAddress || 'Adres op aanvraag',
+          brand: req.body.brand || (process.env.VITE_BRAND_ID as string) || 'office_butler',
           orderLines,
           selections,
           prices,
@@ -1231,6 +1379,8 @@ ${JSON.stringify(toTranslate, null, 2)}
       const result = await sendOrderToBiteberry({
         isTest: true,
         customerName: req.body.customerName || "FAKE TEST - NIET BEREIDEN",
+        companyName: req.body.companyName,
+        brand: req.body.brand,
         email: req.body.email || "info@office-butler.com",
         phone: req.body.phone || "0612345678",
         rawAddress: req.body.address || "Muiderstraat 18, 1011 RB Amsterdam",
