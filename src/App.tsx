@@ -24,6 +24,7 @@ import { ModeratorPanel } from "./components/ModeratorPanel";
 import { WhatsAppWidget } from "./components/WhatsAppWidget";
 import { PrivacyModal } from "./components/PrivacyModal";
 import { PrivacyPolicyPage } from "./pages/PrivacyPolicyPage";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 import { Home } from "./pages/Home";
 import { Auth } from "./pages/Auth";
@@ -193,12 +194,14 @@ export default function App() {
             storeSettings={storeSettings}
             onStoreSettingsUpdated={setStoreSettings}
           >
-            <AppContent
-              settings={settings}
-              setSettings={setSettings}
-              storeSettings={storeSettings}
-              setStoreSettings={setStoreSettings}
-            />
+            <ErrorBoundary>
+              <AppContent
+                settings={settings}
+                setSettings={setSettings}
+                storeSettings={storeSettings}
+                setStoreSettings={setStoreSettings}
+              />
+            </ErrorBoundary>
           </ModeratorProvider>
         </OrderModalProvider>
       </LanguageProvider>

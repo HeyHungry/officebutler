@@ -714,9 +714,8 @@ ${packagingNote ? `${packagingNote}\n` : ''}${discountNote ? `${discountNote}\n`
   if (orderSuccess) {
     const successTitle = pageContent?.guest_success_title || pageContent?.order_success_title || "Bestelling Ontvangen!";
     const defaultMsg = `Bedankt voor uw bestelling${guestName ? `, ${guestName}` : ''}. We hebben uw aanvraag goed ontvangen.`;
-    const configuredMsg = pageContent?.guest_success_message 
-      ? pageContent.guest_success_message.replace('{guestName}', guestName || '')
-      : defaultMsg;
+    const rawMsg = typeof pageContent?.guest_success_message === 'string' ? pageContent.guest_success_message : defaultMsg;
+    const configuredMsg = rawMsg.replace('{guestName}', guestName || '');
     const delayNotice = pageContent?.delivery_delay_notice || " (Op dit moment is er een lichte vertraging in ons e-mailsysteem. Uw bestelling is veilig in goede banen, maar de bevestigingsmail volgt mogelijk iets later).";
     const invoiceNotice = pageContent?.guest_invoice_notice || " De factuur is verstuurd naar uw e-mail.";
 

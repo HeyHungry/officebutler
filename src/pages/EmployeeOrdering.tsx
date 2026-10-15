@@ -5,7 +5,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { getDeliveryMethodName, getDeliveryMethodDescription, getSnackExtraInfo } from '../lib/translationFallbacks';
 import { useNavigate } from 'react-router-dom';
 import { PackageOpen, MapPin, Phone, ShoppingBag, CheckCircle2 , Clock, Calendar, Truck, X, Info, Utensils, ShieldCheck, Tag, Percent, Gift, CheckCircle, Package, ArrowDown, Compass, ChevronRight } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { PrivacyModal } from '../components/PrivacyModal';
 import { useModerator } from '../contexts/ModeratorContext';
 import { EditableText } from '../components/EditableText';
