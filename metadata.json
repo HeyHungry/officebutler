@@ -1,6 +1,6 @@
 {
-  "name": "Remix Office Butler",
-  "description": "Premium kantoorborrel bezorging in Amsterdam",
+  "name": "Canalbutler Redrijen",
+  "description": "Vaste horecapartner voor rederijen en rondvaarten in Amsterdam",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
