@@ -81,9 +81,30 @@ export function Auth() {
     setIsLoading(true);
 
     if (supabase) {
+      const cleanEmail = email.trim().toLowerCase();
+      const cleanCompanyName = companyName.trim();
+
+      // Veiligheidscontrole: voorkom dubbele aanmeldingen van hetzelfde bedrijf of e-mailadres
+      const { data: existingCompany } = await supabase
+        .from('ob_companies')
+        .select('id, name, billing_email')
+        .or(`billing_email.ilike.${cleanEmail},name.ilike.${cleanCompanyName}`)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingCompany) {
+        if (existingCompany.billing_email?.toLowerCase() === cleanEmail) {
+          setError(`Er bestaat al een inschrijving of account met het e-mailadres ${cleanEmail}. U kunt direct inloggen of contact opnemen.`);
+        } else {
+          setError(`Er bestaat al een kantoor met de naam "${cleanCompanyName}". Neem contact op als u denkt dat dit een vergissing is.`);
+        }
+        setIsLoading(false);
+        return;
+      }
+
       // 1. Sign up user
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
       });
 
@@ -98,10 +119,10 @@ export function Auth() {
         const { data: companyData, error: companyError } = await supabase
           .from('ob_companies')
           .insert({
-            name: companyName,
-            address: address,
-            phone: phone,
-            billing_email: email,
+            name: cleanCompanyName,
+            address: address.trim(),
+            phone: phone.trim(),
+            billing_email: cleanEmail,
             is_approved: false
           })
           .select()

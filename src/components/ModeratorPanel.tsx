@@ -251,10 +251,8 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
   }, [settings, storeSettings]);
 
   useEffect(() => {
-    if (storeSettings?.page_content) {
-      if (!officeButlerStoreContentRef.current) {
-        officeButlerStoreContentRef.current = storeSettings.page_content;
-      }
+    if (storeSettings?.page_content && Object.keys(storeSettings.page_content).length > 0) {
+      officeButlerStoreContentRef.current = storeSettings.page_content;
       setBrandContents(prev => ({
         ...prev,
         office_butler: storeSettings.page_content || {}
@@ -876,6 +874,25 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleRejectCompany = async (id: string, name: string) => {
+    if (!window.confirm(`Weet u zeker dat u de aanmelding van "${name}" wilt verwijderen/afwijzen?`)) return;
+    if (!supabase) {
+      setRegistrations(registrations.filter(r => r.id !== id));
+      return;
+    }
+    try {
+      const { error } = await supabase.from('ob_companies').delete().eq('id', id);
+      if (!error) {
+        setRegistrations(registrations.filter(r => r.id !== id));
+      } else {
+        alert("Fout bij verwijderen van aanmelding: " + error.message);
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert("Fout: " + (e.message || "Onbekende fout"));
     }
   };
 
@@ -3710,24 +3727,48 @@ export function ModeratorPanel({ isOpen, onClose, settings, storeSettings, onSet
                           </div>
                         ) : (
                           <div className="space-y-4">
-                            {registrations.map((reg, regIdx) => (
-                              <div key={`reg-${reg.id || regIdx}-${regIdx}`} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div className="space-y-1">
-                                  <h4 className="font-semibold text-lg text-ob-text">{reg.name}</h4>
-                                  <p className="text-sm text-gray-600 flex items-center gap-2">{reg.address}</p>
-                                  <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-500">
-                                    <span>✉️ {reg.billing_email}</span>
-                                    <span>📞 {reg.phone}</span>
+                            {registrations.map((reg, regIdx) => {
+                              const isDuplicateOfCustomer = customers.some(
+                                c => c.billing_email && reg.billing_email && c.billing_email.toLowerCase().trim() === reg.billing_email.toLowerCase().trim()
+                              );
+
+                              return (
+                                <div key={`reg-${reg.id || regIdx}-${regIdx}`} className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-semibold text-lg text-ob-text">{reg.name}</h4>
+                                      {isDuplicateOfCustomer && (
+                                        <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-0.5 rounded-full font-medium border border-amber-300">
+                                          ⚠️ Reeds goedgekeurd kantoor aanwezig
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm text-gray-600 flex items-center gap-2">{reg.address}</p>
+                                    <div className="flex flex-wrap gap-4 mt-2 text-sm text-gray-500">
+                                      <span>✉️ {reg.billing_email}</span>
+                                      <span>📞 {reg.phone}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button 
+                                      type="button"
+                                      onClick={() => handleRejectCompany(reg.id, reg.name)}
+                                      className="px-4 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                      title="Aanmelding afwijzen of verwijderen"
+                                    >
+                                      <Trash2 size={16} /> Verwijderen
+                                    </button>
+                                    <button 
+                                      type="button"
+                                      onClick={() => handleAcceptCompany(reg.id)}
+                                      className="bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                                    >
+                                      <CheckCircle2 size={18} /> Accepteren
+                                    </button>
                                   </div>
                                 </div>
-                                <button 
-                                  onClick={() => handleAcceptCompany(reg.id)}
-                                  className="shrink-0 bg-green-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
-                                >
-                                  <CheckCircle2 size={18} /> Accepteren
-                                </button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>

@@ -606,7 +606,8 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
                 phone: phone,
                 notes: fullNotes,
                 delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-                delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+                delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
+                brand: CURRENT_BRAND
               }));
             }
           });
@@ -635,7 +636,8 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
             phone: phone,
             notes: fullNotes,
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
+            brand: CURRENT_BRAND
           }));
         }
 
@@ -651,7 +653,8 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
             phone: phone,
             notes: fullNotes,
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
+            brand: CURRENT_BRAND
           }));
 
           orderLines.push({
@@ -675,7 +678,8 @@ ${discountNote ? `${discountNote}\n` : ''}${packagingNote ? `${packagingNote}\n`
             phone: phone,
             notes: fullNotes,
             delivery_date: deliveryMode === 'zsm' ? new Date().toISOString().split('T')[0] : deliveryDate,
-            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime
+            delivery_time: deliveryMode === 'zsm' ? 'Zo snel mogelijk' : deliveryTime,
+            brand: CURRENT_BRAND
           }));
 
           orderLines.push({

@@ -196,8 +196,8 @@ ${JSON.stringify(toTranslate, null, 2)}
   app.post("/api/reset-employee-password", async (req, res) => {
     try {
       const { employeeId, newPassword, companyId } = req.body;
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      const supabaseUrl = process.env.VITE_SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "sb_secret_d4lbpRerEQreG1NmLQ7AsQ_OncgiiSf";
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "https://rqqotumbdsghvkkmquqo.supabase.co";
 
       if (!employeeId || !newPassword || !companyId) {
         return res.status(400).json({ error: "Medewerker ID, nieuw wachtwoord en bedrijfs-ID zijn verplicht." });

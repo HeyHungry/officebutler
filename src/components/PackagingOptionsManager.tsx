@@ -1,4 +1,4 @@
-import React, { useState, FormEvent } from 'react';
+import React, { useState, useEffect, FormEvent } from 'react';
 import { supabase, StoreSettings, PackagingOption, ObCompany, AVAILABLE_BRANDS } from '../lib/supabase';
 import { Package, Plus, Trash2, Edit2, Check, X, AlertCircle, Building2, Users, Search, ArrowUp, ArrowDown, Globe, Image as ImageIcon } from 'lucide-react';
 
@@ -9,7 +9,71 @@ type PackagingOptionsManagerProps = {
 };
 
 export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated, companies = [] }: PackagingOptionsManagerProps) {
-  const options: PackagingOption[] = storeSettings?.page_content?.packaging_options || [];
+  const propOptions: PackagingOption[] = storeSettings?.page_content?.packaging_options || [];
+  const [options, setOptions] = useState<PackagingOption[]>(propOptions);
+
+  // Sync with prop when prop has options or updates
+  useEffect(() => {
+    if (propOptions && propOptions.length > 0) {
+      setOptions(propOptions);
+    }
+  }, [storeSettings?.page_content?.packaging_options]);
+
+  // Direct database load on mount: ALWAYS fetch from Supabase to guarantee options appear
+  useEffect(() => {
+    if (!supabase) return;
+    let isMounted = true;
+    async function loadDirectly() {
+      try {
+        // 1. Check store_settings
+        const { data: stRow } = await supabase!
+          .from('store_settings')
+          .select('page_content')
+          .eq('id', 1)
+          .maybeSingle();
+
+        const stOpts = stRow?.page_content?.packaging_options;
+        if (isMounted && Array.isArray(stOpts) && stOpts.length > 0) {
+          setOptions(stOpts);
+          if (onStoreSettingsUpdated && storeSettings) {
+            onStoreSettingsUpdated({
+              ...storeSettings,
+              page_content: {
+                ...(storeSettings.page_content || {}),
+                packaging_options: stOpts
+              }
+            });
+          }
+          return;
+        }
+
+        // 2. Fallback to brand_page_content for office_butler
+        const { data: bpRow } = await supabase!
+          .from('brand_page_content')
+          .select('page_content')
+          .eq('brand_id', 'office_butler')
+          .maybeSingle();
+
+        const bpOpts = bpRow?.page_content?.packaging_options;
+        if (isMounted && Array.isArray(bpOpts) && bpOpts.length > 0) {
+          setOptions(bpOpts);
+          if (onStoreSettingsUpdated && storeSettings) {
+            onStoreSettingsUpdated({
+              ...storeSettings,
+              page_content: {
+                ...(storeSettings.page_content || {}),
+                packaging_options: bpOpts
+              }
+            });
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('[PackagingOptionsManager] Kon opties niet direct uit database laden:', fetchErr);
+      }
+    }
+    loadDirectly();
+    return () => { isMounted = false; };
+  }, []);
 
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -102,7 +166,33 @@ export function PackagingOptionsManager({ storeSettings, onStoreSettingsUpdated,
           console.error('Fout bij opslaan verpakkingsopties in Supabase:', error);
           throw error;
         }
+
+        // Also synchronize to brand_page_content so both tables maintain the packaging options
+        try {
+          const { data: bData } = await supabase
+            .from('brand_page_content')
+            .select('page_content')
+            .eq('brand_id', 'office_butler')
+            .maybeSingle();
+
+          const updatedBrandContent = {
+            ...(bData?.page_content || {}),
+            packaging_options: newOptions
+          };
+
+          await supabase
+            .from('brand_page_content')
+            .upsert({
+              brand_id: 'office_butler',
+              page_content: updatedBrandContent,
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'brand_id' });
+        } catch (syncErr) {
+          console.warn('[PackagingOptionsManager] Sync naar brand_page_content fout:', syncErr);
+        }
       }
+
+      setOptions(newOptions);
 
       const updatedSettings: StoreSettings = {
         ...(storeSettings || { id: 1, override_status: 'AUTO', schedule: {}, pickup_url: '', delivery_url: '' }),

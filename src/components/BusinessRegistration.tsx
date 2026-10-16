@@ -29,24 +29,48 @@ export function BusinessRegistration({ content }: { content?: any }) {
 
     try {
       if (supabase) {
-        // Gebruik de office_butler_leads tabel zodat andere websites niet beïnvloed worden
-        const { error } = await supabase
-          .from('office_butler_leads')
-          .insert([
-            {
-              company_name: formData.companyName,
-              contact_person: formData.contactPerson,
-              email: formData.email,
-              phone: formData.phone,
-              wishes: formData.wishes,
-              created_at: new Date().toISOString()
-            }
-          ]);
+        const cleanEmail = formData.email.trim().toLowerCase();
+        const cleanCompanyName = formData.companyName.trim();
 
-        if (error) {
-          console.error("Supabase error:", error);
-          // Fallback als tabel nog niet bestaat
-          throw new Error("Kon niet opslaan in database.");
+        // Controleer of er recent al een aanmelding is binnengekomen met dit e-mailadres
+        const { data: existingLead } = await supabase
+          .from('office_butler_leads')
+          .select('id')
+          .ilike('email', cleanEmail)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingLead) {
+          // Werk de bestaande aanvraag bij in plaats van een dubbele rij aan te maken
+          await supabase
+            .from('office_butler_leads')
+            .update({
+              company_name: cleanCompanyName,
+              contact_person: formData.contactPerson.trim(),
+              phone: formData.phone.trim(),
+              wishes: formData.wishes.trim(),
+              created_at: new Date().toISOString()
+            })
+            .eq('id', existingLead.id);
+        } else {
+          // Nieuwe unieke aanmelding toevoegen
+          const { error } = await supabase
+            .from('office_butler_leads')
+            .insert([
+              {
+                company_name: cleanCompanyName,
+                contact_person: formData.contactPerson.trim(),
+                email: cleanEmail,
+                phone: formData.phone.trim(),
+                wishes: formData.wishes.trim(),
+                created_at: new Date().toISOString()
+              }
+            ]);
+
+          if (error) {
+            console.error("Supabase error:", error);
+            throw new Error("Kon niet opslaan in database.");
+          }
         }
       } else {
         // Fallback delay voor als Supabase niet is gekoppeld

@@ -707,7 +707,13 @@ export function CompanyDashboard() {
         body: JSON.stringify({ email: cleanEmail, password: newEmpPassword, companyId: company.id })
       });
       
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server reactie (${res.status}): Kon werknemer niet aanmaken.`);
+      }
       if (!res.ok) {
         throw new Error(data.error || 'Er is een fout opgetreden');
       }
@@ -740,7 +746,14 @@ export function CompanyDashboard() {
         })
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server reactie (${res.status}): Kon wachtwoord niet wijzigen. Controleer de verbinding of neem contact op.`);
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Er is een fout opgetreden bij het herstellen van het wachtwoord');
       }
